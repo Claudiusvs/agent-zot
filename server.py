@@ -17,14 +17,14 @@ from pathlib import Path
 
 from fastmcp import Context, FastMCP
 
-from zotero_mcp.client import (
+from client import (
     convert_to_markdown,
     format_item_metadata,
     generate_bibtex,
     get_attachment_details,
     get_zotero_client,
 )
-from zotero_mcp.utils import format_creators
+from utils import format_creators
 
 @asynccontextmanager
 async def server_lifespan(server: FastMCP):
@@ -33,7 +33,7 @@ async def server_lifespan(server: FastMCP):
     
     # Check for semantic search auto-update on startup
     try:
-        from zotero_mcp.semantic_search import create_semantic_search
+        from semantic_search import create_semantic_search
         
         config_path = Path.home() / ".config" / "zotero-mcp" / "config.json"
         
@@ -1129,7 +1129,7 @@ def get_annotations(
             if os.environ.get("ZOTERO_LOCAL", "").lower() in ["true", "yes", "1"]:
                 try:
                     # Import Better BibTeX dependencies
-                    from zotero_mcp.better_bibtex_client import (
+                    from better_bibtex_client import (
                         ZoteroBetterBibTexAPI, 
                         process_annotation, 
                         get_color_category
@@ -1238,7 +1238,7 @@ def get_annotations(
             # PDF Extraction fallback
             if use_pdf_extraction and not (better_bibtex_annotations or zotero_api_annotations):
                 try:
-                    from zotero_mcp.pdfannots_helper import extract_annotations_from_pdf, ensure_pdfannots_installed
+                    from pdfannots_helper import extract_annotations_from_pdf, ensure_pdfannots_installed
                     import tempfile
                     import uuid
                     
@@ -1754,7 +1754,7 @@ def semantic_search(
         ctx.info(f"Performing semantic search for: '{query}'")
         
         # Import semantic search module
-        from zotero_mcp.semantic_search import create_semantic_search
+        from semantic_search import create_semantic_search
         from pathlib import Path
         
         # Determine config path
@@ -1862,7 +1862,7 @@ def update_search_database(
         ctx.info("Starting semantic search database update...")
         
         # Import semantic search module
-        from zotero_mcp.semantic_search import create_semantic_search
+        from semantic_search import create_semantic_search
         from pathlib import Path
         
         # Determine config path
@@ -1922,7 +1922,7 @@ def get_search_database_status(*, ctx: Context) -> str:
         ctx.info("Getting semantic search database status...")
         
         # Import semantic search module
-        from zotero_mcp.semantic_search import create_semantic_search
+        from semantic_search import create_semantic_search
         from pathlib import Path
         
         # Determine config path
@@ -2012,7 +2012,7 @@ def chatgpt_connector_search(
     try:
         default_limit = 10
 
-        from zotero_mcp.semantic_search import create_semantic_search
+        from semantic_search import create_semantic_search
 
         config_path = Path.home() / ".config" / "zotero-mcp" / "config.json"
         search = create_semantic_search(str(config_path))

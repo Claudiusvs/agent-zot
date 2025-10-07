@@ -21,29 +21,34 @@ class DoclingParser:
     """Enhanced document parser using Docling."""
 
     def __init__(self,
-                 chunk_size: int = 1000,
-                 chunk_overlap: int = 200):
+                 chunk_size: int = 512,
+                 chunk_overlap: int = 100,
+                 merge_list_items: bool = True):
         """
         Initialize Docling parser.
 
         Args:
-            chunk_size: Target size for document chunks (in characters)
+            chunk_size: Target size for document chunks (in characters, not tokens)
             chunk_overlap: Overlap between chunks (in characters)
+            merge_list_items: Whether to merge successive list items (default: True)
         """
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         self.converter = DocumentConverter()
+
+        # Use HierarchicalChunker with document structure awareness
         self.chunker = HierarchicalChunker(
-            max_tokens=chunk_size,
-            overlap_tokens=chunk_overlap
+            merge_list_items=merge_list_items,
+            delim="\n"
         )
 
-    def parse_pdf(self, pdf_path: str) -> Dict[str, Any]:
+    def parse_pdf(self, pdf_path: str, force_ocr: bool = False) -> Dict[str, Any]:
         """
-        Parse a PDF file using Docling.
+        Parse a PDF file using Docling with conditional OCR fallback.
 
         Args:
             pdf_path: Path to the PDF file
+            force_ocr: Force OCR processing (default: False, OCR used only when needed)
 
         Returns:
             Dictionary containing parsed document with structure:
@@ -56,9 +61,21 @@ class DoclingParser:
             }
         """
         try:
-            # Convert document
-            result = self.converter.convert(pdf_path)
+            # Try standard parsing first
+            if force_ocr:
+                logger.info(f"Force OCR enabled for {pdf_path}")
+                result = self.converter.convert(pdf_path, do_ocr=True, force_full_page_ocr=True)
+            else:
+                result = self.converter.convert(pdf_path)
+
             doc = result.document
+
+            # Check if we got minimal content (might indicate OCR needed)
+            full_text = doc.export_to_markdown()
+            if not force_ocr and len(full_text.strip()) < 100:
+                logger.warning(f"Minimal text extracted ({len(full_text)} chars), retrying with OCR")
+                result = self.converter.convert(pdf_path, do_ocr=True, force_full_page_ocr=True)
+                doc = result.document
 
             # Extract full text
             full_text = doc.export_to_markdown()
@@ -114,8 +131,17 @@ class DoclingParser:
             }
 
         except Exception as e:
-            logger.error(f"Error parsing PDF with Docling: {e}")
-            # Fallback to simple text extraction
+            # If standard parsing failed and OCR wasn't tried, try with OCR
+            if not force_ocr:
+                logger.warning(f"Standard parsing failed: {e}. Trying with OCR...")
+                try:
+                    return self.parse_pdf(pdf_path, force_ocr=True)
+                except Exception as ocr_error:
+                    logger.error(f"OCR parsing also failed: {ocr_error}")
+            else:
+                logger.error(f"Error parsing PDF with Docling (OCR enabled): {e}")
+
+            # Final fallback to simple text extraction
             return self._fallback_parse(pdf_path)
 
     def _fallback_parse(self, pdf_path: str) -> Dict[str, Any]:

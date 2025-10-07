@@ -99,7 +99,7 @@ def is_pipx_installation() -> bool:
 def get_current_version() -> Optional[str]:
     """Get the currently installed version of zotero-mcp."""
     try:
-        from zotero_mcp._version import __version__
+        from _version import __version__
         return __version__
     except ImportError:
         # Fallback to pip show
@@ -213,7 +213,7 @@ def restore_configurations(backup_dir: Path) -> bool:
     claude_backup = backup_dir / "claude_desktop_config.json"
     if claude_backup.exists():
         # Find the current Claude config location
-        from zotero_mcp.setup_helper import find_claude_config
+        from setup_helper import find_claude_config
         
         try:
             current_config_path = find_claude_config()
@@ -327,7 +327,7 @@ def verify_installation() -> Tuple[bool, str]:
         import zotero_mcp
         
         # Try to get version
-        from zotero_mcp._version import __version__
+        from _version import __version__
         
         # Try to run a basic command
         result = subprocess.run(

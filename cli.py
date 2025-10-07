@@ -10,7 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from zotero_mcp.server import mcp
+from server import mcp
 
 
 def obfuscate_sensitive_value(value, keep_chars=4):
@@ -42,7 +42,7 @@ def load_claude_desktop_env_vars():
     # Global guard to skip Claude detection entirely
     if str(os.environ.get("ZOTERO_NO_CLAUDE", "")).lower() in ("1", "true", "yes"):
         return {}
-    from zotero_mcp.setup_helper import find_claude_config
+    from setup_helper import find_claude_config
     
     try:
         config_path = find_claude_config()
@@ -200,7 +200,7 @@ def main():
         args.transport = "stdio"
     
     if args.command == "version":
-        from zotero_mcp._version import __version__
+        from _version import __version__
         print(f"Zotero MCP v{__version__}")
         sys.exit(0)
     
@@ -279,7 +279,7 @@ def main():
         config_path = Path.home() / ".config" / "zotero-mcp" / "config.json"
         if config_path.exists():
             try:
-                from zotero_mcp.semantic_search import create_semantic_search
+                from semantic_search import create_semantic_search
                 
                 # Get database status (similar to db-status command)
                 search = create_semantic_search(str(config_path))
@@ -313,14 +313,14 @@ def main():
         sys.exit(0)
     
     elif args.command == "setup":
-        from zotero_mcp.setup_helper import main as setup_main
+        from setup_helper import main as setup_main
         sys.exit(setup_main(args))
     
     elif args.command == "update-db":
         # Setup Zotero environment variables
         setup_zotero_environment()
         
-        from zotero_mcp.semantic_search import create_semantic_search
+        from semantic_search import create_semantic_search
         
         # Determine config path
         config_path = args.config_path
@@ -365,7 +365,7 @@ def main():
         # Setup Zotero environment variables
         setup_zotero_environment()
         
-        from zotero_mcp.semantic_search import create_semantic_search
+        from semantic_search import create_semantic_search
         
         # Determine config path
         config_path = args.config_path
@@ -407,7 +407,7 @@ def main():
         # Setup Zotero environment variables
         setup_zotero_environment()
 
-        from zotero_mcp.semantic_search import create_semantic_search
+        from semantic_search import create_semantic_search
         from collections import Counter
 
         # Determine config path
@@ -506,7 +506,7 @@ def main():
             sys.exit(1)
     
     elif args.command == "update":
-        from zotero_mcp.updater import update_zotero_mcp
+        from updater import update_zotero_mcp
         
         try:
             print("Checking for updates...")

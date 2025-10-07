@@ -639,27 +639,30 @@ class ZoteroSemanticSearch:
         
         return stats
     
-    def search(self, 
-               query: str, 
+    def search(self,
+               query: str,
                limit: int = 10,
-               filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+               filters: Optional[Dict[str, Any]] = None,
+               use_hybrid: Optional[bool] = None) -> Dict[str, Any]:
         """
         Perform semantic search over the Zotero library.
-        
+
         Args:
             query: Search query text
             limit: Maximum number of results to return
             filters: Optional metadata filters
-            
+            use_hybrid: Use hybrid search (dense + sparse vectors). If None, uses client default.
+
         Returns:
             Search results with Zotero item details
         """
         try:
-            # Perform semantic search
+            # Perform semantic search (hybrid or dense-only)
             results = self.qdrant_client.search(
                 query_texts=[query],
                 n_results=limit,
-                where=filters
+                where=filters,
+                use_hybrid=use_hybrid
             )
 
             # Enrich results with full Zotero item data

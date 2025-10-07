@@ -15,13 +15,75 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import (
     Distance,
     VectorParams,
+    SparseVectorParams,
+    SparseIndexParams,
     PointStruct,
     Filter,
     FieldCondition,
-    MatchValue
+    MatchValue,
+    SparseVector,
+    NamedVector,
+    NamedSparseVector
 )
 
 logger = logging.getLogger(__name__)
+
+
+class BM25SparseEmbedding:
+    """BM25-based sparse embeddings for hybrid search."""
+
+    def __init__(self):
+        """Initialize BM25 encoder."""
+        try:
+            from sklearn.feature_extraction.text import TfidfVectorizer
+            import numpy as np
+            self.vectorizer = TfidfVectorizer(
+                lowercase=True,
+                stop_words='english',
+                max_features=10000,
+                use_idf=True,
+                norm=None  # BM25 doesn't use L2 norm
+            )
+            self.np = np
+            self.fitted = False
+        except ImportError:
+            raise ImportError("scikit-learn is required for BM25 sparse embeddings")
+
+    def fit(self, documents: List[str]):
+        """Fit the BM25 model on documents."""
+        if documents:
+            self.vectorizer.fit(documents)
+            self.fitted = True
+
+    def encode(self, texts: List[str]) -> List[SparseVector]:
+        """
+        Encode texts to BM25 sparse vectors.
+
+        Args:
+            texts: List of texts to encode
+
+        Returns:
+            List of SparseVector objects for Qdrant
+        """
+        if not self.fitted:
+            # Fit on the input texts if not already fitted
+            self.fit(texts)
+
+        sparse_vectors = []
+        tfidf_matrix = self.vectorizer.transform(texts)
+
+        for i in range(tfidf_matrix.shape[0]):
+            row = tfidf_matrix[i]
+            # Get non-zero indices and values
+            indices = row.indices.tolist()
+            values = row.data.tolist()
+
+            sparse_vectors.append(SparseVector(
+                indices=indices,
+                values=values
+            ))
+
+        return sparse_vectors
 
 
 class OpenAIEmbeddingFunction:
@@ -132,7 +194,8 @@ class QdrantClientWrapper:
                  qdrant_url: str = "http://localhost:6333",
                  qdrant_api_key: Optional[str] = None,
                  embedding_model: str = "default",
-                 embedding_config: Optional[Dict[str, Any]] = None):
+                 embedding_config: Optional[Dict[str, Any]] = None,
+                 enable_hybrid_search: bool = True):
         """
         Initialize Qdrant client.
 
@@ -142,10 +205,12 @@ class QdrantClientWrapper:
             qdrant_api_key: API key for Qdrant (if using cloud)
             embedding_model: Model to use for embeddings ('default', 'openai', 'gemini')
             embedding_config: Configuration for the embedding model
+            enable_hybrid_search: Enable hybrid search with sparse vectors (default: True)
         """
         self.collection_name = collection_name
         self.embedding_model = embedding_model
         self.embedding_config = embedding_config or {}
+        self.enable_hybrid_search = enable_hybrid_search
 
         # Initialize Qdrant client
         self.client = QdrantClient(
@@ -156,6 +221,9 @@ class QdrantClientWrapper:
         # Set up embedding function
         self.embedding_function = self._create_embedding_function()
 
+        # Set up sparse embedding function for hybrid search
+        self.sparse_embedding = BM25SparseEmbedding() if enable_hybrid_search else None
+
         # Get or create collection
         try:
             # Check if collection exists
@@ -165,14 +233,34 @@ class QdrantClientWrapper:
             if not collection_exists:
                 # Create collection with appropriate vector size
                 vector_size = self.embedding_function.get_dimension()
-                self.client.create_collection(
-                    collection_name=self.collection_name,
-                    vectors_config=VectorParams(
-                        size=vector_size,
-                        distance=Distance.COSINE
+
+                if enable_hybrid_search:
+                    # Create collection with both dense and sparse vectors
+                    self.client.create_collection(
+                        collection_name=self.collection_name,
+                        vectors_config={
+                            "dense": VectorParams(
+                                size=vector_size,
+                                distance=Distance.COSINE
+                            )
+                        },
+                        sparse_vectors_config={
+                            "sparse": SparseVectorParams(
+                                index=SparseIndexParams()
+                            )
+                        }
                     )
-                )
-                logger.info(f"Created Qdrant collection '{self.collection_name}' with vector size {vector_size}")
+                    logger.info(f"Created hybrid Qdrant collection '{self.collection_name}' with dense (size {vector_size}) and sparse vectors")
+                else:
+                    # Create collection with only dense vectors
+                    self.client.create_collection(
+                        collection_name=self.collection_name,
+                        vectors_config=VectorParams(
+                            size=vector_size,
+                            distance=Distance.COSINE
+                        )
+                    )
+                    logger.info(f"Created Qdrant collection '{self.collection_name}' with vector size {vector_size}")
             else:
                 logger.info(f"Using existing Qdrant collection '{self.collection_name}'")
 
@@ -209,8 +297,16 @@ class QdrantClientWrapper:
             ids: List of unique IDs for each document
         """
         try:
-            # Generate embeddings
+            # Generate dense embeddings
             embeddings = self.embedding_function(documents)
+
+            # Generate sparse embeddings if hybrid search is enabled
+            sparse_embeddings = None
+            if self.enable_hybrid_search and self.sparse_embedding:
+                # Fit BM25 on documents if not already fitted
+                if not self.sparse_embedding.fitted:
+                    self.sparse_embedding.fit(documents)
+                sparse_embeddings = self.sparse_embedding.encode(documents)
 
             # Create points for Qdrant
             points = []
@@ -219,18 +315,31 @@ class QdrantClientWrapper:
                 payload = dict(metadata)
                 payload["document"] = documents[i]
 
-                points.append(PointStruct(
-                    id=doc_id,
-                    vector=embedding,
-                    payload=payload
-                ))
+                if self.enable_hybrid_search and sparse_embeddings:
+                    # Hybrid mode: use named vectors
+                    points.append(PointStruct(
+                        id=doc_id,
+                        vector={
+                            "dense": embedding,
+                            "sparse": sparse_embeddings[i]
+                        },
+                        payload=payload
+                    ))
+                else:
+                    # Dense-only mode
+                    points.append(PointStruct(
+                        id=doc_id,
+                        vector=embedding,
+                        payload=payload
+                    ))
 
             # Upload to Qdrant
             self.client.upsert(
                 collection_name=self.collection_name,
                 points=points
             )
-            logger.info(f"Added {len(documents)} documents to Qdrant collection")
+            mode = "hybrid" if self.enable_hybrid_search else "dense"
+            logger.info(f"Added {len(documents)} documents to Qdrant collection ({mode} mode)")
         except Exception as e:
             logger.error(f"Error adding documents to Qdrant: {e}")
             raise
@@ -254,22 +363,32 @@ class QdrantClientWrapper:
                query_texts: List[str],
                n_results: int = 10,
                where: Optional[Dict[str, Any]] = None,
-               where_document: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+               where_document: Optional[Dict[str, Any]] = None,
+               use_hybrid: Optional[bool] = None) -> Dict[str, Any]:
         """
-        Search for similar documents.
+        Search for similar documents using hybrid or dense-only search.
 
         Args:
             query_texts: List of query texts
             n_results: Number of results to return
             where: Metadata filter conditions
             where_document: Document content filter conditions
+            use_hybrid: Override to force hybrid or dense search (default: follows enable_hybrid_search)
 
         Returns:
             Search results in ChromaDB-compatible format
         """
         try:
+            # Determine search mode
+            hybrid_mode = use_hybrid if use_hybrid is not None else self.enable_hybrid_search
+
             # Generate query embeddings
             query_embeddings = self.embedding_function(query_texts)
+
+            # Generate sparse embeddings for hybrid search
+            query_sparse = None
+            if hybrid_mode and self.sparse_embedding:
+                query_sparse = self.sparse_embedding.encode(query_texts)
 
             all_results = {
                 "ids": [],
@@ -278,7 +397,7 @@ class QdrantClientWrapper:
                 "documents": []
             }
 
-            for query_embedding in query_embeddings:
+            for i, query_embedding in enumerate(query_embeddings):
                 # Build filter if provided
                 query_filter = None
                 if where:
@@ -286,12 +405,46 @@ class QdrantClientWrapper:
                     query_filter = self._build_filter(where)
 
                 # Search in Qdrant
-                search_result = self.client.search(
-                    collection_name=self.collection_name,
-                    query_vector=query_embedding,
-                    limit=n_results,
-                    query_filter=query_filter
-                )
+                if hybrid_mode and query_sparse:
+                    # Hybrid search with both dense and sparse vectors
+                    from qdrant_client.models import Prefetch, Query
+
+                    search_result = self.client.query_points(
+                        collection_name=self.collection_name,
+                        prefetch=[
+                            Prefetch(
+                                query=query_embedding,
+                                using="dense",
+                                limit=n_results * 2  # Over-fetch for better fusion
+                            ),
+                            Prefetch(
+                                query=query_sparse[i],
+                                using="sparse",
+                                limit=n_results * 2
+                            )
+                        ],
+                        query=Query(fusion="dbsf"),  # Distribution-Based Score Fusion
+                        limit=n_results,
+                        query_filter=query_filter
+                    ).points
+                else:
+                    # Dense-only search
+                    if self.enable_hybrid_search:
+                        # Collection has named vectors, use "dense"
+                        search_result = self.client.search(
+                            collection_name=self.collection_name,
+                            query_vector=("dense", query_embedding),
+                            limit=n_results,
+                            query_filter=query_filter
+                        )
+                    else:
+                        # Collection has single vector
+                        search_result = self.client.search(
+                            collection_name=self.collection_name,
+                            query_vector=query_embedding,
+                            limit=n_results,
+                            query_filter=query_filter
+                        )
 
                 # Convert to ChromaDB-compatible format
                 ids = [str(hit.id) for hit in search_result]
@@ -310,7 +463,8 @@ class QdrantClientWrapper:
                 all_results["metadatas"].append(metadatas)
                 all_results["documents"].append(documents)
 
-            logger.info(f"Semantic search returned {len(all_results['ids'][0]) if all_results['ids'] else 0} results")
+            mode = "hybrid" if hybrid_mode else "dense"
+            logger.info(f"Semantic search ({mode}) returned {len(all_results['ids'][0]) if all_results['ids'] else 0} results")
             return all_results
         except Exception as e:
             logger.error(f"Error performing semantic search: {e}")
@@ -373,14 +527,37 @@ class QdrantClientWrapper:
             self.client.delete_collection(collection_name=self.collection_name)
 
             vector_size = self.embedding_function.get_dimension()
-            self.client.create_collection(
-                collection_name=self.collection_name,
-                vectors_config=VectorParams(
-                    size=vector_size,
-                    distance=Distance.COSINE
+
+            if self.enable_hybrid_search:
+                # Create collection with both dense and sparse vectors
+                self.client.create_collection(
+                    collection_name=self.collection_name,
+                    vectors_config={
+                        "dense": VectorParams(
+                            size=vector_size,
+                            distance=Distance.COSINE
+                        )
+                    },
+                    sparse_vectors_config={
+                        "sparse": SparseVectorParams(
+                            index=SparseIndexParams()
+                        )
+                    }
                 )
-            )
-            logger.info(f"Reset Qdrant collection '{self.collection_name}'")
+                # Reset BM25 fitted state
+                if self.sparse_embedding:
+                    self.sparse_embedding.fitted = False
+                logger.info(f"Reset hybrid Qdrant collection '{self.collection_name}'")
+            else:
+                # Create collection with only dense vectors
+                self.client.create_collection(
+                    collection_name=self.collection_name,
+                    vectors_config=VectorParams(
+                        size=vector_size,
+                        distance=Distance.COSINE
+                    )
+                )
+                logger.info(f"Reset Qdrant collection '{self.collection_name}'")
         except Exception as e:
             logger.error(f"Error resetting collection: {e}")
             raise
@@ -457,10 +634,14 @@ def create_qdrant_client(config_path: Optional[str] = None) -> QdrantClientWrapp
                 "model_name": gemini_model
             }
 
+    # Get hybrid search configuration
+    enable_hybrid = config.get("enable_hybrid_search", True)
+
     return QdrantClientWrapper(
         collection_name=config["collection_name"],
         qdrant_url=config["qdrant_url"],
         qdrant_api_key=config["qdrant_api_key"],
         embedding_model=config["embedding_model"],
-        embedding_config=config["embedding_config"]
+        embedding_config=config["embedding_config"],
+        enable_hybrid_search=enable_hybrid
     )
