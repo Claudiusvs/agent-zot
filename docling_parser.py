@@ -13,6 +13,7 @@ import os
 
 from docling.document_converter import DocumentConverter
 from docling.chunking import HybridChunker
+from docling.datamodel.pipeline_options import PdfPipelineOptions, AcceleratorOptions
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,9 @@ class DoclingParser:
     def __init__(self,
                  tokenizer: str = "sentence-transformers/all-MiniLM-L6-v2",
                  max_tokens: Optional[int] = None,
-                 merge_peers: bool = True):
+                 merge_peers: bool = True,
+                 num_threads: int = 10,
+                 do_formula_enrichment: bool = True):
         """
         Initialize Docling parser with HybridChunker.
 
@@ -31,11 +34,25 @@ class DoclingParser:
             tokenizer: HuggingFace tokenizer model name (should match embedding model)
             max_tokens: Maximum tokens per chunk (if None, uses tokenizer's default)
             merge_peers: Whether to merge undersized chunks with same metadata (default: True)
+            num_threads: Number of CPU threads for parallel processing (default: 10)
+            do_formula_enrichment: Convert LaTeX formulas to text (default: True)
         """
         self.tokenizer = tokenizer
         self.max_tokens = max_tokens
         self.merge_peers = merge_peers
-        self.converter = DocumentConverter()
+
+        # Configure PDF pipeline options for optimized processing
+        pipeline_options = PdfPipelineOptions(
+            do_formula_enrichment=do_formula_enrichment,
+            accelerator_options=AcceleratorOptions(
+                num_threads=num_threads,
+                device="auto"
+            )
+        )
+
+        self.converter = DocumentConverter(
+            format_options={"pdf": pipeline_options}
+        )
 
         # Use HybridChunker for token-aware, structure-preserving chunking
         chunker_params = {

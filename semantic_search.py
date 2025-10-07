@@ -66,7 +66,9 @@ class ZoteroSemanticSearch:
         self.docling_parser = DoclingParser(
             tokenizer=docling_config.get("tokenizer", "sentence-transformers/all-MiniLM-L6-v2"),
             max_tokens=docling_config.get("max_tokens"),
-            merge_peers=docling_config.get("merge_peers", True)
+            merge_peers=docling_config.get("merge_peers", True),
+            num_threads=docling_config.get("num_threads", 10),
+            do_formula_enrichment=docling_config.get("do_formula_enrichment", True)
         )
 
         # Load update configuration
@@ -84,6 +86,8 @@ class ZoteroSemanticSearch:
             "tokenizer": "sentence-transformers/all-MiniLM-L6-v2",
             "max_tokens": 512,  # Good balance for embeddings
             "merge_peers": True,
+            "num_threads": 10,  # Optimized for 10-core CPU
+            "do_formula_enrichment": True,  # Convert LaTeX formulas to text
             "parse_tables": True,
             "parse_figures": True,
             "ocr": {
