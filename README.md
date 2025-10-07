@@ -8,41 +8,104 @@ This is a customized version of the [Zotero MCP Server](https://github.com/54yyy
 
 Based on [zotero-mcp](https://github.com/54yyyu/zotero-mcp) by @54yyyu
 
-## Modifications
+## Key Improvements
 
-### Current State (Backup)
-This repository contains the original ChromaDB-based implementation as a backup before migration.
+### ✅ Qdrant Vector Database
+- Production-ready vector database
+- Better performance and scalability
+- More efficient storage
+- Advanced filtering capabilities
+- Runs in Docker for easy management
 
-### Planned Changes
-- [ ] Replace ChromaDB client with Qdrant client
-- [ ] Integrate Docling for document parsing
-- [ ] Update embedding pipeline
-- [ ] Migrate existing vector data
+### ✅ Docling Document Parsing
+- Advanced PDF parsing with structure preservation
+- Table and figure extraction
+- Hierarchical chunking with overlap
+- Better handling of equations and special characters
+- Smart semantic boundary detection
 
-## Installation
+### Completed Changes
+- [x] Replace ChromaDB client with Qdrant client
+- [x] Integrate Docling for document parsing
+- [x] Update embedding pipeline
+- [x] Create migration guide
 
-Original installation path: `~/toolboxes/zotero-mcp-env/`
+## Quick Start
 
-### Configuration
+### Prerequisites
+- Docker installed and running
+- Python 3.12 virtual environment
+- Zotero with local API enabled
 
-Configuration file: `config_backup/config.json` (sanitized copy)
+### Installation
 
-Claude Desktop MCP config location:
+1. **Qdrant is already running** via Docker at `localhost:6333`
+2. **Dependencies installed** in `~/toolboxes/zotero-mcp-env/`
+3. **Update your config:**
+
+```bash
+cp config_examples/config_qdrant.json ~/.config/zotero-mcp/config.json
+# Edit with your API keys
 ```
-~/Library/Application Support/Claude/claude_desktop_config.json
+
+4. **Re-index your library** (recommended for best results):
+
+```bash
+source ~/toolboxes/zotero-mcp-env/bin/activate
+zotero-mcp update-database --force-rebuild --extract-fulltext
 ```
 
-### ChromaDB Data
+See [MIGRATION_GUIDE.md](./MIGRATION_GUIDE.md) for detailed instructions.
 
+## Architecture
+
+### Components
+- **qdrant_client_wrapper.py** - Qdrant database integration
+- **docling_parser.py** - Advanced document parsing with Docling
+- **semantic_search.py** - Updated search implementation
+- **server.py** - MCP server (unchanged, compatible interface)
+
+### Data Flow
+1. Zotero items fetched via API or local database
+2. PDFs parsed with Docling → structured chunks
+3. Chunks embedded via OpenAI API
+4. Stored in Qdrant with metadata
+5. Semantic search via vector similarity
+
+## Configuration
+
+### Old ChromaDB Setup
 **Size:** 1.7GB
 **Location:** `~/.config/zotero-mcp/chroma_db/`
-**Note:** Not included in git due to size. Backed up locally.
+**Status:** Can be removed after successful migration
 
-## Backup Instructions
+### New Qdrant Setup
+**Location:** `~/agent-zot/qdrant_storage/`
+**Container:** `agent-zot-qdrant`
+**Managed by:** Docker
 
-To back up ChromaDB data separately:
+## Development
+
+### Testing Locally
+
 ```bash
-tar -czf chroma_backup_$(date +%Y%m%d).tar.gz ~/.config/zotero-mcp/chroma_db/
+# Check Qdrant status
+curl http://localhost:6333/collections
+
+# View Docker logs
+docker logs agent-zot-qdrant
+
+# Test search
+# Ask Claude via MCP: "Search my library for papers about X"
+```
+
+### Committing Changes
+
+```bash
+cd ~/agent-zot
+git add .
+git commit -m "feat: migrate to Qdrant + Docling"
+git push origin main
 ```
 
 ## License

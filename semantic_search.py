@@ -1,9 +1,9 @@
 """
 Semantic search functionality for Zotero MCP.
 
-This module provides semantic search capabilities by integrating ChromaDB
+This module provides semantic search capabilities by integrating Qdrant
 with the existing Zotero client to enable vector-based similarity search
-over research libraries.
+over research libraries. Uses Docling for enhanced document parsing.
 """
 
 import json
@@ -17,7 +17,8 @@ import logging
 
 from pyzotero import zotero
 
-from .chroma_client import ChromaClient, create_chroma_client
+from .qdrant_client_wrapper import QdrantClientWrapper, create_qdrant_client
+from .docling_parser import DoclingParser, parse_zotero_attachment
 from .client import get_zotero_client
 from .utils import format_creators, is_local_mode
 from .local_db import LocalZoteroReader, get_local_zotero_reader
@@ -38,22 +39,25 @@ def suppress_stdout():
 
 
 class ZoteroSemanticSearch:
-    """Semantic search interface for Zotero libraries using ChromaDB."""
-    
-    def __init__(self, 
-                 chroma_client: Optional[ChromaClient] = None,
+    """Semantic search interface for Zotero libraries using Qdrant and Docling."""
+
+    def __init__(self,
+                 qdrant_client: Optional[QdrantClientWrapper] = None,
                  config_path: Optional[str] = None):
         """
         Initialize semantic search.
-        
+
         Args:
-            chroma_client: Optional ChromaClient instance
+            qdrant_client: Optional QdrantClientWrapper instance
             config_path: Path to configuration file
         """
-        self.chroma_client = chroma_client or create_chroma_client(config_path)
+        self.qdrant_client = qdrant_client or create_qdrant_client(config_path)
         self.zotero_client = get_zotero_client()
         self.config_path = config_path
-        
+
+        # Initialize Docling parser
+        self.docling_parser = DoclingParser()
+
         # Load update configuration
         self.update_config = self._load_update_config()
     
@@ -522,7 +526,7 @@ class ZoteroSemanticSearch:
             # Reset collection if force rebuild
             if force_full_rebuild:
                 logger.info("Force rebuilding database...")
-                self.chroma_client.reset_collection()
+                self.qdrant_client.reset_collection()
             
             # Get all items from either local DB or API
             # Get all items from either local DB or API
@@ -599,38 +603,38 @@ class ZoteroSemanticSearch:
                     continue
                 
                 # Check if item exists and needs update
-                if not force_rebuild and self.chroma_client.document_exists(item_key):
+                if not force_rebuild and self.qdrant_client.document_exists(item_key):
                     # For now, skip existing items (could implement update logic here)
                     stats["skipped"] += 1
                     continue
-                
+
                 # Create document text and metadata
                 # Prefer fulltext if available, else fall back to structured fields
                 fulltext = item.get("data", {}).get("fulltext", "")
                 doc_text = fulltext if fulltext.strip() else self._create_document_text(item)
                 metadata = self._create_metadata(item)
-                
+
                 if not doc_text.strip():
                     stats["skipped"] += 1
                     continue
-                
+
                 documents.append(doc_text)
                 metadatas.append(metadata)
                 ids.append(item_key)
-                
+
                 stats["processed"] += 1
                 
             except Exception as e:
                 logger.error(f"Error processing item {item.get('key', 'unknown')}: {e}")
                 stats["errors"] += 1
         
-        # Add documents to ChromaDB if any
+        # Add documents to Qdrant if any
         if documents:
             try:
-                self.chroma_client.upsert_documents(documents, metadatas, ids)
+                self.qdrant_client.upsert_documents(documents, metadatas, ids)
                 stats["added"] += len(documents)
             except Exception as e:
-                logger.error(f"Error adding documents to ChromaDB: {e}")
+                logger.error(f"Error adding documents to Qdrant: {e}")
                 stats["errors"] += len(documents)
         
         return stats
@@ -652,15 +656,15 @@ class ZoteroSemanticSearch:
         """
         try:
             # Perform semantic search
-            results = self.chroma_client.search(
+            results = self.qdrant_client.search(
                 query_texts=[query],
                 n_results=limit,
                 where=filters
             )
-            
+
             # Enrich results with full Zotero item data
             enriched_results = self._enrich_search_results(results, query)
-            
+
             return {
                 "query": query,
                 "limit": limit,
@@ -668,7 +672,7 @@ class ZoteroSemanticSearch:
                 "results": enriched_results,
                 "total_found": len(enriched_results)
             }
-            
+
         except Exception as e:
             logger.error(f"Error performing semantic search: {e}")
             return {
@@ -680,17 +684,17 @@ class ZoteroSemanticSearch:
                 "error": str(e)
             }
     
-    def _enrich_search_results(self, chroma_results: Dict[str, Any], query: str) -> List[Dict[str, Any]]:
-        """Enrich ChromaDB results with full Zotero item data."""
+    def _enrich_search_results(self, qdrant_results: Dict[str, Any], query: str) -> List[Dict[str, Any]]:
+        """Enrich Qdrant results with full Zotero item data."""
         enriched = []
         
-        if not chroma_results.get("ids") or not chroma_results["ids"][0]:
+        if not qdrant_results.get("ids") or not qdrant_results["ids"][0]:
             return enriched
-        
-        ids = chroma_results["ids"][0]
-        distances = chroma_results.get("distances", [[]])[0]
-        documents = chroma_results.get("documents", [[]])[0]
-        metadatas = chroma_results.get("metadatas", [[]])[0]
+
+        ids = qdrant_results["ids"][0]
+        distances = qdrant_results.get("distances", [[]])[0]
+        documents = qdrant_results.get("documents", [[]])[0]
+        metadatas = qdrant_results.get("metadatas", [[]])[0]
         
         for i, item_key in enumerate(ids):
             try:
@@ -724,19 +728,19 @@ class ZoteroSemanticSearch:
     
     def get_database_status(self) -> Dict[str, Any]:
         """Get status information about the semantic search database."""
-        collection_info = self.chroma_client.get_collection_info()
-        
+        collection_info = self.qdrant_client.get_collection_info()
+
         return {
             "collection_info": collection_info,
             "update_config": self.update_config,
             "should_update": self.should_update_database(),
             "last_update": self.update_config.get("last_update"),
         }
-    
+
     def delete_item(self, item_key: str) -> bool:
         """Delete an item from the semantic search database."""
         try:
-            self.chroma_client.delete_documents([item_key])
+            self.qdrant_client.delete_documents([item_key])
             return True
         except Exception as e:
             logger.error(f"Error deleting item {item_key}: {e}")

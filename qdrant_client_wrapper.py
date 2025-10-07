@@ -1,0 +1,466 @@
+"""
+Qdrant client for semantic search functionality.
+
+This module provides persistent vector database storage and embedding functions
+for semantic search over Zotero libraries using Qdrant.
+"""
+
+import json
+import os
+from pathlib import Path
+from typing import Dict, List, Optional, Any
+import logging
+
+from qdrant_client import QdrantClient
+from qdrant_client.models import (
+    Distance,
+    VectorParams,
+    PointStruct,
+    Filter,
+    FieldCondition,
+    MatchValue
+)
+
+logger = logging.getLogger(__name__)
+
+
+class OpenAIEmbeddingFunction:
+    """Custom OpenAI embedding function for Qdrant."""
+
+    def __init__(self, model_name: str = "text-embedding-3-small", api_key: Optional[str] = None):
+        self.model_name = model_name
+        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        if not self.api_key:
+            raise ValueError("OpenAI API key is required")
+
+        try:
+            import openai
+            self.client = openai.OpenAI(api_key=self.api_key)
+        except ImportError:
+            raise ImportError("openai package is required for OpenAI embeddings")
+
+    def name(self) -> str:
+        """Return the name of this embedding function."""
+        return "openai"
+
+    def __call__(self, input: List[str]) -> List[List[float]]:
+        """Generate embeddings using OpenAI API."""
+        response = self.client.embeddings.create(
+            model=self.model_name,
+            input=input
+        )
+        return [data.embedding for data in response.data]
+
+    def get_dimension(self) -> int:
+        """Get the dimension of embeddings for this model."""
+        # text-embedding-3-small: 1536, text-embedding-3-large: 3072
+        if "large" in self.model_name:
+            return 3072
+        return 1536
+
+
+class GeminiEmbeddingFunction:
+    """Custom Gemini embedding function for Qdrant using google-genai."""
+
+    def __init__(self, model_name: str = "models/text-embedding-004", api_key: Optional[str] = None):
+        self.model_name = model_name
+        self.api_key = api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        if not self.api_key:
+            raise ValueError("Gemini API key is required")
+
+        try:
+            from google import genai
+            from google.genai import types
+            self.client = genai.Client(api_key=self.api_key)
+            self.types = types
+        except ImportError:
+            raise ImportError("google-genai package is required for Gemini embeddings")
+
+    def name(self) -> str:
+        """Return the name of this embedding function."""
+        return "gemini"
+
+    def __call__(self, input: List[str]) -> List[List[float]]:
+        """Generate embeddings using Gemini API."""
+        embeddings = []
+        for text in input:
+            response = self.client.models.embed_content(
+                model=self.model_name,
+                contents=[text],
+                config=self.types.EmbedContentConfig(
+                    task_type="retrieval_document",
+                    title="Zotero library document"
+                )
+            )
+            embeddings.append(response.embeddings[0].values)
+        return embeddings
+
+    def get_dimension(self) -> int:
+        """Get the dimension of embeddings for this model."""
+        return 768  # text-embedding-004 produces 768-dimensional embeddings
+
+
+class DefaultEmbeddingFunction:
+    """Default embedding function using sentence-transformers."""
+
+    def __init__(self):
+        try:
+            from sentence_transformers import SentenceTransformer
+            self.model = SentenceTransformer('all-MiniLM-L6-v2')
+        except ImportError:
+            raise ImportError("sentence-transformers package is required for default embeddings")
+
+    def name(self) -> str:
+        """Return the name of this embedding function."""
+        return "default"
+
+    def __call__(self, input: List[str]) -> List[List[float]]:
+        """Generate embeddings using sentence-transformers."""
+        embeddings = self.model.encode(input)
+        return embeddings.tolist()
+
+    def get_dimension(self) -> int:
+        """Get the dimension of embeddings for this model."""
+        return 384  # all-MiniLM-L6-v2 produces 384-dimensional embeddings
+
+
+class QdrantClientWrapper:
+    """Qdrant client for Zotero semantic search."""
+
+    def __init__(self,
+                 collection_name: str = "zotero_library",
+                 qdrant_url: str = "http://localhost:6333",
+                 qdrant_api_key: Optional[str] = None,
+                 embedding_model: str = "default",
+                 embedding_config: Optional[Dict[str, Any]] = None):
+        """
+        Initialize Qdrant client.
+
+        Args:
+            collection_name: Name of the Qdrant collection
+            qdrant_url: URL of the Qdrant server
+            qdrant_api_key: API key for Qdrant (if using cloud)
+            embedding_model: Model to use for embeddings ('default', 'openai', 'gemini')
+            embedding_config: Configuration for the embedding model
+        """
+        self.collection_name = collection_name
+        self.embedding_model = embedding_model
+        self.embedding_config = embedding_config or {}
+
+        # Initialize Qdrant client
+        self.client = QdrantClient(
+            url=qdrant_url,
+            api_key=qdrant_api_key
+        )
+
+        # Set up embedding function
+        self.embedding_function = self._create_embedding_function()
+
+        # Get or create collection
+        try:
+            # Check if collection exists
+            collections = self.client.get_collections().collections
+            collection_exists = any(c.name == self.collection_name for c in collections)
+
+            if not collection_exists:
+                # Create collection with appropriate vector size
+                vector_size = self.embedding_function.get_dimension()
+                self.client.create_collection(
+                    collection_name=self.collection_name,
+                    vectors_config=VectorParams(
+                        size=vector_size,
+                        distance=Distance.COSINE
+                    )
+                )
+                logger.info(f"Created Qdrant collection '{self.collection_name}' with vector size {vector_size}")
+            else:
+                logger.info(f"Using existing Qdrant collection '{self.collection_name}'")
+
+        except Exception as e:
+            logger.error(f"Error initializing Qdrant collection: {e}")
+            raise
+
+    def _create_embedding_function(self):
+        """Create the appropriate embedding function based on configuration."""
+        if self.embedding_model == "openai":
+            model_name = self.embedding_config.get("model_name", "text-embedding-3-small")
+            api_key = self.embedding_config.get("api_key")
+            return OpenAIEmbeddingFunction(model_name=model_name, api_key=api_key)
+
+        elif self.embedding_model == "gemini":
+            model_name = self.embedding_config.get("model_name", "models/text-embedding-004")
+            api_key = self.embedding_config.get("api_key")
+            return GeminiEmbeddingFunction(model_name=model_name, api_key=api_key)
+
+        else:
+            # Use default sentence-transformers embedding
+            return DefaultEmbeddingFunction()
+
+    def add_documents(self,
+                     documents: List[str],
+                     metadatas: List[Dict[str, Any]],
+                     ids: List[str]) -> None:
+        """
+        Add documents to the collection.
+
+        Args:
+            documents: List of document texts to embed
+            metadatas: List of metadata dictionaries for each document
+            ids: List of unique IDs for each document
+        """
+        try:
+            # Generate embeddings
+            embeddings = self.embedding_function(documents)
+
+            # Create points for Qdrant
+            points = []
+            for i, (doc_id, embedding, metadata) in enumerate(zip(ids, embeddings, metadatas)):
+                # Add document text to metadata
+                payload = dict(metadata)
+                payload["document"] = documents[i]
+
+                points.append(PointStruct(
+                    id=doc_id,
+                    vector=embedding,
+                    payload=payload
+                ))
+
+            # Upload to Qdrant
+            self.client.upsert(
+                collection_name=self.collection_name,
+                points=points
+            )
+            logger.info(f"Added {len(documents)} documents to Qdrant collection")
+        except Exception as e:
+            logger.error(f"Error adding documents to Qdrant: {e}")
+            raise
+
+    def upsert_documents(self,
+                        documents: List[str],
+                        metadatas: List[Dict[str, Any]],
+                        ids: List[str]) -> None:
+        """
+        Upsert (update or insert) documents to the collection.
+
+        Args:
+            documents: List of document texts to embed
+            metadatas: List of metadata dictionaries for each document
+            ids: List of unique IDs for each document
+        """
+        # In Qdrant, upsert is the same as add
+        self.add_documents(documents, metadatas, ids)
+
+    def search(self,
+               query_texts: List[str],
+               n_results: int = 10,
+               where: Optional[Dict[str, Any]] = None,
+               where_document: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Search for similar documents.
+
+        Args:
+            query_texts: List of query texts
+            n_results: Number of results to return
+            where: Metadata filter conditions
+            where_document: Document content filter conditions
+
+        Returns:
+            Search results in ChromaDB-compatible format
+        """
+        try:
+            # Generate query embeddings
+            query_embeddings = self.embedding_function(query_texts)
+
+            all_results = {
+                "ids": [],
+                "distances": [],
+                "metadatas": [],
+                "documents": []
+            }
+
+            for query_embedding in query_embeddings:
+                # Build filter if provided
+                query_filter = None
+                if where:
+                    # Convert ChromaDB-style filter to Qdrant filter
+                    query_filter = self._build_filter(where)
+
+                # Search in Qdrant
+                search_result = self.client.search(
+                    collection_name=self.collection_name,
+                    query_vector=query_embedding,
+                    limit=n_results,
+                    query_filter=query_filter
+                )
+
+                # Convert to ChromaDB-compatible format
+                ids = [str(hit.id) for hit in search_result]
+                distances = [1 - hit.score for hit in search_result]  # Convert similarity to distance
+                metadatas = []
+                documents = []
+
+                for hit in search_result:
+                    payload = dict(hit.payload)
+                    document = payload.pop("document", "")
+                    metadatas.append(payload)
+                    documents.append(document)
+
+                all_results["ids"].append(ids)
+                all_results["distances"].append(distances)
+                all_results["metadatas"].append(metadatas)
+                all_results["documents"].append(documents)
+
+            logger.info(f"Semantic search returned {len(all_results['ids'][0]) if all_results['ids'] else 0} results")
+            return all_results
+        except Exception as e:
+            logger.error(f"Error performing semantic search: {e}")
+            raise
+
+    def _build_filter(self, where: Dict[str, Any]) -> Filter:
+        """Convert ChromaDB-style filter to Qdrant filter."""
+        # Simple conversion for basic equality filters
+        # This can be extended for more complex filters
+        conditions = []
+        for key, value in where.items():
+            conditions.append(
+                FieldCondition(
+                    key=key,
+                    match=MatchValue(value=value)
+                )
+            )
+        return Filter(must=conditions) if conditions else None
+
+    def delete_documents(self, ids: List[str]) -> None:
+        """
+        Delete documents from the collection.
+
+        Args:
+            ids: List of document IDs to delete
+        """
+        try:
+            self.client.delete(
+                collection_name=self.collection_name,
+                points_selector=ids
+            )
+            logger.info(f"Deleted {len(ids)} documents from Qdrant collection")
+        except Exception as e:
+            logger.error(f"Error deleting documents from Qdrant: {e}")
+            raise
+
+    def get_collection_info(self) -> Dict[str, Any]:
+        """Get information about the collection."""
+        try:
+            collection_info = self.client.get_collection(self.collection_name)
+            return {
+                "name": self.collection_name,
+                "count": collection_info.points_count,
+                "embedding_model": self.embedding_model,
+                "vector_size": collection_info.config.params.vectors.size
+            }
+        except Exception as e:
+            logger.error(f"Error getting collection info: {e}")
+            return {
+                "name": self.collection_name,
+                "count": 0,
+                "embedding_model": self.embedding_model,
+                "error": str(e)
+            }
+
+    def reset_collection(self) -> None:
+        """Reset (clear) the collection."""
+        try:
+            # Delete and recreate collection
+            self.client.delete_collection(collection_name=self.collection_name)
+
+            vector_size = self.embedding_function.get_dimension()
+            self.client.create_collection(
+                collection_name=self.collection_name,
+                vectors_config=VectorParams(
+                    size=vector_size,
+                    distance=Distance.COSINE
+                )
+            )
+            logger.info(f"Reset Qdrant collection '{self.collection_name}'")
+        except Exception as e:
+            logger.error(f"Error resetting collection: {e}")
+            raise
+
+    def document_exists(self, doc_id: str) -> bool:
+        """Check if a document exists in the collection."""
+        try:
+            result = self.client.retrieve(
+                collection_name=self.collection_name,
+                ids=[doc_id]
+            )
+            return len(result) > 0
+        except Exception:
+            return False
+
+
+def create_qdrant_client(config_path: Optional[str] = None) -> QdrantClientWrapper:
+    """
+    Create a QdrantClientWrapper instance from configuration.
+
+    Args:
+        config_path: Path to configuration file
+
+    Returns:
+        Configured QdrantClientWrapper instance
+    """
+    # Default configuration
+    config = {
+        "collection_name": "zotero_library",
+        "qdrant_url": "http://localhost:6333",
+        "qdrant_api_key": None,
+        "embedding_model": "default",
+        "embedding_config": {}
+    }
+
+    # Load configuration from file if it exists
+    if config_path and os.path.exists(config_path):
+        try:
+            with open(config_path, 'r') as f:
+                file_config = json.load(f)
+                config.update(file_config.get("semantic_search", {}))
+        except Exception as e:
+            logger.warning(f"Error loading config from {config_path}: {e}")
+
+    # Load configuration from environment variables
+    env_embedding_model = os.getenv("ZOTERO_EMBEDDING_MODEL")
+    if env_embedding_model:
+        config["embedding_model"] = env_embedding_model
+
+    qdrant_url = os.getenv("QDRANT_URL")
+    if qdrant_url:
+        config["qdrant_url"] = qdrant_url
+
+    qdrant_api_key = os.getenv("QDRANT_API_KEY")
+    if qdrant_api_key:
+        config["qdrant_api_key"] = qdrant_api_key
+
+    # Set up embedding config from environment
+    if config["embedding_model"] == "openai":
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        openai_model = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+        if openai_api_key:
+            config["embedding_config"] = {
+                "api_key": openai_api_key,
+                "model_name": openai_model
+            }
+
+    elif config["embedding_model"] == "gemini":
+        gemini_api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        gemini_model = os.getenv("GEMINI_EMBEDDING_MODEL", "models/text-embedding-004")
+        if gemini_api_key:
+            config["embedding_config"] = {
+                "api_key": gemini_api_key,
+                "model_name": gemini_model
+            }
+
+    return QdrantClientWrapper(
+        collection_name=config["collection_name"],
+        qdrant_url=config["qdrant_url"],
+        qdrant_api_key=config["qdrant_api_key"],
+        embedding_model=config["embedding_model"],
+        embedding_config=config["embedding_config"]
+    )

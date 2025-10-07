@@ -1,0 +1,35 @@
+{
+  "client_env": {
+    "ZOTERO_LOCAL": "true",
+    "ZOTERO_API_KEY": "YOUR_ZOTERO_API_KEY",
+    "ZOTERO_LIBRARY_ID": "YOUR_LIBRARY_ID",
+    "ZOTERO_LIBRARY_TYPE": "user",
+    "OPENAI_API_KEY": "YOUR_OPENAI_API_KEY"
+  },
+  "semantic_search": {
+    "embedding_model": "openai",
+    "openai_model": "text-embedding-3-large",
+    "collection_name": "zotero_library_qdrant",
+    "qdrant_url": "http://localhost:6333",
+    "qdrant_api_key": null,
+    "embedding_config": {
+      "api_key": "YOUR_OPENAI_API_KEY",
+      "model_name": "text-embedding-3-large"
+    },
+    "update_config": {
+      "auto_update": false,
+      "update_frequency": "manual",
+      "last_update": null,
+      "update_days": 7
+    },
+    "extraction": {
+      "pdf_max_pages": 1000
+    },
+    "docling": {
+      "chunk_size": 1000,
+      "chunk_overlap": 200,
+      "parse_tables": true,
+      "parse_figures": true
+    }
+  }
+}
