@@ -23,7 +23,14 @@ from qdrant_client.models import (
     MatchValue,
     SparseVector,
     NamedVector,
-    NamedSparseVector
+    NamedSparseVector,
+    HnswConfigDiff,
+    OptimizersConfigDiff,
+    ScalarQuantization,
+    ScalarQuantizationConfig,
+    ScalarType,
+    QuantizationSearchParams,
+    PayloadSchemaType
 )
 
 logger = logging.getLogger(__name__)
@@ -195,9 +202,13 @@ class QdrantClientWrapper:
                  qdrant_api_key: Optional[str] = None,
                  embedding_model: str = "default",
                  embedding_config: Optional[Dict[str, Any]] = None,
-                 enable_hybrid_search: bool = True):
+                 enable_hybrid_search: bool = True,
+                 enable_quantization: bool = True,
+                 hnsw_m: int = 32,
+                 hnsw_ef_construct: int = 200,
+                 enable_reranking: bool = True):
         """
-        Initialize Qdrant client.
+        Initialize Qdrant client with optimizations.
 
         Args:
             collection_name: Name of the Qdrant collection
@@ -206,11 +217,19 @@ class QdrantClientWrapper:
             embedding_model: Model to use for embeddings ('default', 'openai', 'gemini')
             embedding_config: Configuration for the embedding model
             enable_hybrid_search: Enable hybrid search with sparse vectors (default: True)
+            enable_quantization: Enable scalar quantization (75% memory savings, default: True)
+            hnsw_m: HNSW graph connections per node (default: 32, higher=better recall)
+            hnsw_ef_construct: HNSW build-time accuracy (default: 200, higher=better quality)
+            enable_reranking: Enable cross-encoder reranking (default: True)
         """
         self.collection_name = collection_name
         self.embedding_model = embedding_model
         self.embedding_config = embedding_config or {}
         self.enable_hybrid_search = enable_hybrid_search
+        self.enable_quantization = enable_quantization
+        self.hnsw_m = hnsw_m
+        self.hnsw_ef_construct = hnsw_ef_construct
+        self.enable_reranking = enable_reranking
 
         # Initialize Qdrant client
         self.client = QdrantClient(
@@ -224,6 +243,11 @@ class QdrantClientWrapper:
         # Set up sparse embedding function for hybrid search
         self.sparse_embedding = BM25SparseEmbedding() if enable_hybrid_search else None
 
+        # Initialize cross-encoder for reranking
+        self.reranker = None
+        if self.enable_reranking:
+            self._initialize_reranker()
+
         # Get or create collection
         try:
             # Check if collection exists
@@ -231,8 +255,30 @@ class QdrantClientWrapper:
             collection_exists = any(c.name == self.collection_name for c in collections)
 
             if not collection_exists:
-                # Create collection with appropriate vector size
+                # Create collection with appropriate vector size and optimizations
                 vector_size = self.embedding_function.get_dimension()
+
+                # Configure HNSW index parameters
+                hnsw_config = HnswConfigDiff(
+                    m=self.hnsw_m,  # Number of edges per node (higher = better recall)
+                    ef_construct=self.hnsw_ef_construct  # Build-time accuracy
+                )
+
+                # Configure optimizers
+                optimizer_config = OptimizersConfigDiff(
+                    indexing_threshold=20000  # Optimize after 20k vectors
+                )
+
+                # Configure quantization if enabled
+                quantization_config = None
+                if self.enable_quantization:
+                    quantization_config = ScalarQuantization(
+                        scalar=ScalarQuantizationConfig(
+                            type=ScalarType.INT8,  # 8-bit quantization
+                            quantile=0.99,  # Outlier handling
+                            always_ram=True  # Keep quantized vectors in RAM for speed
+                        )
+                    )
 
                 if enable_hybrid_search:
                     # Create collection with both dense and sparse vectors
@@ -241,32 +287,91 @@ class QdrantClientWrapper:
                         vectors_config={
                             "dense": VectorParams(
                                 size=vector_size,
-                                distance=Distance.COSINE
+                                distance=Distance.COSINE,
+                                hnsw_config=hnsw_config,
+                                quantization_config=quantization_config
                             )
                         },
                         sparse_vectors_config={
                             "sparse": SparseVectorParams(
                                 index=SparseIndexParams()
                             )
-                        }
+                        },
+                        optimizers_config=optimizer_config
                     )
-                    logger.info(f"Created hybrid Qdrant collection '{self.collection_name}' with dense (size {vector_size}) and sparse vectors")
+                    logger.info(f"Created optimized hybrid Qdrant collection '{self.collection_name}':")
+                    logger.info(f"  - Dense vectors: {vector_size}D, HNSW(m={self.hnsw_m}, ef={self.hnsw_ef_construct})")
+                    logger.info(f"  - Quantization: {'Enabled (INT8)' if self.enable_quantization else 'Disabled'}")
+                    logger.info(f"  - Sparse vectors: Enabled (BM25)")
                 else:
                     # Create collection with only dense vectors
                     self.client.create_collection(
                         collection_name=self.collection_name,
                         vectors_config=VectorParams(
                             size=vector_size,
-                            distance=Distance.COSINE
-                        )
+                            distance=Distance.COSINE,
+                            hnsw_config=hnsw_config,
+                            quantization_config=quantization_config
+                        ),
+                        optimizers_config=optimizer_config
                     )
-                    logger.info(f"Created Qdrant collection '{self.collection_name}' with vector size {vector_size}")
+                    logger.info(f"Created optimized Qdrant collection '{self.collection_name}':")
+                    logger.info(f"  - Vectors: {vector_size}D, HNSW(m={self.hnsw_m}, ef={self.hnsw_ef_construct})")
+                    logger.info(f"  - Quantization: {'Enabled (INT8)' if self.enable_quantization else 'Disabled'}")
+
+                # Create payload indexes for fast filtering
+                self._create_payload_indexes()
             else:
                 logger.info(f"Using existing Qdrant collection '{self.collection_name}'")
 
         except Exception as e:
             logger.error(f"Error initializing Qdrant collection: {e}")
             raise
+
+    def _create_payload_indexes(self):
+        """Create indexes on payload fields for fast filtering."""
+        try:
+            # Index on item_key for fast paper lookups
+            self.client.create_payload_index(
+                collection_name=self.collection_name,
+                field_name="item_key",
+                field_schema=PayloadSchemaType.KEYWORD
+            )
+
+            # Index on year for temporal filtering
+            self.client.create_payload_index(
+                collection_name=self.collection_name,
+                field_name="year",
+                field_schema=PayloadSchemaType.INTEGER
+            )
+
+            # Index on item_type for document type filtering
+            self.client.create_payload_index(
+                collection_name=self.collection_name,
+                field_name="item_type",
+                field_schema=PayloadSchemaType.KEYWORD
+            )
+
+            logger.info("Created payload indexes on item_key, year, item_type")
+
+        except Exception as e:
+            logger.warning(f"Error creating payload indexes (may already exist): {e}")
+
+    def _initialize_reranker(self):
+        """Initialize cross-encoder model for reranking."""
+        try:
+            from sentence_transformers import CrossEncoder
+            # Use a high-quality cross-encoder for reranking
+            self.reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
+            logger.info("Initialized cross-encoder reranker (ms-marco-MiniLM-L-6-v2)")
+        except ImportError:
+            logger.warning("sentence-transformers required for reranking, disabling reranking")
+            self.enable_reranking = False
+            self.reranker = None
+        except Exception as e:
+            logger.warning(f"Error initializing reranker: {e}, disabling reranking")
+            self.enable_reranking = False
+            self.reranker = None
 
     def _create_embedding_function(self):
         """Create the appropriate embedding function based on configuration."""
@@ -287,59 +392,75 @@ class QdrantClientWrapper:
     def add_documents(self,
                      documents: List[str],
                      metadatas: List[Dict[str, Any]],
-                     ids: List[str]) -> None:
+                     ids: List[str],
+                     batch_size: int = 100) -> None:
         """
-        Add documents to the collection.
+        Add documents to the collection with batch processing.
 
         Args:
             documents: List of document texts to embed
             metadatas: List of metadata dictionaries for each document
             ids: List of unique IDs for each document
+            batch_size: Number of documents to process in each batch (default: 100)
         """
         try:
-            # Generate dense embeddings
-            embeddings = self.embedding_function(documents)
-
-            # Generate sparse embeddings if hybrid search is enabled
-            sparse_embeddings = None
-            if self.enable_hybrid_search and self.sparse_embedding:
-                # Fit BM25 on documents if not already fitted
-                if not self.sparse_embedding.fitted:
-                    self.sparse_embedding.fit(documents)
-                sparse_embeddings = self.sparse_embedding.encode(documents)
-
-            # Create points for Qdrant
-            points = []
-            for i, (doc_id, embedding, metadata) in enumerate(zip(ids, embeddings, metadatas)):
-                # Add document text to metadata
-                payload = dict(metadata)
-                payload["document"] = documents[i]
-
-                if self.enable_hybrid_search and sparse_embeddings:
-                    # Hybrid mode: use named vectors
-                    points.append(PointStruct(
-                        id=doc_id,
-                        vector={
-                            "dense": embedding,
-                            "sparse": sparse_embeddings[i]
-                        },
-                        payload=payload
-                    ))
-                else:
-                    # Dense-only mode
-                    points.append(PointStruct(
-                        id=doc_id,
-                        vector=embedding,
-                        payload=payload
-                    ))
-
-            # Upload to Qdrant
-            self.client.upsert(
-                collection_name=self.collection_name,
-                points=points
-            )
+            total_docs = len(documents)
             mode = "hybrid" if self.enable_hybrid_search else "dense"
-            logger.info(f"Added {len(documents)} documents to Qdrant collection ({mode} mode)")
+
+            # Process in batches for better performance
+            for batch_start in range(0, total_docs, batch_size):
+                batch_end = min(batch_start + batch_size, total_docs)
+                batch_docs = documents[batch_start:batch_end]
+                batch_metas = metadatas[batch_start:batch_end]
+                batch_ids = ids[batch_start:batch_end]
+
+                logger.info(f"Processing batch {batch_start//batch_size + 1}/{(total_docs + batch_size - 1)//batch_size} ({len(batch_docs)} docs)")
+
+                # Generate dense embeddings for batch
+                embeddings = self.embedding_function(batch_docs)
+
+                # Generate sparse embeddings if hybrid search is enabled
+                sparse_embeddings = None
+                if self.enable_hybrid_search and self.sparse_embedding:
+                    # Fit BM25 on documents if not already fitted
+                    if not self.sparse_embedding.fitted:
+                        self.sparse_embedding.fit(batch_docs)
+                    sparse_embeddings = self.sparse_embedding.encode(batch_docs)
+
+                # Create points for Qdrant
+                points = []
+                for i, (doc_id, embedding, metadata) in enumerate(zip(batch_ids, embeddings, batch_metas)):
+                    # Add document text to metadata
+                    payload = dict(metadata)
+                    payload["document"] = batch_docs[i]
+
+                    if self.enable_hybrid_search and sparse_embeddings:
+                        # Hybrid mode: use named vectors
+                        points.append(PointStruct(
+                            id=doc_id,
+                            vector={
+                                "dense": embedding,
+                                "sparse": sparse_embeddings[i]
+                            },
+                            payload=payload
+                        ))
+                    else:
+                        # Dense-only mode
+                        points.append(PointStruct(
+                            id=doc_id,
+                            vector=embedding,
+                            payload=payload
+                        ))
+
+                # Upload batch to Qdrant
+                self.client.upsert(
+                    collection_name=self.collection_name,
+                    points=points
+                )
+                logger.info(f"Uploaded batch {batch_start//batch_size + 1} ({len(points)} points) to Qdrant")
+
+            logger.info(f"Added {total_docs} total documents to Qdrant collection ({mode} mode)")
+
         except Exception as e:
             logger.error(f"Error adding documents to Qdrant: {e}")
             raise
@@ -458,13 +579,36 @@ class QdrantClientWrapper:
                     metadatas.append(payload)
                     documents.append(document)
 
+                # Apply reranking if enabled
+                if self.enable_reranking and self.reranker and len(documents) > 0:
+                    # Create query-document pairs
+                    query_text = query_texts[i]
+                    pairs = [[query_text, doc] for doc in documents]
+
+                    # Get reranking scores
+                    rerank_scores = self.reranker.predict(pairs)
+
+                    # Sort by reranking scores (higher is better)
+                    sorted_indices = sorted(range(len(rerank_scores)),
+                                          key=lambda idx: rerank_scores[idx],
+                                          reverse=True)
+
+                    # Reorder results
+                    ids = [ids[idx] for idx in sorted_indices]
+                    distances = [distances[idx] for idx in sorted_indices]
+                    metadatas = [metadatas[idx] for idx in sorted_indices]
+                    documents = [documents[idx] for idx in sorted_indices]
+
+                    logger.debug(f"Reranked {len(documents)} results using cross-encoder")
+
                 all_results["ids"].append(ids)
                 all_results["distances"].append(distances)
                 all_results["metadatas"].append(metadatas)
                 all_results["documents"].append(documents)
 
             mode = "hybrid" if hybrid_mode else "dense"
-            logger.info(f"Semantic search ({mode}) returned {len(all_results['ids'][0]) if all_results['ids'] else 0} results")
+            rerank_status = " + reranking" if self.enable_reranking else ""
+            logger.info(f"Semantic search ({mode}{rerank_status}) returned {len(all_results['ids'][0]) if all_results['ids'] else 0} results")
             return all_results
         except Exception as e:
             logger.error(f"Error performing semantic search: {e}")
@@ -634,8 +778,12 @@ def create_qdrant_client(config_path: Optional[str] = None) -> QdrantClientWrapp
                 "model_name": gemini_model
             }
 
-    # Get hybrid search configuration
+    # Get optimization configurations
     enable_hybrid = config.get("enable_hybrid_search", True)
+    enable_quantization = config.get("enable_quantization", True)
+    hnsw_m = config.get("hnsw_m", 32)
+    hnsw_ef_construct = config.get("hnsw_ef_construct", 200)
+    enable_reranking = config.get("enable_reranking", True)
 
     return QdrantClientWrapper(
         collection_name=config["collection_name"],
@@ -643,5 +791,9 @@ def create_qdrant_client(config_path: Optional[str] = None) -> QdrantClientWrapp
         qdrant_api_key=config["qdrant_api_key"],
         embedding_model=config["embedding_model"],
         embedding_config=config["embedding_config"],
-        enable_hybrid_search=enable_hybrid
+        enable_hybrid_search=enable_hybrid,
+        enable_quantization=enable_quantization,
+        hnsw_m=hnsw_m,
+        hnsw_ef_construct=hnsw_ef_construct,
+        enable_reranking=enable_reranking
     )
