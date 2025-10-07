@@ -1996,6 +1996,240 @@ def _extract_item_key_from_input(value: str) -> Optional[str]:
             return match.group(1)
     return None
 
+
+@mcp.tool(
+    name="zotero_graph_search",
+    description="Search the knowledge graph for entities, concepts, and relationships extracted from papers."
+)
+def graph_search(
+    query: str,
+    entity_types: Optional[str] = None,
+    limit: int = 10,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Search the Neo4j knowledge graph for entities and concepts.
+
+    Args:
+        query: Search query for entities (e.g., "transformer architecture", "attention mechanism")
+        entity_types: Comma-separated entity types to filter (e.g., "Concept,Method")
+        limit: Maximum number of results (default: 10)
+        ctx: MCP context
+
+    Returns:
+        Markdown-formatted graph search results
+    """
+    try:
+        from semantic_search import create_semantic_search
+        from pathlib import Path
+
+        config_path = Path.home() / ".config" / "zotero-mcp" / "config.json"
+        search = create_semantic_search(str(config_path))
+
+        # Parse entity types
+        entity_types_list = None
+        if entity_types:
+            entity_types_list = [t.strip() for t in entity_types.split(",")]
+
+        # Perform graph search
+        results = search.graph_search(
+            query=query,
+            entity_types=entity_types_list,
+            limit=limit
+        )
+
+        if results.get("error"):
+            return f"Graph search error: {results['error']}"
+
+        entities = results.get("results", [])
+
+        if not entities:
+            return f"No entities found in knowledge graph for query: '{query}'"
+
+        # Format results
+        output = [f"# Knowledge Graph Search Results for '{query}'", ""]
+        output.append(f"Found {len(entities)} entities:")
+        output.append("")
+
+        for i, entity in enumerate(entities, 1):
+            entity_name = entity.get("name", "Unknown")
+            entity_types = ", ".join(entity.get("types", []))
+            description = entity.get("description", "No description")
+
+            output.append(f"## {i}. {entity_name}")
+            output.append(f"**Type:** {entity_types}")
+            output.append(f"**Description:** {description}")
+            output.append("")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        ctx.error(f"Error in graph search: {str(e)}")
+        return f"Error in graph search: {str(e)}"
+
+
+@mcp.tool(
+    name="zotero_find_related_papers",
+    description="Find papers related to a given paper via shared entities in the knowledge graph."
+)
+def find_related_papers(
+    item_key: str,
+    limit: int = 10,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Find papers related to a given paper using the knowledge graph.
+
+    Args:
+        item_key: Zotero item key of the source paper
+        limit: Maximum number of related papers to return (default: 10)
+        ctx: MCP context
+
+    Returns:
+        Markdown-formatted related papers with shared entities
+    """
+    try:
+        from semantic_search import create_semantic_search
+        from pathlib import Path
+
+        config_path = Path.home() / ".config" / "zotero-mcp" / "config.json"
+        search = create_semantic_search(str(config_path))
+
+        # Find related papers
+        results = search.find_related_papers(paper_key=item_key, limit=limit)
+
+        if results.get("error"):
+            return f"Error finding related papers: {results['error']}"
+
+        related_papers = results.get("results", [])
+
+        if not related_papers:
+            return f"No related papers found for item: {item_key}"
+
+        # Format results
+        output = [f"# Papers Related to {item_key}", ""]
+        output.append(f"Found {len(related_papers)} related papers via knowledge graph:")
+        output.append("")
+
+        for i, paper in enumerate(related_papers, 1):
+            title = paper.get("title", "Untitled")
+            year = paper.get("year", "N/A")
+            authors = paper.get("authors", [])
+            shared_count = paper.get("shared_entities", 0)
+            sample_entities = paper.get("sample_entities", [])
+
+            output.append(f"## {i}. {title}")
+            output.append(f"**Year:** {year}")
+            if authors:
+                output.append(f"**Authors:** {', '.join(authors[:3])}")
+            output.append(f"**Shared Entities:** {shared_count}")
+            if sample_entities:
+                output.append(f"**Sample Connections:** {', '.join(sample_entities)}")
+            output.append(f"**Item Key:** {paper.get('item_key', 'N/A')}")
+            output.append("")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        ctx.error(f"Error finding related papers: {str(e)}")
+        return f"Error finding related papers: {str(e)}"
+
+
+@mcp.tool(
+    name="zotero_hybrid_vector_graph_search",
+    description="Advanced hybrid search combining vector similarity (semantic) with knowledge graph relationships."
+)
+def hybrid_vector_graph_search(
+    query: str,
+    limit: int = 10,
+    vector_weight: float = 0.7,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Perform hybrid search combining Qdrant vector search with Neo4j graph relationships.
+
+    Args:
+        query: Search query
+        limit: Maximum number of results (default: 10)
+        vector_weight: Weight for vector results 0-1, graph weight is (1 - vector_weight) (default: 0.7)
+        ctx: MCP context
+
+    Returns:
+        Markdown-formatted hybrid search results with combined scoring
+    """
+    try:
+        from semantic_search import create_semantic_search
+        from pathlib import Path
+
+        config_path = Path.home() / ".config" / "zotero-mcp" / "config.json"
+        search = create_semantic_search(str(config_path))
+
+        # Perform hybrid search
+        results = search.hybrid_vector_graph_search(
+            query=query,
+            limit=limit,
+            vector_weight=vector_weight
+        )
+
+        if results.get("error"):
+            return f"Hybrid search error: {results['error']}"
+
+        search_type = results.get("search_type", "unknown")
+        papers = results.get("results", [])
+        graph_enabled = results.get("graph_enabled", False)
+
+        if not papers:
+            return f"No results found for query: '{query}'"
+
+        # Format results
+        output = [f"# Hybrid Search Results for '{query}'", ""]
+        output.append(f"**Search Type:** {search_type}")
+        output.append(f"**Graph Enhancement:** {'Enabled' if graph_enabled else 'Disabled'}")
+        output.append(f"Found {len(papers)} papers:")
+        output.append("")
+
+        for i, paper in enumerate(papers, 1):
+            zotero_item = paper.get("zotero_item", {})
+            item_data = zotero_item.get("data", {})
+
+            title = item_data.get("title", "Untitled")
+            item_key = paper.get("item_key", "N/A")
+            vector_score = paper.get("similarity_score", 0)
+            combined_score = paper.get("combined_score", vector_score)
+            related_count = paper.get("related_papers_count", 0)
+            sample_related = paper.get("sample_related", [])
+
+            output.append(f"## {i}. {title}")
+            output.append(f"**Item Key:** {item_key}")
+            output.append(f"**Combined Score:** {combined_score:.3f}")
+            output.append(f"**Vector Score:** {vector_score:.3f}")
+
+            if graph_enabled:
+                output.append(f"**Related Papers (Graph):** {related_count}")
+                if sample_related:
+                    output.append(f"**Sample Connections:** {', '.join(sample_related)}")
+
+            # Add authors and year
+            creators = item_data.get("creators", [])
+            if creators:
+                authors = [f"{c.get('lastName', '')}" for c in creators[:3]]
+                output.append(f"**Authors:** {', '.join(authors)}")
+
+            year = item_data.get("date", "")[:4] if item_data.get("date") else "N/A"
+            output.append(f"**Year:** {year}")
+
+            output.append("")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        ctx.error(f"Error in hybrid search: {str(e)}")
+        return f"Error in hybrid search: {str(e)}"
+
+
 @mcp.tool(
     name="search",
     description="ChatGPT-compatible search wrapper. Performs semantic search and returns JSON results."

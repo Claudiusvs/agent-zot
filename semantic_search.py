@@ -19,6 +19,7 @@ from pyzotero import zotero
 
 from .qdrant_client_wrapper import QdrantClientWrapper, create_qdrant_client
 from .docling_parser import DoclingParser, parse_zotero_attachment
+from .neo4j_graphrag_client import Neo4jGraphRAGClient, create_neo4j_graphrag_client
 from .client import get_zotero_client
 from .utils import format_creators, is_local_mode
 from .local_db import LocalZoteroReader, get_local_zotero_reader
@@ -43,15 +44,18 @@ class ZoteroSemanticSearch:
 
     def __init__(self,
                  qdrant_client: Optional[QdrantClientWrapper] = None,
+                 neo4j_client: Optional[Neo4jGraphRAGClient] = None,
                  config_path: Optional[str] = None):
         """
         Initialize semantic search.
 
         Args:
             qdrant_client: Optional QdrantClientWrapper instance
+            neo4j_client: Optional Neo4jGraphRAGClient instance
             config_path: Path to configuration file
         """
         self.qdrant_client = qdrant_client or create_qdrant_client(config_path)
+        self.neo4j_client = neo4j_client or create_neo4j_graphrag_client(config_path)
         self.zotero_client = get_zotero_client()
         self.config_path = config_path
 
@@ -60,6 +64,12 @@ class ZoteroSemanticSearch:
 
         # Load update configuration
         self.update_config = self._load_update_config()
+
+        # Log Neo4j status
+        if self.neo4j_client:
+            logger.info("Neo4j GraphRAG integration enabled")
+        else:
+            logger.info("Neo4j GraphRAG integration disabled")
     
     def _load_update_config(self) -> Dict[str, Any]:
         """Load update configuration from file or use defaults."""
@@ -633,12 +643,64 @@ class ZoteroSemanticSearch:
             try:
                 self.qdrant_client.upsert_documents(documents, metadatas, ids)
                 stats["added"] += len(documents)
+
+                # Also add to Neo4j knowledge graph if enabled
+                if self.neo4j_client:
+                    self._add_items_to_graph(items, documents)
+
             except Exception as e:
                 logger.error(f"Error adding documents to Qdrant: {e}")
                 stats["errors"] += len(documents)
-        
+
         return stats
-    
+
+    def _add_items_to_graph(self, items: List[Dict[str, Any]], documents: List[str]):
+        """
+        Add items to Neo4j knowledge graph.
+
+        Args:
+            items: List of Zotero items
+            documents: Corresponding document texts
+        """
+        if not self.neo4j_client:
+            return
+
+        for item, doc_text in zip(items, documents):
+            try:
+                item_data = item.get("data", {})
+                paper_key = item.get("key", "")
+                title = item_data.get("title", "Untitled")
+                abstract = item_data.get("abstractNote", "")
+
+                # Extract authors
+                creators = item_data.get("creators", [])
+                authors = [f"{c.get('firstName', '')} {c.get('lastName', '')}".strip() for c in creators]
+
+                # Extract year
+                year = item_data.get("date", "")
+                try:
+                    year = int(year[:4]) if year else None
+                except:
+                    year = None
+
+                # Split document into chunks for context
+                chunks = [doc_text[i:i+1000] for i in range(0, len(doc_text), 1000)][:5]
+
+                # Add to graph
+                self.neo4j_client.add_paper_to_graph(
+                    paper_key=paper_key,
+                    title=title,
+                    abstract=abstract,
+                    authors=authors,
+                    year=year,
+                    chunks=chunks
+                )
+
+                logger.info(f"Added paper to knowledge graph: {title}")
+
+            except Exception as e:
+                logger.error(f"Error adding item to graph: {e}")
+
     def search(self,
                query: str,
                limit: int = 10,
@@ -686,7 +748,160 @@ class ZoteroSemanticSearch:
                 "total_found": 0,
                 "error": str(e)
             }
-    
+
+    def graph_search(self,
+                    query: str,
+                    entity_types: Optional[List[str]] = None,
+                    limit: int = 10) -> Dict[str, Any]:
+        """
+        Search the knowledge graph for entities and concepts.
+
+        Args:
+            query: Search query
+            entity_types: Filter by entity types
+            limit: Maximum number of results
+
+        Returns:
+            Graph search results
+        """
+        if not self.neo4j_client:
+            return {
+                "query": query,
+                "results": [],
+                "error": "Neo4j GraphRAG is not enabled"
+            }
+
+        try:
+            entities = self.neo4j_client.search_entities(
+                query=query,
+                entity_types=entity_types,
+                limit=limit
+            )
+
+            return {
+                "query": query,
+                "entity_types": entity_types,
+                "results": entities,
+                "total_found": len(entities)
+            }
+
+        except Exception as e:
+            logger.error(f"Error performing graph search: {e}")
+            return {
+                "query": query,
+                "results": [],
+                "error": str(e)
+            }
+
+    def find_related_papers(self,
+                           paper_key: str,
+                           limit: int = 10) -> Dict[str, Any]:
+        """
+        Find papers related to a given paper via the knowledge graph.
+
+        Args:
+            paper_key: Zotero item key
+            limit: Maximum number of results
+
+        Returns:
+            Related papers with shared entities
+        """
+        if not self.neo4j_client:
+            return {
+                "paper_key": paper_key,
+                "results": [],
+                "error": "Neo4j GraphRAG is not enabled"
+            }
+
+        try:
+            related = self.neo4j_client.find_related_papers(
+                paper_key=paper_key,
+                limit=limit
+            )
+
+            return {
+                "paper_key": paper_key,
+                "results": related,
+                "total_found": len(related)
+            }
+
+        except Exception as e:
+            logger.error(f"Error finding related papers: {e}")
+            return {
+                "paper_key": paper_key,
+                "results": [],
+                "error": str(e)
+            }
+
+    def hybrid_vector_graph_search(self,
+                                  query: str,
+                                  limit: int = 10,
+                                  vector_weight: float = 0.7) -> Dict[str, Any]:
+        """
+        Perform hybrid search combining vector similarity and graph relationships.
+
+        Args:
+            query: Search query
+            limit: Maximum number of results
+            vector_weight: Weight for vector results (0-1), graph weight is (1 - vector_weight)
+
+        Returns:
+            Combined search results
+        """
+        try:
+            # Get vector search results
+            vector_results = self.search(query=query, limit=limit*2)
+            vector_papers = {r["item_key"]: r for r in vector_results.get("results", [])}
+
+            # If Neo4j is enabled, enhance with graph relationships
+            if self.neo4j_client:
+                # Get graph entities related to query
+                graph_results = self.graph_search(query=query, limit=20)
+                graph_entities = graph_results.get("results", [])
+
+                # For each vector result, check graph connections
+                enhanced_results = []
+                for paper_key, paper in vector_papers.items():
+                    # Get related papers from graph
+                    related = self.find_related_papers(paper_key, limit=5)
+                    paper["related_papers_count"] = len(related.get("results", []))
+                    paper["sample_related"] = [r["title"] for r in related.get("results", [])[:3]]
+
+                    # Calculate combined score
+                    vector_score = paper.get("similarity_score", 0)
+                    graph_boost = min(paper["related_papers_count"] / 10.0, 0.3)  # Max 30% boost
+                    paper["combined_score"] = vector_score * vector_weight + graph_boost * (1 - vector_weight)
+
+                    enhanced_results.append(paper)
+
+                # Sort by combined score
+                enhanced_results.sort(key=lambda x: x.get("combined_score", 0), reverse=True)
+
+                return {
+                    "query": query,
+                    "search_type": "hybrid_vector_graph",
+                    "results": enhanced_results[:limit],
+                    "total_found": len(enhanced_results),
+                    "graph_enabled": True
+                }
+            else:
+                # Return just vector results if no graph
+                return {
+                    "query": query,
+                    "search_type": "vector_only",
+                    "results": list(vector_papers.values())[:limit],
+                    "total_found": len(vector_papers),
+                    "graph_enabled": False
+                }
+
+        except Exception as e:
+            logger.error(f"Error performing hybrid search: {e}")
+            return {
+                "query": query,
+                "results": [],
+                "error": str(e)
+            }
+
     def _enrich_search_results(self, qdrant_results: Dict[str, Any], query: str) -> List[Dict[str, Any]]:
         """Enrich Qdrant results with full Zotero item data."""
         enriched = []
