@@ -357,6 +357,143 @@ class Neo4jGraphRAGClient:
                 "error": str(e)
             }
 
+    def add_papers_batch(self,
+                        papers: List[Dict[str, Any]],
+                        batch_size: int = 10) -> Dict[str, Any]:
+        """
+        Add multiple papers to the knowledge graph in batches.
+
+        Args:
+            papers: List of paper dictionaries with keys:
+                   - paper_key, title, abstract, authors, year, chunks (optional)
+            batch_size: Number of papers to process in parallel (default: 10)
+
+        Returns:
+            Dictionary with success/failure counts and details
+        """
+        results = {
+            "total": len(papers),
+            "successful": 0,
+            "failed": 0,
+            "errors": []
+        }
+
+        try:
+            # Process papers in batches
+            for i in range(0, len(papers), batch_size):
+                batch = papers[i:i + batch_size]
+                logger.info(f"Processing batch {i//batch_size + 1}/{(len(papers) + batch_size - 1)//batch_size} ({len(batch)} papers)")
+
+                # Build combined content for batch
+                batch_content_parts = []
+                for paper in batch:
+                    content_parts = [f"Title: {paper['title']}"]
+
+                    if paper.get('authors'):
+                        content_parts.append(f"Authors: {', '.join(paper['authors'])}")
+                    if paper.get('year'):
+                        content_parts.append(f"Year: {paper['year']}")
+                    if paper.get('abstract'):
+                        content_parts.append(f"\nAbstract: {paper['abstract']}")
+                    if paper.get('chunks'):
+                        content_parts.append("\nKey Content:")
+                        content_parts.extend(paper['chunks'][:2])  # Fewer chunks per paper in batch
+
+                    batch_content_parts.append("\n\n=== PAPER ===\n\n" + "\n\n".join(content_parts))
+
+                batch_content = "\n\n---\n\n".join(batch_content_parts)
+
+                # Create extraction template
+                extraction_template = ERExtractionTemplate(template=RESEARCH_EXTRACTION_PROMPT)
+                lexical_config = LexicalGraphConfig({
+                    "id": "__Entity__",
+                    "label": "__Entity__",
+                    "text": "text",
+                    "embedding": "embedding"
+                })
+
+                # Create pipeline for batch
+                kg_builder = SimpleKGPipeline(
+                    llm=self.llm,
+                    driver=self.driver,
+                    database=self.neo4j_database,
+                    embedder=self.embeddings,
+                    entities=["Person", "Institution", "Concept", "Method", "Dataset", "Theory"],
+                    relations=["AUTHORED_BY", "AFFILIATED_WITH", "USES_METHOD", "USES_DATASET",
+                              "APPLIES_THEORY", "DISCUSSES_CONCEPT", "BUILDS_ON", "EXTENDS",
+                              "RELATED_TO", "CITES"],
+                    potential_schema=RESEARCH_PAPER_SCHEMA + RESEARCH_PAPER_RELATIONS,
+                    from_pdf=False,
+                    prompt_template=extraction_template,
+                    perform_entity_resolution=True,
+                    lexical_graph_config=lexical_config
+                )
+
+                # Add paper metadata nodes for batch
+                with self.driver.session(database=self.neo4j_database) as session:
+                    for paper in batch:
+                        try:
+                            session.run(
+                                """
+                                MERGE (p:Paper {item_key: $item_key})
+                                SET p.title = $title,
+                                    p.abstract = $abstract,
+                                    p.year = $year,
+                                    p.authors = $authors
+                                """,
+                                item_key=paper['paper_key'],
+                                title=paper['title'],
+                                abstract=paper.get('abstract', ''),
+                                year=paper.get('year'),
+                                authors=paper.get('authors', [])
+                            )
+                        except Exception as e:
+                            logger.error(f"Error adding paper metadata for {paper['paper_key']}: {e}")
+                            results["failed"] += 1
+                            results["errors"].append({"paper_key": paper['paper_key'], "error": str(e)})
+                            continue
+
+                # Extract entities from batch content
+                try:
+                    kg_builder.run_async(text=batch_content)
+
+                    # Link extracted entities to papers
+                    with self.driver.session(database=self.neo4j_database) as session:
+                        for paper in batch:
+                            try:
+                                session.run(
+                                    """
+                                    MATCH (p:Paper {item_key: $item_key})
+                                    MATCH (e)
+                                    WHERE e.id IS NOT NULL
+                                    MERGE (p)-[:MENTIONS]->(e)
+                                    """,
+                                    item_key=paper['paper_key']
+                                )
+                                results["successful"] += 1
+                                logger.info(f"Successfully added paper: {paper['title']}")
+                            except Exception as e:
+                                logger.error(f"Error linking entities for {paper['paper_key']}: {e}")
+                                results["failed"] += 1
+                                results["errors"].append({"paper_key": paper['paper_key'], "error": str(e)})
+
+                except Exception as e:
+                    logger.error(f"Error processing batch: {e}")
+                    for paper in batch:
+                        results["failed"] += 1
+                        results["errors"].append({"paper_key": paper['paper_key'], "error": f"Batch error: {str(e)}"})
+
+            logger.info(f"Batch processing complete: {results['successful']}/{results['total']} successful")
+            return results
+
+        except Exception as e:
+            logger.error(f"Fatal error in batch processing: {e}")
+            return {
+                "status": "error",
+                "error": str(e),
+                **results
+            }
+
     def search_entities(self,
                        query: str,
                        entity_types: Optional[List[str]] = None,
