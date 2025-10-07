@@ -15,8 +15,122 @@ from neo4j import GraphDatabase
 from neo4j_graphrag.llm import LLMInterface, OpenAILLM
 from neo4j_graphrag.embeddings import OpenAIEmbeddings
 from neo4j_graphrag.experimental.pipeline.kg_builder import SimpleKGPipeline
+from neo4j_graphrag.generation.prompts import ERExtractionTemplate
+from neo4j_graphrag.experimental.pipeline.kg_builder import LexicalGraphConfig
 
 logger = logging.getLogger(__name__)
+
+
+# Define explicit schema for research papers
+RESEARCH_PAPER_SCHEMA = [
+    # Entity type definitions
+    {
+        "label": "Person",
+        "properties": [
+            {"name": "name", "type": "STRING"},
+            {"name": "affiliation", "type": "STRING"}
+        ]
+    },
+    {
+        "label": "Institution",
+        "properties": [
+            {"name": "name", "type": "STRING"},
+            {"name": "country", "type": "STRING"}
+        ]
+    },
+    {
+        "label": "Concept",
+        "properties": [
+            {"name": "name", "type": "STRING"},
+            {"name": "description", "type": "STRING"}
+        ]
+    },
+    {
+        "label": "Method",
+        "properties": [
+            {"name": "name", "type": "STRING"},
+            {"name": "description", "type": "STRING"}
+        ]
+    },
+    {
+        "label": "Dataset",
+        "properties": [
+            {"name": "name", "type": "STRING"},
+            {"name": "size", "type": "STRING"}
+        ]
+    },
+    {
+        "label": "Theory",
+        "properties": [
+            {"name": "name", "type": "STRING"},
+            {"name": "description", "type": "STRING"}
+        ]
+    }
+]
+
+# Define valid relationships between entities
+RESEARCH_PAPER_RELATIONS = [
+    {"type": "AUTHORED_BY", "source": "Paper", "target": "Person"},
+    {"type": "AFFILIATED_WITH", "source": "Person", "target": "Institution"},
+    {"type": "USES_METHOD", "source": "Paper", "target": "Method"},
+    {"type": "USES_DATASET", "source": "Paper", "target": "Dataset"},
+    {"type": "APPLIES_THEORY", "source": "Paper", "target": "Theory"},
+    {"type": "DISCUSSES_CONCEPT", "source": "Paper", "target": "Concept"},
+    {"type": "BUILDS_ON", "source": "Method", "target": "Method"},
+    {"type": "EXTENDS", "source": "Theory", "target": "Theory"},
+    {"type": "RELATED_TO", "source": "Concept", "target": "Concept"},
+    {"type": "CITES", "source": "Paper", "target": "Paper"}
+]
+
+# Custom extraction prompt for research papers
+RESEARCH_EXTRACTION_PROMPT = """
+You are an expert research librarian extracting structured information from academic papers.
+
+Your task is to identify:
+1. **People**: Authors, researchers mentioned in the text
+2. **Institutions**: Universities, research labs, organizations
+3. **Concepts**: Key ideas, theories, frameworks discussed
+4. **Methods**: Techniques, algorithms, approaches used
+5. **Datasets**: Data sources, corpora, benchmarks mentioned
+6. **Theories**: Theoretical frameworks or models
+
+Extract entities and their relationships following these rules:
+
+**Entity Extraction Guidelines**:
+- Extract full names for people (not initials when full name is available)
+- Use canonical names for institutions (e.g., "MIT" not "Massachusetts Institute of Technology")
+- For concepts/methods, use the specific technical term from the paper
+- Include brief descriptions when context is important
+
+**Relationship Extraction Guidelines**:
+- AUTHORED_BY: Connect paper to its authors
+- AFFILIATED_WITH: Connect authors to their institutions
+- USES_METHOD: Connect paper to methods it employs
+- USES_DATASET: Connect paper to datasets it uses
+- APPLIES_THEORY: Connect paper to theories it applies
+- DISCUSSES_CONCEPT: Connect paper to concepts it discusses
+- BUILDS_ON: Connect methods that extend other methods
+- EXTENDS: Connect theories that extend other theories
+- RELATED_TO: Connect related concepts
+- CITES: Connect papers that cite each other (when mentioned)
+
+Return result as JSON using this exact format:
+{{"nodes": [{{"id": "0", "label": "Person", "properties": {{"name": "John Smith", "affiliation": "MIT"}}}}],
+"relationships": [{{"type": "AUTHORED_BY", "start_node_id": "1", "end_node_id": "0"}}]}}
+
+Use only the node and relationship types provided in the schema: {schema}
+
+Important JSON rules:
+- Assign unique string IDs to each node
+- Reuse IDs to define relationships
+- Property names in double quotes
+- No backticks, no markdown formatting
+- Return ONLY the JSON object
+
+Input text:
+
+{text}
+"""
 
 
 class Neo4jGraphRAGClient:
@@ -69,6 +183,56 @@ class Neo4jGraphRAGClient:
 
         logger.info(f"Neo4j GraphRAG client initialized for database: {neo4j_database}")
 
+        # Initialize database schema on first connection
+        self._initialize_schema()
+
+    def _initialize_schema(self):
+        """Initialize database schema with indexes and constraints."""
+        try:
+            with self.driver.session(database=self.neo4j_database) as session:
+                # Create uniqueness constraint on Paper.item_key
+                session.run("""
+                    CREATE CONSTRAINT paper_item_key_unique IF NOT EXISTS
+                    FOR (p:Paper) REQUIRE p.item_key IS UNIQUE
+                """)
+
+                # Create index on Paper.title for faster text searches
+                session.run("""
+                    CREATE INDEX paper_title_idx IF NOT EXISTS
+                    FOR (p:Paper) ON (p.title)
+                """)
+
+                # Create index on Paper.year for temporal queries
+                session.run("""
+                    CREATE INDEX paper_year_idx IF NOT EXISTS
+                    FOR (p:Paper) ON (p.year)
+                """)
+
+                # Create indexes for common entity types
+                for entity_type in ["Person", "Institution", "Concept", "Method", "Dataset", "Theory"]:
+                    session.run(f"""
+                        CREATE INDEX {entity_type.lower()}_name_idx IF NOT EXISTS
+                        FOR (e:{entity_type}) ON (e.name)
+                    """)
+
+                # Create full-text search index on Paper titles and abstracts
+                session.run("""
+                    CREATE FULLTEXT INDEX paper_fulltext IF NOT EXISTS
+                    FOR (p:Paper) ON EACH [p.title, p.abstract]
+                """)
+
+                # Create full-text search index on entity names
+                session.run("""
+                    CREATE FULLTEXT INDEX entity_fulltext IF NOT EXISTS
+                    FOR (e:Person|Institution|Concept|Method|Dataset|Theory)
+                    ON EACH [e.name, e.description]
+                """)
+
+                logger.info("Neo4j schema initialized with indexes and constraints")
+
+        except Exception as e:
+            logger.warning(f"Error initializing schema (may already exist): {e}")
+
     def close(self):
         """Close Neo4j driver connection."""
         if self.driver:
@@ -115,15 +279,36 @@ class Neo4jGraphRAGClient:
 
             full_content = "\n\n".join(content_parts)
 
-            # Create knowledge graph pipeline
+            # Create custom extraction template with research-specific prompt
+            extraction_template = ERExtractionTemplate(
+                template=RESEARCH_EXTRACTION_PROMPT
+            )
+
+            # Configure lexical graph for keyword-based connections
+            lexical_config = LexicalGraphConfig(
+                {
+                    "id": "__Entity__",
+                    "label": "__Entity__",
+                    "text": "text",
+                    "embedding": "embedding"
+                }
+            )
+
+            # Create knowledge graph pipeline with optimized settings
             kg_builder = SimpleKGPipeline(
                 llm=self.llm,
                 driver=self.driver,
                 database=self.neo4j_database,
                 embedder=self.embeddings,
                 entities=["Person", "Institution", "Concept", "Method", "Dataset", "Theory"],
-                relations=["AUTHORED_BY", "AFFILIATED_WITH", "USES", "CITES", "BUILDS_ON", "PART_OF"],
-                from_pdf=False
+                relations=["AUTHORED_BY", "AFFILIATED_WITH", "USES_METHOD", "USES_DATASET",
+                          "APPLIES_THEORY", "DISCUSSES_CONCEPT", "BUILDS_ON", "EXTENDS",
+                          "RELATED_TO", "CITES"],
+                potential_schema=RESEARCH_PAPER_SCHEMA + RESEARCH_PAPER_RELATIONS,
+                from_pdf=False,
+                prompt_template=extraction_template,
+                perform_entity_resolution=True,  # Merge similar entities
+                lexical_graph_config=lexical_config  # Enable keyword-based connections
             )
 
             # Add paper metadata as a node first
