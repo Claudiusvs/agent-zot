@@ -59,8 +59,15 @@ class ZoteroSemanticSearch:
         self.zotero_client = get_zotero_client()
         self.config_path = config_path
 
-        # Initialize Docling parser
-        self.docling_parser = DoclingParser()
+        # Load configuration for Docling parser
+        docling_config = self._load_docling_config()
+
+        # Initialize Docling parser with HybridChunker
+        self.docling_parser = DoclingParser(
+            tokenizer=docling_config.get("tokenizer", "sentence-transformers/all-MiniLM-L6-v2"),
+            max_tokens=docling_config.get("max_tokens"),
+            merge_peers=docling_config.get("merge_peers", True)
+        )
 
         # Load update configuration
         self.update_config = self._load_update_config()
@@ -71,6 +78,31 @@ class ZoteroSemanticSearch:
         else:
             logger.info("Neo4j GraphRAG integration disabled")
     
+    def _load_docling_config(self) -> Dict[str, Any]:
+        """Load Docling chunking configuration from file or use defaults."""
+        config = {
+            "tokenizer": "sentence-transformers/all-MiniLM-L6-v2",
+            "max_tokens": 512,  # Good balance for embeddings
+            "merge_peers": True,
+            "parse_tables": True,
+            "parse_figures": True,
+            "ocr": {
+                "enabled": True,
+                "conditional": True,
+                "min_text_threshold": 100
+            }
+        }
+
+        if self.config_path and os.path.exists(self.config_path):
+            try:
+                with open(self.config_path, 'r') as f:
+                    file_config = json.load(f)
+                    config.update(file_config.get("semantic_search", {}).get("docling", {}))
+            except Exception as e:
+                logger.warning(f"Error loading Docling config: {e}")
+
+        return config
+
     def _load_update_config(self) -> Dict[str, Any]:
         """Load update configuration from file or use defaults."""
         config = {
@@ -79,7 +111,7 @@ class ZoteroSemanticSearch:
             "last_update": None,
             "update_days": 7
         }
-        
+
         if self.config_path and os.path.exists(self.config_path):
             try:
                 with open(self.config_path, 'r') as f:
@@ -87,7 +119,7 @@ class ZoteroSemanticSearch:
                     config.update(file_config.get("semantic_search", {}).get("update_config", {}))
             except Exception as e:
                 logger.warning(f"Error loading update config: {e}")
-        
+
         return config
     
     def _save_update_config(self) -> None:

@@ -12,7 +12,7 @@ import tempfile
 import os
 
 from docling.document_converter import DocumentConverter
-from docling_core.transforms.chunker import HierarchicalChunker
+from docling.chunking import HybridChunker
 
 logger = logging.getLogger(__name__)
 
@@ -21,26 +21,37 @@ class DoclingParser:
     """Enhanced document parser using Docling."""
 
     def __init__(self,
-                 chunk_size: int = 512,
-                 chunk_overlap: int = 100,
-                 merge_list_items: bool = True):
+                 tokenizer: str = "sentence-transformers/all-MiniLM-L6-v2",
+                 max_tokens: Optional[int] = None,
+                 merge_peers: bool = True):
         """
-        Initialize Docling parser.
+        Initialize Docling parser with HybridChunker.
 
         Args:
-            chunk_size: Target size for document chunks (in characters, not tokens)
-            chunk_overlap: Overlap between chunks (in characters)
-            merge_list_items: Whether to merge successive list items (default: True)
+            tokenizer: HuggingFace tokenizer model name (should match embedding model)
+            max_tokens: Maximum tokens per chunk (if None, uses tokenizer's default)
+            merge_peers: Whether to merge undersized chunks with same metadata (default: True)
         """
-        self.chunk_size = chunk_size
-        self.chunk_overlap = chunk_overlap
+        self.tokenizer = tokenizer
+        self.max_tokens = max_tokens
+        self.merge_peers = merge_peers
         self.converter = DocumentConverter()
 
-        # Use HierarchicalChunker with document structure awareness
-        self.chunker = HierarchicalChunker(
-            merge_list_items=merge_list_items,
-            delim="\n"
-        )
+        # Use HybridChunker for token-aware, structure-preserving chunking
+        chunker_params = {
+            "tokenizer": tokenizer,
+            "merge_peers": merge_peers,
+            "delim": "\n"
+        }
+
+        # Only add max_tokens if explicitly provided
+        # Otherwise, let HybridChunker use tokenizer's default
+        if max_tokens is not None:
+            chunker_params["max_tokens"] = max_tokens
+
+        self.chunker = HybridChunker(**chunker_params)
+
+        logger.info(f"DoclingParser initialized with HybridChunker (tokenizer: {tokenizer}, max_tokens: {self.chunker.max_tokens})")
 
     def parse_pdf(self, pdf_path: str, force_ocr: bool = False) -> Dict[str, Any]:
         """
