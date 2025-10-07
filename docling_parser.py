@@ -98,7 +98,7 @@ class DoclingParser:
             for i, chunk in enumerate(chunk_iter):
                 chunk_data = {
                     "chunk_id": i,
-                    "text": chunk.text,
+                    "text": self.chunker.serialize(chunk),
                     "meta": {
                         "doc_items": [item.self_ref for item in chunk.meta.doc_items] if chunk.meta.doc_items else [],
                         "headings": [h.text for h in chunk.meta.headings] if chunk.meta.headings else []
@@ -261,7 +261,7 @@ class DoclingParser:
                 for i, chunk in enumerate(chunk_iter):
                     chunks.append({
                         "chunk_id": i,
-                        "text": chunk.text,
+                        "text": self.chunker.serialize(chunk),
                         "meta": {}
                     })
 
