@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from pyzotero import zotero
 
@@ -391,8 +392,13 @@ class ZoteroSemanticSearch:
 
                 # Phase 2: selectively extract fulltext only when requested
                 if extract_fulltext:
+                    # Parallel fulltext extraction with ThreadPoolExecutor
+                    # Using 5 workers (M1 Pro 10-core / 2, accounting for Docling's internal threading)
+                    max_workers = 5
                     extracted = 0
-                    for it in local_items:
+
+                    def extract_item_fulltext(it):
+                        """Extract fulltext for a single item (thread-safe)."""
                         if not getattr(it, "fulltext", None):
                             text = reader.extract_fulltext_for_item(it.item_id)
                             if text:
@@ -401,12 +407,21 @@ class ZoteroSemanticSearch:
                                     it.fulltext, it.fulltext_source = text[0], text[1]
                                 else:
                                     it.fulltext = text
-                        extracted += 1
-                        if extracted % 25 == 0 and total_to_extract:
-                            try:
-                                sys.stderr.write(f"Extracted content for {extracted}/{total_to_extract} items...\n")
-                            except Exception:
-                                pass
+                        return it
+
+                    # Use ThreadPoolExecutor for parallel PDF parsing
+                    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                        # Submit all extraction tasks
+                        future_to_item = {executor.submit(extract_item_fulltext, it): it for it in local_items}
+
+                        # Process results as they complete
+                        for future in as_completed(future_to_item):
+                            extracted += 1
+                            if extracted % 25 == 0 and total_to_extract:
+                                try:
+                                    sys.stderr.write(f"Extracted content for {extracted}/{total_to_extract} items (parallel with {max_workers} workers)...\n")
+                                except Exception:
+                                    pass
                 else:
                     # Skip fulltext extraction for faster processing
                     for it in local_items:
@@ -634,20 +649,24 @@ class ZoteroSemanticSearch:
             return stats
     
     def _process_item_batch(self, items: List[Dict[str, Any]], force_rebuild: bool = False) -> Dict[str, int]:
-        """Process a batch of items."""
+        """
+        Process a batch of items.
+
+        Note: Parallelization happens upstream in _get_items_from_local_db during PDF extraction.
+        """
         stats = {"processed": 0, "added": 0, "updated": 0, "skipped": 0, "errors": 0}
-        
+
         documents = []
         metadatas = []
         ids = []
-        
+
         for item in items:
             try:
                 item_key = item.get("key", "")
                 if not item_key:
                     stats["skipped"] += 1
                     continue
-                
+
                 # Check if item exists and needs update
                 if not force_rebuild and self.qdrant_client.document_exists(item_key):
                     # For now, skip existing items (could implement update logic here)
@@ -669,18 +688,18 @@ class ZoteroSemanticSearch:
                 ids.append(item_key)
 
                 stats["processed"] += 1
-                
+
             except Exception as e:
                 logger.error(f"Error processing item {item.get('key', 'unknown')}: {e}")
                 stats["errors"] += 1
-        
+
         # Add documents to Qdrant if any
         if documents:
             try:
                 self.qdrant_client.upsert_documents(documents, metadatas, ids)
                 stats["added"] += len(documents)
 
-                # Also add to Neo4j knowledge graph if enabled
+                # Also add to Neo4j knowledge graph if enabled (using batch processing)
                 if self.neo4j_client:
                     self._add_items_to_graph(items, documents)
 
@@ -692,7 +711,7 @@ class ZoteroSemanticSearch:
 
     def _add_items_to_graph(self, items: List[Dict[str, Any]], documents: List[str]):
         """
-        Add items to Neo4j knowledge graph.
+        Add items to Neo4j knowledge graph using batch processing.
 
         Args:
             items: List of Zotero items
@@ -701,6 +720,8 @@ class ZoteroSemanticSearch:
         if not self.neo4j_client:
             return
 
+        # Prepare papers for batch processing
+        papers = []
         for item, doc_text in zip(items, documents):
             try:
                 item_data = item.get("data", {})
@@ -722,20 +743,25 @@ class ZoteroSemanticSearch:
                 # Split document into chunks for context
                 chunks = [doc_text[i:i+1000] for i in range(0, len(doc_text), 1000)][:5]
 
-                # Add to graph
-                self.neo4j_client.add_paper_to_graph(
-                    paper_key=paper_key,
-                    title=title,
-                    abstract=abstract,
-                    authors=authors,
-                    year=year,
-                    chunks=chunks
-                )
-
-                logger.info(f"Added paper to knowledge graph: {title}")
+                papers.append({
+                    "paper_key": paper_key,
+                    "title": title,
+                    "abstract": abstract,
+                    "authors": authors,
+                    "year": year,
+                    "chunks": chunks
+                })
 
             except Exception as e:
-                logger.error(f"Error adding item to graph: {e}")
+                logger.error(f"Error preparing item for graph: {e}")
+
+        # Add all papers to graph in batches (batch_size=10 for optimal LLM throughput)
+        if papers:
+            try:
+                result = self.neo4j_client.add_papers_batch(papers, batch_size=10)
+                logger.info(f"Added {result.get('successful', 0)} papers to knowledge graph (failed: {result.get('failed', 0)})")
+            except Exception as e:
+                logger.error(f"Error adding papers batch to graph: {e}")
 
     def search(self,
                query: str,
