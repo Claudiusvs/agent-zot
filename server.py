@@ -1857,6 +1857,13 @@ def update_search_database(
         Detailed statistics about the indexing process
     """
     try:
+        # Handle string-to-int conversion for limit parameter (Claude sometimes sends strings)
+        if limit is not None and isinstance(limit, str):
+            try:
+                limit = int(limit)
+            except ValueError:
+                return f"Error: limit must be a number, got '{limit}'"
+
         mode = "full-text PDF extraction" if extract_fulltext else "metadata-only"
         ctx.info(f"Starting semantic search database update ({mode})...")
 
