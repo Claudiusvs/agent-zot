@@ -1871,11 +1871,11 @@ def update_search_database(
         # Create semantic search instance
         search = create_semantic_search(str(config_path))
         
-        # Perform update with no fulltext extraction (for speed)
+        # Perform update with fulltext extraction enabled for comprehensive indexing
         stats = search.update_database(
             force_full_rebuild=force_rebuild,
             limit=limit,
-            extract_fulltext=False
+            extract_fulltext=True
         )
         
         # Format results
