@@ -657,11 +657,21 @@ class QdrantClientWrapper:
         """Get information about the collection."""
         try:
             collection_info = self.client.get_collection(self.collection_name)
+
+            # Handle named vectors (dict) vs single vector config
+            vectors_config = collection_info.config.params.vectors
+            if isinstance(vectors_config, dict):
+                # Named vectors - get the dense vector size
+                vector_size = vectors_config.get("dense", {}).get("size", "unknown")
+            else:
+                # Single vector config
+                vector_size = vectors_config.size
+
             return {
                 "name": self.collection_name,
                 "count": collection_info.points_count,
                 "embedding_model": self.embedding_model,
-                "vector_size": collection_info.config.params.vectors.size
+                "vector_size": vector_size
             }
         except Exception as e:
             logger.error(f"Error getting collection info: {e}")
