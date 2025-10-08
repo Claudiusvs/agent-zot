@@ -18,6 +18,9 @@ chroma_db/
 *.db
 *.sqlite
 
+# Qdrant vector database storage (runtime data)
+qdrant_storage/
+
 # Secrets
 .env
 *.key
