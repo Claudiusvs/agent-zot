@@ -7,6 +7,7 @@ for semantic search over Zotero libraries using Qdrant.
 
 import json
 import os
+import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 import logging
@@ -434,10 +435,17 @@ class QdrantClientWrapper:
                     payload = dict(metadata)
                     payload["document"] = batch_docs[i]
 
+                    # Store the original Zotero key in payload for retrieval
+                    payload["item_key"] = doc_id
+
+                    # Convert Zotero key to UUID for Qdrant ID
+                    # Use UUID5 with a namespace to create deterministic UUIDs from keys
+                    point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"zotero.{doc_id}"))
+
                     if self.enable_hybrid_search and sparse_embeddings:
                         # Hybrid mode: use named vectors
                         points.append(PointStruct(
-                            id=doc_id,
+                            id=point_id,
                             vector={
                                 "dense": embedding,
                                 "sparse": sparse_embeddings[i]
@@ -447,7 +455,7 @@ class QdrantClientWrapper:
                     else:
                         # Dense-only mode
                         points.append(PointStruct(
-                            id=doc_id,
+                            id=point_id,
                             vector=embedding,
                             payload=payload
                         ))
@@ -707,11 +715,18 @@ class QdrantClientWrapper:
             raise
 
     def document_exists(self, doc_id: str) -> bool:
-        """Check if a document exists in the collection."""
+        """
+        Check if a document exists in the collection.
+
+        Args:
+            doc_id: Zotero item key (will be converted to UUID for lookup)
+        """
         try:
+            # Convert Zotero key to UUID (same as in add_documents)
+            point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, f"zotero.{doc_id}"))
             result = self.client.retrieve(
                 collection_name=self.collection_name,
-                ids=[doc_id]
+                ids=[point_id]
             )
             return len(result) > 0
         except Exception:
