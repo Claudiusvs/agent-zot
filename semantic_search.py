@@ -975,9 +975,15 @@ class ZoteroSemanticSearch:
         distances = qdrant_results.get("distances", [[]])[0]
         documents = qdrant_results.get("documents", [[]])[0]
         metadatas = qdrant_results.get("metadatas", [[]])[0]
-        
-        for i, item_key in enumerate(ids):
+
+        for i, point_id in enumerate(ids):
             try:
+                # Extract the actual Zotero item key from metadata (point_id is a UUID)
+                item_key = metadatas[i].get("item_key", "") if i < len(metadatas) else ""
+                if not item_key:
+                    logger.warning(f"No item_key found in metadata for point_id {point_id}")
+                    continue
+
                 # Get full item data from Zotero
                 zotero_item = self.zotero_client.item(item_key)
                 
