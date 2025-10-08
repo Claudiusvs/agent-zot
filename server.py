@@ -41,12 +41,12 @@ async def server_lifespan(server: FastMCP):
             search = create_semantic_search(str(config_path))
             
             if search.should_update_database():
-                sys.stderr.write("Auto-updating semantic search database...\n")
-                
+                sys.stderr.write("Auto-updating semantic search database with full-text extraction...\n")
+
                 # Run update in background to avoid blocking server startup
                 async def background_update():
                     try:
-                        stats = search.update_database(extract_fulltext=False)
+                        stats = search.update_database(extract_fulltext=True)
                         sys.stderr.write(f"Database update completed: {stats.get('processed_items', 0)} items processed\n")
                     except Exception as e:
                         sys.stderr.write(f"Background database update failed: {e}\n")
@@ -1832,43 +1832,46 @@ def semantic_search(
 
 @mcp.tool(
     name="zot_update_search_database",
-    description="Update the semantic search database with latest Zotero items."
+    description="Update the semantic search database with latest Zotero items. Can extract full PDF text or just metadata."
 )
 def update_search_database(
     force_rebuild: bool = False,
+    extract_fulltext: bool = True,
     limit: Optional[int] = None,
     *,
     ctx: Context
 ) -> str:
     """
     Update the semantic search database.
-    
+
     Args:
         force_rebuild: Whether to rebuild the entire database from scratch
+        extract_fulltext: Whether to extract and index full PDF text (default: True). False = metadata only.
         limit: Limit number of items to process (useful for testing)
         ctx: MCP context
-    
+
     Returns:
         Update status and statistics
     """
     try:
-        ctx.info("Starting semantic search database update...")
-        
+        mode = "full-text PDF extraction" if extract_fulltext else "metadata-only"
+        ctx.info(f"Starting semantic search database update ({mode})...")
+
         # Import semantic search module
         from semantic_search import create_semantic_search
         from pathlib import Path
-        
+
         # Determine config path
         config_path = Path.home() / ".config" / "zotero-mcp" / "config.json"
-        
+
         # Create semantic search instance
         search = create_semantic_search(str(config_path))
-        
-        # Perform update with metadata only (for testing - set to True for full PDF extraction)
+
+        # Perform update
         stats = search.update_database(
             force_full_rebuild=force_rebuild,
             limit=limit,
-            extract_fulltext=False
+            extract_fulltext=extract_fulltext
         )
         
         # Format results
