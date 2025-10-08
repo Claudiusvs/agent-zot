@@ -1708,7 +1708,7 @@ def create_note(
 def semantic_search(
     query: str,
     limit: int = 10,
-    filters: Optional[Union[Dict[str, str], str]] = None,
+    filters: Optional[str] = None,
     *,
     ctx: Context
 ) -> str:
