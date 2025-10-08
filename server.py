@@ -1696,7 +1696,7 @@ def create_note(
 
 @mcp.tool(
     name="zot_semantic_search",
-    description="Prioritized search tool. Perform semantic search over your Zotero library using AI-powered embeddings."
+    description="PRIORITIZED SEARCH TOOL. Use this for research questions, concepts, or topics. Performs AI-powered semantic search over your Zotero library using embeddings. Finds papers by meaning, not just keywords. Searches full PDF content if indexed. Use this when the user asks questions about their research library or wants to find papers on specific topics."
 )
 def semantic_search(
     query: str,
@@ -1832,7 +1832,7 @@ def semantic_search(
 
 @mcp.tool(
     name="zot_update_search_database",
-    description="Update the semantic search database with latest Zotero items. Can extract full PDF text or just metadata."
+    description="Index or re-index the Zotero library for semantic search. Extracts full PDF text using AI-powered parsing (Docling with OCR). Use this when the user asks to 'index my library', 'update the search database', or 'enable semantic search'. Automatically handles full-text extraction from PDFs."
 )
 def update_search_database(
     force_rebuild: bool = False,
@@ -1842,16 +1842,19 @@ def update_search_database(
     ctx: Context
 ) -> str:
     """
-    Update the semantic search database.
+    Index or re-index the Zotero library for AI-powered semantic search.
+
+    This tool extracts content from your Zotero library and creates searchable embeddings.
+    By default, it extracts full PDF text for comprehensive semantic search.
 
     Args:
-        force_rebuild: Whether to rebuild the entire database from scratch
-        extract_fulltext: Whether to extract and index full PDF text (default: True). False = metadata only.
-        limit: Limit number of items to process (useful for testing)
+        force_rebuild: Set to True to rebuild entire database from scratch. False = incremental update (default: False)
+        extract_fulltext: Set to True for full PDF text extraction, False for metadata-only (default: True)
+        limit: Optional limit for testing (e.g., 10 for quick test). None = process all items (default: None)
         ctx: MCP context
 
     Returns:
-        Update status and statistics
+        Detailed statistics about the indexing process
     """
     try:
         mode = "full-text PDF extraction" if extract_fulltext else "metadata-only"
