@@ -672,8 +672,23 @@ def create_neo4j_graphrag_client(config_path: Optional[str] = None) -> Optional[
         logger.info("Neo4j GraphRAG is disabled in configuration")
         return None
 
-    # Load OpenAI API key from environment
-    openai_api_key = os.getenv("OPENAI_API_KEY")
+    # Load OpenAI API key from config file or environment
+    openai_api_key = None
+    if config_path and os.path.exists(config_path):
+        try:
+            with open(config_path, 'r') as f:
+                file_config = json.load(f)
+                # Try to get from client_env first (where it's stored in config)
+                openai_api_key = file_config.get("client_env", {}).get("OPENAI_API_KEY")
+                # Also try from embedding_config as fallback
+                if not openai_api_key:
+                    openai_api_key = file_config.get("semantic_search", {}).get("embedding_config", {}).get("api_key")
+        except Exception as e:
+            logger.warning(f"Error loading OpenAI API key from config: {e}")
+
+    # Fallback to environment variable
+    if not openai_api_key:
+        openai_api_key = os.getenv("OPENAI_API_KEY")
 
     try:
         return Neo4jGraphRAGClient(
