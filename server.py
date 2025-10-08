@@ -5,7 +5,7 @@ Note: ChatGPT requires specific tool names "search" and "fetch", and so they
 are defined and used and piped through to the main server tools. See bottom of file for details.
 """
 
-from typing import Dict, List, Literal, Optional, Union
+from typing import Dict, List, Optional
 import os
 import sys
 import uuid
@@ -76,7 +76,7 @@ mcp = FastMCP(
 )
 def search_items(
     query: str,
-    qmode: Literal["titleCreatorYear", "everything"] = "titleCreatorYear",
+    qmode: str = "titleCreatorYear",
     item_type: str = "-attachment",  # Exclude attachments by default
     limit: int = 10,
     tag: Optional[List[str]] = None,
@@ -85,21 +85,25 @@ def search_items(
 ) -> str:
     """
     Search for items in your Zotero library.
-    
+
     Args:
         query: Search query string
-        qmode: Query mode (titleCreatorYear or everything)
+        qmode: Query mode - must be "titleCreatorYear" or "everything" (default: "titleCreatorYear")
         item_type: Type of items to search for. Use "-attachment" to exclude attachments.
         limit: Maximum number of results to return
         tag: List of tags conditions to filter by
         ctx: MCP context
-    
+
     Returns:
         Markdown-formatted search results
     """
     try:
         if not query.strip():
             return "Error: Search query cannot be empty"
+
+        # Validate qmode parameter
+        if qmode not in ["titleCreatorYear", "everything"]:
+            return f"Error: Invalid qmode '{qmode}'. Must be 'titleCreatorYear' or 'everything'"
         
         tag_condition_str = ""
         if tag:
@@ -254,30 +258,34 @@ def search_by_tag(
 def get_item_metadata(
     item_key: str,
     include_abstract: bool = True,
-    format: Literal["markdown", "bibtex"] = "markdown",
+    format: str = "markdown",
     *,
     ctx: Context
 ) -> str:
     """
     Get detailed metadata for a Zotero item.
-    
+
     Args:
         item_key: Zotero item key/ID
         include_abstract: Whether to include the abstract in the output (markdown format only)
-        format: Output format - 'markdown' for detailed metadata or 'bibtex' for BibTeX citation
+        format: Output format - must be "markdown" or "bibtex" (default: "markdown")
         ctx: MCP context
-    
+
     Returns:
         Formatted item metadata (markdown or BibTeX)
     """
     try:
+        # Validate format parameter
+        if format not in ["markdown", "bibtex"]:
+            return f"Error: Invalid format '{format}'. Must be 'markdown' or 'bibtex'"
+
         ctx.info(f"Fetching metadata for item {item_key} in {format} format")
         zot = get_zotero_client()
-        
+
         item = zot.item(item_key)
         if not item:
             return f"No item found with key: {item_key}"
-        
+
         if format == "bibtex":
             return generate_bibtex(item)
         else:
@@ -905,33 +913,41 @@ def batch_update_tags(
 )
 def advanced_search(
     conditions: List[Dict[str, str]],
-    join_mode: Literal["all", "any"] = "all",
+    join_mode: str = "all",
     sort_by: Optional[str] = None,
-    sort_direction: Literal["asc", "desc"] = "asc",
+    sort_direction: str = "asc",
     limit: int = 50,
     *,
     ctx: Context
 ) -> str:
     """
     Perform an advanced search with multiple criteria.
-    
+
     Args:
         conditions: List of search condition dictionaries, each containing:
                    - field: The field to search (title, creator, date, tag, etc.)
                    - operation: The operation to perform (is, isNot, contains, etc.)
                    - value: The value to search for
-        join_mode: Whether all conditions must match ("all") or any condition can match ("any")
+        join_mode: Whether all conditions must match ("all") or any condition can match ("any") (default: "all")
         sort_by: Field to sort by (dateAdded, dateModified, title, creator, etc.)
-        sort_direction: Direction to sort (asc or desc)
+        sort_direction: Direction to sort - must be "asc" or "desc" (default: "asc")
         limit: Maximum number of results to return
         ctx: MCP context
-    
+
     Returns:
         Markdown-formatted search results
     """
     try:
         if not conditions:
             return "Error: No search conditions provided"
+
+        # Validate join_mode parameter
+        if join_mode not in ["all", "any"]:
+            return f"Error: Invalid join_mode '{join_mode}'. Must be 'all' or 'any'"
+
+        # Validate sort_direction parameter
+        if sort_direction not in ["asc", "desc"]:
+            return f"Error: Invalid sort_direction '{sort_direction}'. Must be 'asc' or 'desc'"
         
         ctx.info(f"Performing advanced search with {len(conditions)} conditions")
         zot = get_zotero_client()
