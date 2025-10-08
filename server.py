@@ -71,7 +71,7 @@ mcp = FastMCP(
 
 
 @mcp.tool(
-    name="zotero_search_items",
+    name="zot_search_items",
     description="Search for items in your Zotero library, given a query string."
 )
 def search_items(
@@ -162,7 +162,7 @@ def search_items(
         return f"Error searching Zotero: {str(e)}"
 
 @mcp.tool(
-    name="zotero_search_by_tag",
+    name="zot_search_by_tag",
     description="Search for items in your Zotero library by tag. " \
     "Conditions are ANDed, each term supports disjunction`||` and exclusion`-`."
 )
@@ -253,7 +253,7 @@ def search_by_tag(
         return f"Error searching Zotero: {str(e)}"
 
 @mcp.tool(
-    name="zotero_get_item_metadata",
+    name="zot_get_item_metadata",
     description="Get detailed metadata for a specific Zotero item by its key."
 )
 def get_item_metadata(
@@ -294,7 +294,7 @@ def get_item_metadata(
 
 
 @mcp.tool(
-    name="zotero_get_item_fulltext",
+    name="zot_get_item_fulltext",
     description="Get the full text content of a Zotero item by its key."
 )
 def get_item_fulltext(
@@ -368,7 +368,7 @@ def get_item_fulltext(
 
 
 @mcp.tool(
-    name="zotero_get_collections",
+    name="zot_get_collections",
     description="List all collections in your Zotero library."
 )
 def get_collections(
@@ -461,7 +461,7 @@ def get_collections(
 
 
 @mcp.tool(
-    name="zotero_get_collection_items",
+    name="zot_get_collection_items",
     description="Get all items in a specific Zotero collection."
 )
 def get_collection_items(
@@ -531,7 +531,7 @@ def get_collection_items(
 
 
 @mcp.tool(
-    name="zotero_get_item_children",
+    name="zot_get_item_children",
     description="Get all child items (attachments, notes) for a specific Zotero item."
 )
 def get_item_children(
@@ -645,7 +645,7 @@ def get_item_children(
 
 
 @mcp.tool(
-    name="zotero_get_tags",
+    name="zot_get_tags",
     description="Get all tags used in your Zotero library."
 )
 def get_tags(
@@ -699,7 +699,7 @@ def get_tags(
 
 
 @mcp.tool(
-    name="zotero_get_recent",
+    name="zot_get_recent",
     description="Get recently added items to your Zotero library."
 )
 def get_recent(
@@ -768,7 +768,7 @@ def get_recent(
 
 
 @mcp.tool(
-    name="zotero_batch_update_tags",
+    name="zot_batch_update_tags",
     description="Batch update tags across multiple items matching a search query."
 )
 def batch_update_tags(
@@ -915,7 +915,7 @@ def batch_update_tags(
 
 
 @mcp.tool(
-    name="zotero_advanced_search",
+    name="zot_advanced_search",
     description="Perform an advanced search with multiple criteria."
 )
 def advanced_search(
@@ -1080,7 +1080,7 @@ def advanced_search(
 
 
 @mcp.tool(
-    name="zotero_get_annotations",
+    name="zot_get_annotations",
     description="Get all annotations for a specific item or across your entire Zotero library."
 )
 def get_annotations(
@@ -1385,7 +1385,7 @@ def get_annotations(
 
 
 @mcp.tool(
-    name="zotero_get_notes",
+    name="zot_get_notes",
     description="Retrieve notes from your Zotero library, with options to filter by parent item."
 )
 def get_notes(
@@ -1472,7 +1472,7 @@ def get_notes(
 
 
 @mcp.tool(
-    name="zotero_search_notes",
+    name="zot_search_notes",
     description="Search for notes across your Zotero library."
 )
 def search_notes(
@@ -1625,7 +1625,7 @@ def search_notes(
 
 
 @mcp.tool(
-    name="zotero_create_note",
+    name="zot_create_note",
     description="Create a new note for a Zotero item."
 )
 def create_note(
@@ -1702,7 +1702,7 @@ def create_note(
 
 
 @mcp.tool(
-    name="zotero_semantic_search",
+    name="zot_semantic_search",
     description="Prioritized search tool. Perform semantic search over your Zotero library using AI-powered embeddings."
 )
 def semantic_search(
@@ -1838,7 +1838,7 @@ def semantic_search(
 
 
 @mcp.tool(
-    name="zotero_update_search_database",
+    name="zot_update_search_database",
     description="Update the semantic search database with latest Zotero items."
 )
 def update_search_database(
@@ -1905,7 +1905,7 @@ def update_search_database(
 
 
 @mcp.tool(
-    name="zotero_get_search_database_status",
+    name="zot_get_search_database_status",
     description="Get status information about the semantic search database."
 )
 def get_search_database_status(*, ctx: Context) -> str:
@@ -1998,7 +1998,7 @@ def _extract_item_key_from_input(value: str) -> Optional[str]:
 
 
 @mcp.tool(
-    name="zotero_graph_search",
+    name="zot_graph_search",
     description="Search the knowledge graph for entities, concepts, and relationships extracted from papers."
 )
 def graph_search(
@@ -2070,7 +2070,7 @@ def graph_search(
 
 
 @mcp.tool(
-    name="zotero_find_related_papers",
+    name="zot_find_related_papers",
     description="Find papers related to a given paper via shared entities in the knowledge graph."
 )
 def find_related_papers(
@@ -2138,7 +2138,7 @@ def find_related_papers(
 
 
 @mcp.tool(
-    name="zotero_hybrid_vector_graph_search",
+    name="zot_hybrid_vector_graph_search",
     description="Advanced hybrid search combining vector similarity (semantic) with knowledge graph relationships."
 )
 def hybrid_vector_graph_search(
