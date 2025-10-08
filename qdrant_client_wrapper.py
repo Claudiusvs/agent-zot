@@ -33,7 +33,7 @@ from qdrant_client.models import (
     QuantizationSearchParams,
     PayloadSchemaType,
     Prefetch,
-    Query
+    FusionQuery
 )
 
 logger = logging.getLogger(__name__)
@@ -552,7 +552,7 @@ class QdrantClientWrapper:
                                 limit=n_results * 2
                             )
                         ],
-                        query=Query(fusion="dbsf"),  # Distribution-Based Score Fusion
+                        query=FusionQuery(fusion="dbsf"),  # Distribution-Based Score Fusion
                         limit=n_results,
                         query_filter=query_filter
                     ).points
