@@ -801,7 +801,9 @@ class ZoteroSemanticSearch:
             }
 
         except Exception as e:
+            import traceback
             logger.error(f"Error performing semantic search: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return {
                 "query": query,
                 "limit": limit,

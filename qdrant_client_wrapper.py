@@ -31,7 +31,9 @@ from qdrant_client.models import (
     ScalarQuantizationConfig,
     ScalarType,
     QuantizationSearchParams,
-    PayloadSchemaType
+    PayloadSchemaType,
+    Prefetch,
+    Query
 )
 
 logger = logging.getLogger(__name__)
@@ -536,8 +538,6 @@ class QdrantClientWrapper:
                 # Search in Qdrant
                 if hybrid_mode and query_sparse:
                     # Hybrid search with both dense and sparse vectors
-                    from qdrant_client.models import Prefetch, Query
-
                     search_result = self.client.query_points(
                         collection_name=self.collection_name,
                         prefetch=[
