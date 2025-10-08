@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 
-from .utils import is_local_mode
+from utils import is_local_mode
 
 
 @dataclass

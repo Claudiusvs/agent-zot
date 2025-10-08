@@ -18,12 +18,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from pyzotero import zotero
 
-from .qdrant_client_wrapper import QdrantClientWrapper, create_qdrant_client
-from .docling_parser import DoclingParser, parse_zotero_attachment
-from .neo4j_graphrag_client import Neo4jGraphRAGClient, create_neo4j_graphrag_client
-from .client import get_zotero_client
-from .utils import format_creators, is_local_mode
-from .local_db import LocalZoteroReader, get_local_zotero_reader
+from qdrant_client_wrapper import QdrantClientWrapper, create_qdrant_client
+from docling_parser import DoclingParser, parse_zotero_attachment
+from neo4j_graphrag_client import Neo4jGraphRAGClient, create_neo4j_graphrag_client
+from client import get_zotero_client
+from utils import format_creators, is_local_mode
+from local_db import LocalZoteroReader, get_local_zotero_reader
 
 logger = logging.getLogger(__name__)
 
