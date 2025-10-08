@@ -787,7 +787,8 @@ def create_qdrant_client(config_path: Optional[str] = None) -> QdrantClientWrapp
     # Set up embedding config from environment
     if config["embedding_model"] == "openai":
         openai_api_key = os.getenv("OPENAI_API_KEY")
-        openai_model = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+        # Use config file model if specified, otherwise env var, otherwise default
+        openai_model = config.get("openai_model") or os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
         if openai_api_key:
             config["embedding_config"] = {
                 "api_key": openai_api_key,

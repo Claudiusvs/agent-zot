@@ -194,7 +194,11 @@ class ZoteroSemanticSearch:
             import re
             note_text = re.sub(r'<[^>]+>', '', note)
             extra_fields.append(note_text)
-        
+
+        # Full-text content (if available) - MOST IMPORTANT for semantic search
+        if fulltext := data.get("fulltext"):
+            extra_fields.append(fulltext)
+
         # Combine all text fields
         text_parts = [title, creators_text, abstract] + extra_fields
         return " ".join(filter(None, text_parts))
@@ -399,14 +403,39 @@ class ZoteroSemanticSearch:
 
                     def extract_item_fulltext(it):
                         """Extract fulltext for a single item (thread-safe)."""
-                        if not getattr(it, "fulltext", None):
-                            text = reader.extract_fulltext_for_item(it.item_id)
-                            if text:
-                                # Support new (text, source) return format
-                                if isinstance(text, tuple) and len(text) == 2:
-                                    it.fulltext, it.fulltext_source = text[0], text[1]
-                                else:
-                                    it.fulltext = text
+                        try:
+                            if not getattr(it, "fulltext", None) and not getattr(it, "chunks", None):
+                                # Create thread-local reader to avoid SQLite threading issues
+                                from local_db import LocalZoteroReader
+                                thread_reader = LocalZoteroReader()
+                                result = thread_reader.extract_fulltext_for_item(it.item_id)
+                                if result:
+                                    # Check if tuple format first
+                                    if isinstance(result, tuple) and len(result) == 2:
+                                        data, source = result
+                                        # Tuple can contain (dict, source) or (string, source)
+                                        if isinstance(data, dict) and "chunks" in data:
+                                            # New Docling format: (dict_with_chunks, "docling")
+                                            it.chunks = data["chunks"]
+                                            it.fulltext = data.get("text", "")
+                                            it.fulltext_source = source
+                                            it.docling_metadata = data.get("metadata", {})
+                                        else:
+                                            # Legacy format: (text_string, source)
+                                            it.fulltext = data if isinstance(data, str) else str(data)
+                                            it.fulltext_source = source
+                                    # Plain dict format (without tuple wrapper)
+                                    elif isinstance(result, dict) and "chunks" in result:
+                                        it.chunks = result["chunks"]
+                                        it.fulltext = result.get("text", "")
+                                        it.fulltext_source = "docling"
+                                        it.docling_metadata = result.get("metadata", {})
+                                    # Plain string format
+                                    else:
+                                        it.fulltext = result
+                                        it.fulltext_source = "pdfminer"
+                        except Exception as e:
+                            logger.error(f"Error extracting fulltext for item {it.item_id}: {e}")
                         return it
 
                     # Use ThreadPoolExecutor for parallel PDF parsing
@@ -416,12 +445,17 @@ class ZoteroSemanticSearch:
 
                         # Process results as they complete
                         for future in as_completed(future_to_item):
-                            extracted += 1
-                            if extracted % 25 == 0 and total_to_extract:
-                                try:
-                                    sys.stderr.write(f"Extracted content for {extracted}/{total_to_extract} items (parallel with {max_workers} workers)...\n")
-                                except Exception:
-                                    pass
+                            try:
+                                # Get the result (which is the updated item with fulltext)
+                                updated_item = future.result()
+                                extracted += 1
+                                if extracted % 25 == 0 and total_to_extract:
+                                    try:
+                                        sys.stderr.write(f"Extracted content for {extracted}/{total_to_extract} items (parallel with {max_workers} workers)...\n")
+                                    except Exception:
+                                        pass
+                            except Exception as e:
+                                logger.error(f"Error extracting fulltext: {e}")
                 else:
                     # Skip fulltext extraction for faster processing
                     for it in local_items:
@@ -444,16 +478,19 @@ class ZoteroSemanticSearch:
                             # Include fulltext only when extracted
                             "fulltext": getattr(item, 'fulltext', None) or "" if extract_fulltext else "",
                             "fulltextSource": getattr(item, 'fulltext_source', None) or "" if extract_fulltext else "",
+                            # Include Docling chunks if available (new format)
+                            "chunks": getattr(item, 'chunks', None) or [] if extract_fulltext else [],
+                            "docling_metadata": getattr(item, 'docling_metadata', None) or {} if extract_fulltext else {},
                             "dateAdded": item.date_added,
                             "dateModified": item.date_modified,
                             "creators": self._parse_creators_string(item.creators) if item.creators else []
                         }
                     }
-                    
+
                     # Add notes if available
                     if item.notes:
                         api_item["data"]["notes"] = item.notes
-                    
+
                     api_items.append(api_item)
                 
                 logger.info(f"Retrieved {len(api_items)} items from local database")
@@ -648,9 +685,37 @@ class ZoteroSemanticSearch:
             stats["duration"] = str(end_time - start_time)
             return stats
     
+    def _truncate_text_for_embedding(self, text: str, max_tokens: int = 5000) -> str:
+        """
+        Truncate text to fit within OpenAI's token limit.
+
+        Uses very conservative estimate: 1 token ≈ 3 characters for safety.
+        Default max_tokens=5000 leaves large buffer below 8192 limit.
+
+        Args:
+            text: Text to truncate
+            max_tokens: Maximum number of tokens (default: 5000)
+
+        Returns:
+            Truncated text
+        """
+        # Very conservative estimate: 1 token ≈ 3 chars (large safety buffer)
+        max_chars = int(max_tokens * 3)
+
+        if len(text) <= max_chars:
+            return text
+
+        # Truncate and add indicator
+        truncated = text[:max_chars]
+        logger.debug(f"Truncated text from {len(text)} to {len(truncated)} chars (~{max_tokens} tokens)")
+        return truncated
+
     def _process_item_batch(self, items: List[Dict[str, Any]], force_rebuild: bool = False) -> Dict[str, int]:
         """
-        Process a batch of items.
+        Process a batch of items with chunk-based indexing.
+
+        If Docling chunks are available, indexes each chunk separately.
+        Otherwise falls back to document-level indexing.
 
         Note: Parallelization happens upstream in _get_items_from_local_db during PDF extraction.
         """
@@ -667,33 +732,79 @@ class ZoteroSemanticSearch:
                     stats["skipped"] += 1
                     continue
 
-                # Check if item exists and needs update
-                if not force_rebuild and self.qdrant_client.document_exists(item_key):
-                    # For now, skip existing items (could implement update logic here)
-                    stats["skipped"] += 1
-                    continue
+                data = item.get("data", {})
+                chunks = data.get("chunks", [])
 
-                # Create document text and metadata
-                # Prefer fulltext if available, else fall back to structured fields
-                fulltext = item.get("data", {}).get("fulltext", "")
-                doc_text = fulltext if fulltext.strip() else self._create_document_text(item)
-                metadata = self._create_metadata(item)
+                # CHUNK-BASED INDEXING (new, preferred method)
+                if chunks:
+                    logger.debug(f"Indexing {len(chunks)} chunks for item {item_key}")
 
-                if not doc_text.strip():
-                    stats["skipped"] += 1
-                    continue
+                    # Create base metadata for this document
+                    base_metadata = self._create_metadata(item)
 
-                documents.append(doc_text)
-                metadatas.append(metadata)
-                ids.append(item_key)
+                    for chunk in chunks:
+                        chunk_id = chunk.get("chunk_id", 0)
+                        chunk_text = chunk.get("text", "")
+                        chunk_meta = chunk.get("meta", {})
 
-                stats["processed"] += 1
+                        if not chunk_text.strip():
+                            continue
+
+                        # Create unique ID for this chunk
+                        chunk_point_id = f"{item_key}_chunk_{chunk_id}"
+
+                        # Check if chunk already exists
+                        if not force_rebuild and self.qdrant_client.document_exists(chunk_point_id):
+                            continue
+
+                        # Create metadata for this chunk
+                        chunk_metadata = base_metadata.copy()
+                        chunk_metadata["parent_item_key"] = item_key
+                        chunk_metadata["chunk_id"] = chunk_id
+                        chunk_metadata["chunk_headings"] = chunk_meta.get("headings", [])
+                        chunk_metadata["is_chunk"] = True
+
+                        documents.append(chunk_text)
+                        metadatas.append(chunk_metadata)
+                        ids.append(chunk_point_id)
+
+                    stats["processed"] += 1
+
+                # DOCUMENT-LEVEL INDEXING (fallback for items without chunks)
+                else:
+                    # Check if item exists and needs update
+                    if not force_rebuild and self.qdrant_client.document_exists(item_key):
+                        stats["skipped"] += 1
+                        continue
+
+                    # Create document text from available fields
+                    fulltext = data.get("fulltext", "")
+                    # Handle case where fulltext might be a dict (from Docling) - extract text field
+                    if isinstance(fulltext, dict):
+                        fulltext = fulltext.get("text", "")
+                    doc_text = fulltext if fulltext and fulltext.strip() else self._create_document_text(item)
+
+                    # Truncate only for document-level indexing (chunks are already sized correctly)
+                    doc_text = self._truncate_text_for_embedding(doc_text)
+
+                    metadata = self._create_metadata(item)
+                    metadata["is_chunk"] = False  # Mark as document-level
+
+                    if not doc_text.strip():
+                        stats["skipped"] += 1
+                        continue
+
+                    documents.append(doc_text)
+                    metadatas.append(metadata)
+                    ids.append(item_key)
+
+                    stats["processed"] += 1
 
             except Exception as e:
                 logger.error(f"Error processing item {item.get('key', 'unknown')}: {e}")
                 stats["errors"] += 1
 
-        # Add documents to Qdrant if any
+        # Add documents/chunks to Qdrant if any
         if documents:
             try:
                 self.qdrant_client.upsert_documents(documents, metadatas, ids)

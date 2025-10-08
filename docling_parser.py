@@ -11,7 +11,7 @@ from typing import List, Dict, Any, Optional
 import tempfile
 import os
 
-from docling.document_converter import DocumentConverter
+from docling.document_converter import DocumentConverter, PdfFormatOption
 from docling.chunking import HybridChunker
 from docling.datamodel.pipeline_options import PdfPipelineOptions, AcceleratorOptions
 
@@ -26,7 +26,10 @@ class DoclingParser:
                  max_tokens: Optional[int] = None,
                  merge_peers: bool = True,
                  num_threads: int = 10,
-                 do_formula_enrichment: bool = True):
+                 do_formula_enrichment: bool = True,
+                 do_table_structure: bool = True,
+                 do_ocr: bool = True,
+                 ocr_min_text_threshold: int = 100):
         """
         Initialize Docling parser with HybridChunker.
 
@@ -36,22 +39,29 @@ class DoclingParser:
             merge_peers: Whether to merge undersized chunks with same metadata (default: True)
             num_threads: Number of CPU threads for parallel processing (default: 10)
             do_formula_enrichment: Convert LaTeX formulas to text (default: True)
+            do_table_structure: Parse table structure (default: True)
+            do_ocr: Enable OCR for scanned PDFs (default: True)
+            ocr_min_text_threshold: Minimum chars before considering OCR needed (default: 100)
         """
         self.tokenizer = tokenizer
         self.max_tokens = max_tokens
         self.merge_peers = merge_peers
+        self.ocr_min_text_threshold = ocr_min_text_threshold
 
-        # Configure PDF pipeline options for optimized processing
-        pipeline_options = PdfPipelineOptions(
+        # Configure PDF pipeline options with all settings
+        self.pipeline_options = PdfPipelineOptions(
             do_formula_enrichment=do_formula_enrichment,
+            do_table_structure=do_table_structure,
+            do_ocr=do_ocr,
             accelerator_options=AcceleratorOptions(
                 num_threads=num_threads,
                 device="auto"
             )
         )
 
+        # Create converter with pipeline options using PdfFormatOption
         self.converter = DocumentConverter(
-            format_options={"pdf": pipeline_options}
+            format_options={PdfFormatOption: self.pipeline_options}
         )
 
         # Use HybridChunker for token-aware, structure-preserving chunking
@@ -89,21 +99,14 @@ class DoclingParser:
             }
         """
         try:
-            # Try standard parsing first
-            if force_ocr:
-                logger.info(f"Force OCR enabled for {pdf_path}")
-                result = self.converter.convert(pdf_path, do_ocr=True, force_full_page_ocr=True)
-            else:
-                result = self.converter.convert(pdf_path)
-
+            # Parse with standard converter (OCR already enabled in pipeline options)
+            result = self.converter.convert(pdf_path)
             doc = result.document
 
-            # Check if we got minimal content (might indicate OCR needed)
+            # Check if we got minimal content
             full_text = doc.export_to_markdown()
-            if not force_ocr and len(full_text.strip()) < 100:
-                logger.warning(f"Minimal text extracted ({len(full_text)} chars), retrying with OCR")
-                result = self.converter.convert(pdf_path, do_ocr=True, force_full_page_ocr=True)
-                doc = result.document
+            if len(full_text.strip()) < self.ocr_min_text_threshold:
+                logger.warning(f"Minimal text extracted ({len(full_text)} chars) - may be scanned PDF")
 
             # Extract full text
             full_text = doc.export_to_markdown()
@@ -113,12 +116,23 @@ class DoclingParser:
             chunk_iter = self.chunker.chunk(doc)
 
             for i, chunk in enumerate(chunk_iter):
+                # Extract headings - they might be strings or objects with .text attribute
+                headings = []
+                if chunk.meta.headings:
+                    for h in chunk.meta.headings:
+                        if isinstance(h, str):
+                            headings.append(h)
+                        elif hasattr(h, 'text'):
+                            headings.append(h.text)
+                        else:
+                            headings.append(str(h))
+
                 chunk_data = {
                     "chunk_id": i,
                     "text": self.chunker.serialize(chunk),
                     "meta": {
                         "doc_items": [item.self_ref for item in chunk.meta.doc_items] if chunk.meta.doc_items else [],
-                        "headings": [h.text for h in chunk.meta.headings] if chunk.meta.headings else []
+                        "headings": headings
                     }
                 }
                 chunks.append(chunk_data)
@@ -159,17 +173,9 @@ class DoclingParser:
             }
 
         except Exception as e:
-            # If standard parsing failed and OCR wasn't tried, try with OCR
-            if not force_ocr:
-                logger.warning(f"Standard parsing failed: {e}. Trying with OCR...")
-                try:
-                    return self.parse_pdf(pdf_path, force_ocr=True)
-                except Exception as ocr_error:
-                    logger.error(f"OCR parsing also failed: {ocr_error}")
-            else:
-                logger.error(f"Error parsing PDF with Docling (OCR enabled): {e}")
+            logger.error(f"Error parsing PDF with Docling: {e}")
 
-            # Final fallback to simple text extraction
+            # Fallback to simple text extraction
             return self._fallback_parse(pdf_path)
 
     def _fallback_parse(self, pdf_path: str) -> Dict[str, Any]:
@@ -227,8 +233,8 @@ class DoclingParser:
             List of chunk dictionaries
         """
         chunks = []
-        chunk_size = self.chunk_size
-        overlap = self.chunk_overlap
+        chunk_size = 1000  # Simple fallback chunk size
+        overlap = 100  # Simple fallback overlap
 
         start = 0
         chunk_id = 0

@@ -208,9 +208,60 @@ class LocalZoteroReader:
         return None
 
     def _extract_text_from_pdf(self, file_path: Path) -> str:
-        """Extract text from a PDF using pdfminer with OCR fallback for scanned PDFs."""
+        """
+        Extract text from a PDF using Docling (AI-powered parser with structure preservation).
+
+        Falls back to pdfminer/OCR if Docling is unavailable.
+        """
+        # Try Docling first (best quality, structure-aware)
+        try:
+            from docling_parser import DoclingParser
+            import json
+
+            # Load config from standard location
+            config_path = Path.home() / ".config" / "zotero-mcp" / "config.json"
+            parser_config = {}
+            if config_path.exists():
+                try:
+                    with open(config_path) as f:
+                        full_config = json.load(f)
+                        parser_config = full_config.get("semantic_search", {}).get("docling", {})
+                except Exception:
+                    pass
+
+            # Initialize parser with config settings (or defaults)
+            ocr_config = parser_config.get("ocr", {})
+            parser = DoclingParser(
+                tokenizer=parser_config.get("tokenizer", "sentence-transformers/all-MiniLM-L6-v2"),
+                max_tokens=parser_config.get("max_tokens", 512),
+                merge_peers=parser_config.get("merge_peers", True),
+                num_threads=parser_config.get("num_threads", 10),
+                do_formula_enrichment=parser_config.get("do_formula_enrichment", True),
+                do_table_structure=parser_config.get("parse_tables", True),
+                do_ocr=ocr_config.get("enabled", True),
+                ocr_min_text_threshold=ocr_config.get("min_text_threshold", 100)
+            )
+
+            # Parse PDF with conditional OCR
+            result = parser.parse_pdf(str(file_path), force_ocr=False)
+
+            # Return the full parsing result (includes chunks, text, tables, figures)
+            # This allows semantic_search to choose between chunk-based or full-text indexing
+            if result and result.get("chunks"):
+                return result  # Return full result with chunks
+
+            # If Docling returned no chunks, try fallback
+            logging.warning(f"Docling returned no chunks for {file_path.name}, trying pdfminer")
+
+        except ImportError:
+            logging.info("Docling not available, using pdfminer fallback")
+        except Exception as e:
+            logging.warning(f"Docling parsing failed for {file_path.name}: {e}, trying pdfminer")
+
+        # Fallback to pdfminer (original method)
         try:
             from pdfminer.high_level import extract_text  # type: ignore
+
             # Determine page cap: config value > env > default (1000)
             if isinstance(self.pdf_max_pages, int) and self.pdf_max_pages > 0:
                 maxpages = self.pdf_max_pages
@@ -220,16 +271,16 @@ class LocalZoteroReader:
                     maxpages = int(max_pages_env) if max_pages_env else 1000
                 except ValueError:
                     maxpages = 1000
-            
+
             text = extract_text(str(file_path), maxpages=maxpages)
-            
+
             # PATCH: If text is too short (likely scanned PDF), try OCR
             if not text or len(text.strip()) < 100:
                 return self._extract_text_with_ocr(file_path)
-            
+
             return text or ""
         except Exception:
-            # Fallback to OCR if pdfminer fails
+            # Final fallback to OCR if pdfminer fails
             return self._extract_text_with_ocr(file_path)
     
     def _extract_text_with_ocr(self, file_path: Path) -> str:
