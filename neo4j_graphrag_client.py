@@ -285,13 +285,11 @@ class Neo4jGraphRAGClient:
             )
 
             # Configure lexical graph for keyword-based connections
+            # Use keyword arguments instead of dict (Pydantic v2 compatibility)
             lexical_config = LexicalGraphConfig(
-                {
-                    "id": "__Entity__",
-                    "label": "__Entity__",
-                    "text": "text",
-                    "embedding": "embedding"
-                }
+                chunk_id_property="id",
+                chunk_text_property="text",
+                chunk_embedding_property="embedding"
             )
 
             # Create knowledge graph pipeline with optimized settings

@@ -155,11 +155,11 @@ def main():
     # Update database command
     update_db_parser = subparsers.add_parser("update-db", help="Update semantic search database")
     update_db_parser.add_argument("--force-rebuild", action="store_true",
-                                 help="Force complete rebuild of the database")
+                                 help="Force complete rebuild of the database (overrides config setting, deletes collection first)")
     update_db_parser.add_argument("--limit", type=int,
                                  help="Limit number of items to process (for testing)")
     update_db_parser.add_argument("--fulltext", action="store_true",
-                                 help="Extract fulltext content from local Zotero database (slower but more comprehensive)")
+                                 help="Extract fulltext content from local Zotero database (overrides config setting)")
     update_db_parser.add_argument("--config-path", 
                                  help="Path to semantic search configuration file")
     

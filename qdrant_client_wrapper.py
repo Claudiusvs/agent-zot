@@ -175,10 +175,11 @@ class GeminiEmbeddingFunction:
 class DefaultEmbeddingFunction:
     """Default embedding function using sentence-transformers."""
 
-    def __init__(self):
+    def __init__(self, model_name: str = 'all-MiniLM-L6-v2'):
         try:
             from sentence_transformers import SentenceTransformer
-            self.model = SentenceTransformer('all-MiniLM-L6-v2')
+            self.model = SentenceTransformer(model_name)
+            self.model_name = model_name
         except ImportError:
             raise ImportError("sentence-transformers package is required for default embeddings")
 
@@ -193,7 +194,7 @@ class DefaultEmbeddingFunction:
 
     def get_dimension(self) -> int:
         """Get the dimension of embeddings for this model."""
-        return 384  # all-MiniLM-L6-v2 produces 384-dimensional embeddings
+        return self.model.get_sentence_embedding_dimension()
 
 
 class QdrantClientWrapper:
@@ -242,6 +243,8 @@ class QdrantClientWrapper:
 
         # Set up embedding function
         self.embedding_function = self._create_embedding_function()
+        logger.info(f"[DEBUG] Initialized embedding function: {type(self.embedding_function).__name__}, model: {getattr(self.embedding_function, 'model_name', 'unknown')}, dimension: {self.embedding_function.get_dimension()}")
+        print(f"[DEBUG] Initialized embedding function: {type(self.embedding_function).__name__}, model: {getattr(self.embedding_function, 'model_name', 'unknown')}, dimension: {self.embedding_function.get_dimension()}")
 
         # Set up sparse embedding function for hybrid search
         self.sparse_embedding = BM25SparseEmbedding() if enable_hybrid_search else None
@@ -256,6 +259,8 @@ class QdrantClientWrapper:
             # Check if collection exists
             collections = self.client.get_collections().collections
             collection_exists = any(c.name == self.collection_name for c in collections)
+            logger.info(f"[DEBUG] Collection {self.collection_name} exists: {collection_exists}")
+            print(f"[DEBUG] Collection {self.collection_name} exists: {collection_exists}")
 
             if not collection_exists:
                 # Create collection with appropriate vector size and optimizations
@@ -389,8 +394,9 @@ class QdrantClientWrapper:
             return GeminiEmbeddingFunction(model_name=model_name, api_key=api_key)
 
         else:
-            # Use default sentence-transformers embedding
-            return DefaultEmbeddingFunction()
+            # Use sentence-transformers embedding (default or configured)
+            model_name = self.embedding_config.get("model_name", "all-MiniLM-L6-v2")
+            return DefaultEmbeddingFunction(model_name=model_name)
 
     def add_documents(self,
                      documents: List[str],
@@ -409,6 +415,9 @@ class QdrantClientWrapper:
         try:
             total_docs = len(documents)
             mode = "hybrid" if self.enable_hybrid_search else "dense"
+
+            logger.info(f"[DEBUG] add_documents called with {total_docs} documents, collection: {self.collection_name}")
+            print(f"[DEBUG] add_documents called with {total_docs} documents, collection: {self.collection_name}")
 
             # Process in batches for better performance
             for batch_start in range(0, total_docs, batch_size):
@@ -683,43 +692,76 @@ class QdrantClientWrapper:
             }
 
     def reset_collection(self) -> None:
-        """Reset (clear) the collection."""
+        """Reset (clear) the collection WITH ALL OPTIMIZATIONS."""
         try:
             # Delete and recreate collection
             self.client.delete_collection(collection_name=self.collection_name)
 
             vector_size = self.embedding_function.get_dimension()
 
+            # Configure HNSW indexing
+            hnsw_config = HnswConfigDiff(
+                m=self.hnsw_m,
+                ef_construct=self.hnsw_ef_construct
+            )
+
+            # Configure optimizer
+            optimizer_config = OptimizersConfigDiff(
+                indexing_threshold=20000  # Start indexing after this many vectors
+            )
+
+            # Configure quantization if enabled
+            quantization_config = None
+            if self.enable_quantization:
+                quantization_config = ScalarQuantization(
+                    scalar=ScalarQuantizationConfig(
+                        type=ScalarType.INT8,  # 8-bit quantization
+                        quantile=0.99,  # Outlier handling
+                        always_ram=True  # Keep quantized vectors in RAM for speed
+                    )
+                )
+
             if self.enable_hybrid_search:
-                # Create collection with both dense and sparse vectors
+                # Create collection with both dense and sparse vectors + ALL optimizations
                 self.client.create_collection(
                     collection_name=self.collection_name,
                     vectors_config={
                         "dense": VectorParams(
                             size=vector_size,
-                            distance=Distance.COSINE
+                            distance=Distance.COSINE,
+                            hnsw_config=hnsw_config,
+                            quantization_config=quantization_config
                         )
                     },
                     sparse_vectors_config={
                         "sparse": SparseVectorParams(
                             index=SparseIndexParams()
                         )
-                    }
+                    },
+                    optimizers_config=optimizer_config
                 )
                 # Reset BM25 fitted state
                 if self.sparse_embedding:
                     self.sparse_embedding.fitted = False
-                logger.info(f"Reset hybrid Qdrant collection '{self.collection_name}'")
+                logger.info(f"Reset optimized hybrid Qdrant collection '{self.collection_name}':")
+                logger.info(f"  - Dense vectors: {vector_size}D, HNSW(m={self.hnsw_m}, ef={self.hnsw_ef_construct})")
+                logger.info(f"  - Quantization: {'Enabled (INT8)' if self.enable_quantization else 'Disabled'}")
+                logger.info(f"  - Sparse vectors: Enabled (BM25)")
             else:
-                # Create collection with only dense vectors
+                # Create collection with only dense vectors + optimizations
                 self.client.create_collection(
                     collection_name=self.collection_name,
                     vectors_config=VectorParams(
                         size=vector_size,
-                        distance=Distance.COSINE
-                    )
+                        distance=Distance.COSINE,
+                        hnsw_config=hnsw_config,
+                        quantization_config=quantization_config
+                    ),
+                    optimizers_config=optimizer_config
                 )
-                logger.info(f"Reset Qdrant collection '{self.collection_name}'")
+                logger.info(f"Reset optimized Qdrant collection '{self.collection_name}':")
+                logger.info(f"  - Dense vectors: {vector_size}D, HNSW(m={self.hnsw_m}, ef={self.hnsw_ef_construct})")
+                logger.info(f"  - Quantization: {'Enabled (INT8)' if self.enable_quantization else 'Disabled'}")
         except Exception as e:
             logger.error(f"Error resetting collection: {e}")
             raise
@@ -803,6 +845,13 @@ def create_qdrant_client(config_path: Optional[str] = None) -> QdrantClientWrapp
                 "api_key": gemini_api_key,
                 "model_name": gemini_model
             }
+
+    elif config["embedding_model"] == "sentence-transformers":
+        # Read sentence_transformer_model from config
+        sentence_transformer_model = config.get("sentence_transformer_model", "all-MiniLM-L6-v2")
+        config["embedding_config"] = {
+            "model_name": sentence_transformer_model
+        }
 
     # Get optimization configurations
     enable_hybrid = config.get("enable_hybrid_search", True)

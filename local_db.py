@@ -198,7 +198,7 @@ class LocalZoteroReader:
                                 header = f.read(8)
                                 if header.startswith(b'%PDF'):
                                     return file_path
-                        except:
+                        except Exception:
                             continue
                     # If no PDF found by content, return first file
                     return all_files[0]
@@ -209,25 +209,29 @@ class LocalZoteroReader:
 
     def _extract_text_from_pdf(self, file_path: Path) -> str:
         """
-        Extract text from a PDF using Docling (AI-powered parser with structure preservation).
+        Extract text from a PDF using Docling with MPS GPU acceleration.
 
-        Falls back to pdfminer/OCR if Docling is unavailable.
+        Priority order (as originally designed):
+        1. Docling - Advanced AI parsing with MPS GPU acceleration
+        2. pdfminer - Legacy fallback
+        3. OCR - Final fallback for scanned PDFs
         """
-        # Try Docling first (best quality, structure-aware)
+        import json
+
+        # Load config from standard location
+        config_path = Path.home() / ".config" / "zotero-mcp" / "config.json"
+        parser_config = {}
+        if config_path.exists():
+            try:
+                with open(config_path) as f:
+                    full_config = json.load(f)
+                    parser_config = full_config.get("semantic_search", {}).get("docling", {})
+            except Exception:
+                pass
+
+        # Try Docling first (PRIMARY PARSER - as originally designed)
         try:
             from docling_parser import DoclingParser
-            import json
-
-            # Load config from standard location
-            config_path = Path.home() / ".config" / "zotero-mcp" / "config.json"
-            parser_config = {}
-            if config_path.exists():
-                try:
-                    with open(config_path) as f:
-                        full_config = json.load(f)
-                        parser_config = full_config.get("semantic_search", {}).get("docling", {})
-                except Exception:
-                    pass
 
             # Initialize parser with config settings (or defaults)
             ocr_config = parser_config.get("ocr", {})
@@ -235,10 +239,10 @@ class LocalZoteroReader:
                 tokenizer=parser_config.get("tokenizer", "sentence-transformers/all-MiniLM-L6-v2"),
                 max_tokens=parser_config.get("max_tokens", 512),
                 merge_peers=parser_config.get("merge_peers", True),
-                num_threads=parser_config.get("num_threads", 10),
-                do_formula_enrichment=parser_config.get("do_formula_enrichment", True),
-                do_table_structure=parser_config.get("parse_tables", True),
-                do_ocr=ocr_config.get("enabled", True),
+                num_threads=parser_config.get("num_threads", 8),  # Default to 8 (M1 Pro perf cores)
+                do_formula_enrichment=parser_config.get("do_formula_enrichment", False),  # Match config default
+                do_table_structure=parser_config.get("parse_tables", False),  # Match config default
+                enable_ocr_fallback=ocr_config.get("fallback_enabled", True),
                 ocr_min_text_threshold=ocr_config.get("min_text_threshold", 100)
             )
 
@@ -246,15 +250,16 @@ class LocalZoteroReader:
             result = parser.parse_pdf(str(file_path), force_ocr=False)
 
             # Return the full parsing result (includes chunks, text, tables, figures)
-            # This allows semantic_search to choose between chunk-based or full-text indexing
             if result and result.get("chunks"):
-                return result  # Return full result with chunks
+                logging.info(f"Docling successfully parsed {file_path.name}")
+                logging.info(f"[DEBUG] Returning from Docling: type={type(result)}, chunks={len(result.get('chunks', []))}")
+                return (result, "docling")  # Return tuple format expected by semantic_search
 
             # If Docling returned no chunks, try fallback
             logging.warning(f"Docling returned no chunks for {file_path.name}, trying pdfminer")
 
         except ImportError:
-            logging.info("Docling not available, using pdfminer fallback")
+            logging.debug("Docling not available, using pdfminer fallback")
         except Exception as e:
             logging.warning(f"Docling parsing failed for {file_path.name}: {e}, trying pdfminer")
 
@@ -276,12 +281,14 @@ class LocalZoteroReader:
 
             # PATCH: If text is too short (likely scanned PDF), try OCR
             if not text or len(text.strip()) < 100:
-                return self._extract_text_with_ocr(file_path)
+                ocr_text = self._extract_text_with_ocr(file_path)
+                return (ocr_text, "pdf")
 
-            return text or ""
+            return (text or "", "pdf")
         except Exception:
             # Final fallback to OCR if pdfminer fails
-            return self._extract_text_with_ocr(file_path)
+            ocr_text = self._extract_text_with_ocr(file_path)
+            return (ocr_text, "pdf")
     
     def _extract_text_with_ocr(self, file_path: Path) -> str:
         """Extract text from PDF using OCR (for scanned PDFs)."""
@@ -334,10 +341,15 @@ class LocalZoteroReader:
         except Exception:
             return ""
 
-    def _extract_text_from_file(self, file_path: Path) -> str:
-        """Extract text content from a file based on extension, with fallbacks."""
+    def _extract_text_from_file(self, file_path: Path):
+        """Extract text content from a file based on extension, with fallbacks.
+
+        For PDFs: Returns tuple (data, source) where data is dict (Docling) or str (pdfminer)
+        For other files: Returns str (plain text)
+        """
         suffix = file_path.suffix.lower()
         if suffix == ".pdf":
+            # PDFs return tuple format from _extract_text_from_pdf - pass through as-is
             return self._extract_text_from_pdf(file_path)
         if suffix in {".html", ".htm"}:
             return self._extract_text_from_html(file_path)
@@ -372,9 +384,8 @@ class LocalZoteroReader:
                     if content_type == 'application/pdf':
                         resolved = self._resolve_attachment_path(item_key, path or "")
                         if resolved and resolved.exists():
-                            text = self._extract_text_from_file(resolved)
-                            if text:
-                                return (text, "pdf")
+                            # For PDFs, _extract_text_from_file already returns tuple format
+                            return self._extract_text_from_file(resolved)
                 return None
         
         # Original logic for parent items
@@ -392,11 +403,16 @@ class LocalZoteroReader:
         target = best_pdf or best_html
         if not target:
             return None
+
+        # For PDFs, _extract_text_from_file already returns tuple format
+        if target.suffix.lower() == ".pdf":
+            return self._extract_text_from_file(target)
+
+        # For non-PDFs (HTML, etc.), returns plain text - wrap in tuple
         text = self._extract_text_from_file(target)
         if not text:
             return None
-        # PATCH: Remove character limit - let OpenAI handle full text
-        source = "pdf" if target.suffix.lower() == ".pdf" else ("html" if target.suffix.lower() in {".html", ".htm"} else "file")
+        source = "html" if target.suffix.lower() in {".html", ".htm"} else "file"
         return (text, source)
     
     def close(self):

@@ -69,7 +69,10 @@ class ZoteroSemanticSearch:
             max_tokens=docling_config.get("max_tokens"),
             merge_peers=docling_config.get("merge_peers", True),
             num_threads=docling_config.get("num_threads", 10),
-            do_formula_enrichment=docling_config.get("do_formula_enrichment", True)
+            do_formula_enrichment=docling_config.get("do_formula_enrichment", True),
+            do_table_structure=docling_config.get("parse_tables", True),
+            enable_ocr_fallback=docling_config.get("ocr", {}).get("fallback_enabled", True),
+            ocr_min_text_threshold=docling_config.get("ocr", {}).get("min_text_threshold", 100)
         )
 
         # Load update configuration
@@ -395,48 +398,56 @@ class ZoteroSemanticSearch:
                         pass
 
                 # Phase 2: selectively extract fulltext only when requested
+                # Store extraction results in dict (NamedTuples are immutable!)
+                extraction_data = {}  # item_key -> {"fulltext": ..., "chunks": ..., "source": ..., "metadata": ...}
+
                 if extract_fulltext:
                     # Parallel fulltext extraction with ThreadPoolExecutor
-                    # Using 5 workers (M1 Pro 10-core / 2, accounting for Docling's internal threading)
-                    max_workers = 5
+                    # Using 7 workers (optimized for M1 Pro 10-core, accounting for Docling's internal threading)
+                    max_workers = 7
                     extracted = 0
 
                     def extract_item_fulltext(it):
-                        """Extract fulltext for a single item (thread-safe)."""
+                        """Extract fulltext for a single item (thread-safe). Returns (item_key, extraction_dict)."""
+                        item_key = it.key
+                        extraction_result = {"fulltext": "", "chunks": [], "source": "", "metadata": {}}
+
                         try:
-                            if not getattr(it, "fulltext", None) and not getattr(it, "chunks", None):
-                                # Create thread-local reader to avoid SQLite threading issues
-                                from local_db import LocalZoteroReader
-                                thread_reader = LocalZoteroReader()
-                                result = thread_reader.extract_fulltext_for_item(it.item_id)
-                                if result:
-                                    # Check if tuple format first
-                                    if isinstance(result, tuple) and len(result) == 2:
-                                        data, source = result
-                                        # Tuple can contain (dict, source) or (string, source)
-                                        if isinstance(data, dict) and "chunks" in data:
-                                            # New Docling format: (dict_with_chunks, "docling")
-                                            it.chunks = data["chunks"]
-                                            it.fulltext = data.get("text", "")
-                                            it.fulltext_source = source
-                                            it.docling_metadata = data.get("metadata", {})
-                                        else:
-                                            # Legacy format: (text_string, source)
-                                            it.fulltext = data if isinstance(data, str) else str(data)
-                                            it.fulltext_source = source
-                                    # Plain dict format (without tuple wrapper)
-                                    elif isinstance(result, dict) and "chunks" in result:
-                                        it.chunks = result["chunks"]
-                                        it.fulltext = result.get("text", "")
-                                        it.fulltext_source = "docling"
-                                        it.docling_metadata = result.get("metadata", {})
-                                    # Plain string format
+                            # Create thread-local reader to avoid SQLite threading issues
+                            from local_db import LocalZoteroReader
+                            thread_reader = LocalZoteroReader()
+                            result = thread_reader.extract_fulltext_for_item(it.item_id)
+                            logger.info(f"[DEBUG] extract_fulltext_for_item returned: type={type(result)}, is_tuple={isinstance(result, tuple)}, len={len(result) if isinstance(result, (tuple, list)) else 'N/A'}")
+                            if result:
+                                # Check if tuple format first
+                                if isinstance(result, tuple) and len(result) == 2:
+                                    data, source = result
+                                    logger.info(f"[DEBUG] Tuple contents: data_type={type(data)}, is_dict={isinstance(data, dict)}, has_chunks={'chunks' in data if isinstance(data, dict) else False}, source={source}")
+                                    # Tuple can contain (dict, source) or (string, source)
+                                    if isinstance(data, dict) and "chunks" in data:
+                                        # New Docling format: (dict_with_chunks, "docling")
+                                        extraction_result["chunks"] = data["chunks"]
+                                        extraction_result["fulltext"] = data.get("text", "")
+                                        extraction_result["source"] = source
+                                        extraction_result["metadata"] = data.get("metadata", {})
                                     else:
-                                        it.fulltext = result
-                                        it.fulltext_source = "pdfminer"
+                                        # Legacy format: (text_string, source)
+                                        extraction_result["fulltext"] = data if isinstance(data, str) else str(data)
+                                        extraction_result["source"] = source
+                                # Plain dict format (without tuple wrapper)
+                                elif isinstance(result, dict) and "chunks" in result:
+                                    extraction_result["chunks"] = result["chunks"]
+                                    extraction_result["fulltext"] = result.get("text", "")
+                                    extraction_result["source"] = "docling"
+                                    extraction_result["metadata"] = result.get("metadata", {})
+                                # Plain string format
+                                else:
+                                    extraction_result["fulltext"] = result
+                                    extraction_result["source"] = "pdfminer"
                         except Exception as e:
                             logger.error(f"Error extracting fulltext for item {it.item_id}: {e}")
-                        return it
+
+                        return (item_key, extraction_result)
 
                     # Use ThreadPoolExecutor for parallel PDF parsing
                     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -446,8 +457,9 @@ class ZoteroSemanticSearch:
                         # Process results as they complete
                         for future in as_completed(future_to_item):
                             try:
-                                # Get the result (which is the updated item with fulltext)
-                                updated_item = future.result()
+                                # Get the result (item_key, extraction_dict)
+                                item_key, extraction_result = future.result()
+                                extraction_data[item_key] = extraction_result
                                 extracted += 1
                                 if extracted % 25 == 0 and total_to_extract:
                                     try:
@@ -456,15 +468,16 @@ class ZoteroSemanticSearch:
                                         pass
                             except Exception as e:
                                 logger.error(f"Error extracting fulltext: {e}")
-                else:
-                    # Skip fulltext extraction for faster processing
-                    for it in local_items:
-                        it.fulltext = None
-                        it.fulltext_source = None
                 
                 # Convert to API-compatible format
                 api_items = []
                 for item in local_items:
+                    # Get extraction data for this item (if available)
+                    item_extraction = extraction_data.get(item.key, {"fulltext": "", "chunks": [], "source": "", "metadata": {}})
+
+                    # DEBUG: Log chunk data flow
+                    logger.info(f"[DEBUG] Item {item.key}: chunks in extraction_data: {len(item_extraction['chunks'])}")
+
                     # Create API-compatible item structure
                     api_item = {
                         "key": item.key,
@@ -475,12 +488,12 @@ class ZoteroSemanticSearch:
                             "title": item.title or "",
                             "abstractNote": item.abstract or "",
                             "extra": item.extra or "",
-                            # Include fulltext only when extracted
-                            "fulltext": getattr(item, 'fulltext', None) or "" if extract_fulltext else "",
-                            "fulltextSource": getattr(item, 'fulltext_source', None) or "" if extract_fulltext else "",
-                            # Include Docling chunks if available (new format)
-                            "chunks": getattr(item, 'chunks', None) or [] if extract_fulltext else [],
-                            "docling_metadata": getattr(item, 'docling_metadata', None) or {} if extract_fulltext else {},
+                            # Include fulltext from extraction_data dict (not from NamedTuple which is immutable)
+                            "fulltext": item_extraction["fulltext"] if extract_fulltext else "",
+                            "fulltextSource": item_extraction["source"] if extract_fulltext else "",
+                            # Include Docling chunks from extraction_data dict
+                            "chunks": item_extraction["chunks"] if extract_fulltext else [],
+                            "docling_metadata": item_extraction["metadata"] if extract_fulltext else {},
                             "dateAdded": item.date_added,
                             "dateModified": item.date_modified,
                             "creators": self._parse_creators_string(item.creators) if item.creators else []
@@ -490,6 +503,9 @@ class ZoteroSemanticSearch:
                     # Add notes if available
                     if item.notes:
                         api_item["data"]["notes"] = item.notes
+
+                    # DEBUG: Log what's in the API item
+                    logger.info(f"[DEBUG] Item {item.key}: chunks in API data: {len(api_item['data']['chunks'])}")
 
                     api_items.append(api_item)
                 
@@ -591,21 +607,31 @@ class ZoteroSemanticSearch:
         logger.info(f"Retrieved {len(all_items)} items from API")
         return all_items
     
-    def update_database(self, 
-                       force_full_rebuild: bool = False,
+    def update_database(self,
+                       force_full_rebuild: Optional[bool] = None,
                        limit: Optional[int] = None,
-                       extract_fulltext: bool = False) -> Dict[str, Any]:
+                       extract_fulltext: Optional[bool] = None) -> Dict[str, Any]:
         """
         Update the semantic search database with Zotero items.
-        
+
         Args:
-            force_full_rebuild: Whether to rebuild the entire database
+            force_full_rebuild: Whether to rebuild the entire database (default: read from config)
             limit: Limit number of items to process (for testing)
-            extract_fulltext: Whether to extract fulltext content from local database
-            
+            extract_fulltext: Whether to extract fulltext content from local database (default: read from config)
+
         Returns:
             Update statistics
         """
+        # Read force_rebuild from config if not explicitly provided
+        if force_full_rebuild is None:
+            force_full_rebuild = self.update_config.get("force_rebuild", False)
+            logger.info(f"Using force_rebuild from config: {force_full_rebuild}")
+
+        # Read extract_fulltext from config if not explicitly provided
+        if extract_fulltext is None:
+            extract_fulltext = self.update_config.get("extract_fulltext", False)
+            logger.info(f"Using extract_fulltext from config: {extract_fulltext}")
+
         logger.info("Starting database update...")
         start_time = datetime.now()
         
@@ -714,6 +740,9 @@ class ZoteroSemanticSearch:
         """
         Process a batch of items with chunk-based indexing.
 
+        Deduplication is ALWAYS enabled - skips items/chunks that already exist in Qdrant.
+        The force_rebuild parameter is kept for compatibility but no longer affects deduplication.
+
         If Docling chunks are available, indexes each chunk separately.
         Otherwise falls back to document-level indexing.
 
@@ -735,6 +764,9 @@ class ZoteroSemanticSearch:
                 data = item.get("data", {})
                 chunks = data.get("chunks", [])
 
+                # DEBUG: Log chunks at indexing stage
+                logger.info(f"[DEBUG] Item {item_key}: chunks array length at indexing: {len(chunks)}")
+
                 # CHUNK-BASED INDEXING (new, preferred method)
                 if chunks:
                     logger.debug(f"Indexing {len(chunks)} chunks for item {item_key}")
@@ -753,8 +785,9 @@ class ZoteroSemanticSearch:
                         # Create unique ID for this chunk
                         chunk_point_id = f"{item_key}_chunk_{chunk_id}"
 
-                        # Check if chunk already exists
-                        if not force_rebuild and self.qdrant_client.document_exists(chunk_point_id):
+                        # ALWAYS check if chunk already exists (deduplication)
+                        # force_rebuild only controls collection reset, not per-item checks
+                        if self.qdrant_client.document_exists(chunk_point_id):
                             continue
 
                         # Create metadata for this chunk
@@ -772,8 +805,9 @@ class ZoteroSemanticSearch:
 
                 # DOCUMENT-LEVEL INDEXING (fallback for items without chunks)
                 else:
-                    # Check if item exists and needs update
-                    if not force_rebuild and self.qdrant_client.document_exists(item_key):
+                    # ALWAYS check if item already exists (deduplication)
+                    # force_rebuild only controls collection reset, not per-item checks
+                    if self.qdrant_client.document_exists(item_key):
                         stats["skipped"] += 1
                         continue
 
@@ -848,7 +882,7 @@ class ZoteroSemanticSearch:
                 year = item_data.get("date", "")
                 try:
                     year = int(year[:4]) if year else None
-                except:
+                except Exception:
                     year = None
 
                 # Split document into chunks for context

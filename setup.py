@@ -25,7 +25,7 @@ setup(
     ],
     entry_points={
         'console_scripts': [
-            'zotero-mcp=server:main',
+            'zotero-mcp=cli:main',
         ],
     },
     python_requires='>=3.10',
