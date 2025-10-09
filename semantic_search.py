@@ -860,19 +860,35 @@ class ZoteroSemanticSearch:
 
         Args:
             items: List of Zotero items
-            documents: Corresponding document texts
+            documents: Corresponding document texts (unused - kept for compatibility)
+
+        Note: We extract full document text from item.data.fulltext instead of using
+        the documents parameter, because documents contains chunks not full texts.
         """
         if not self.neo4j_client:
             return
 
         # Prepare papers for batch processing
         papers = []
-        for item, doc_text in zip(items, documents):
+        for item in items:
             try:
                 item_data = item.get("data", {})
                 paper_key = item.get("key", "")
                 title = item_data.get("title", "Untitled")
                 abstract = item_data.get("abstractNote", "")
+
+                # Extract full document text from item data (where Docling stored it)
+                fulltext_data = item_data.get("fulltext", "")
+                if isinstance(fulltext_data, dict):
+                    # Docling format: {"text": "...", "chunks": [...], ...}
+                    doc_text = fulltext_data.get("text", "")
+                else:
+                    doc_text = fulltext_data if fulltext_data else ""
+
+                # Skip if no meaningful text
+                if not doc_text or len(doc_text.strip()) < 100:
+                    logger.debug(f"Skipping Neo4j extraction for {paper_key}: insufficient text")
+                    continue
 
                 # Extract authors
                 creators = item_data.get("creators", [])
@@ -885,8 +901,9 @@ class ZoteroSemanticSearch:
                 except Exception:
                     year = None
 
-                # Split document into chunks for context
-                chunks = [doc_text[i:i+1000] for i in range(0, len(doc_text), 1000)][:5]
+                # Split document into chunks for context (first 5000 chars, split into 1000-char chunks)
+                doc_sample = doc_text[:5000]
+                chunks = [doc_sample[i:i+1000] for i in range(0, len(doc_sample), 1000)]
 
                 papers.append({
                     "paper_key": paper_key,
@@ -898,15 +915,16 @@ class ZoteroSemanticSearch:
                 })
 
             except Exception as e:
-                logger.error(f"Error preparing item for graph: {e}")
+                logger.error(f"Error preparing item {item.get('key', 'unknown')} for graph: {e}")
 
         # Add all papers to graph in batches (batch_size=10 for optimal LLM throughput)
         if papers:
             try:
+                logger.info(f"Extracting entities/relationships for {len(papers)} papers to Neo4j...")
                 result = self.neo4j_client.add_papers_batch(papers, batch_size=10)
-                logger.info(f"Added {result.get('successful', 0)} papers to knowledge graph (failed: {result.get('failed', 0)})")
+                logger.info(f"Neo4j GraphRAG: Added {result.get('successful', 0)} papers (failed: {result.get('failed', 0)})")
             except Exception as e:
-                logger.error(f"Error adding papers batch to graph: {e}")
+                logger.error(f"Error adding papers batch to Neo4j graph: {e}")
 
     def search(self,
                query: str,
