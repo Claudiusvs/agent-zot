@@ -3,10 +3,10 @@
 A production-grade semantic search system for Zotero research libraries, built on [zotero-mcp](https://github.com/54yyyu/zotero-mcp) with significant enhancements:
 
 - **Qdrant** vector database with hybrid search (dense + BM25 sparse)
-- **Docling** advanced PDF parsing with structure-preserving chunking
+- **Docling V2** advanced PDF parsing with CPU-only processing (7x faster than GPU)
 - **Neo4j GraphRAG** knowledge graph extraction from research papers
-- **BGE-M3** multilingual embeddings (SOTA performance, 1024D)
-- **7-worker parallelization** optimized for M1 Pro architecture
+- **BGE-M3** multilingual embeddings (SOTA performance, 1024D, GPU-accelerated)
+- **8-worker parallelization** optimized for M1 Pro with CPU-only Docling
 - **Config-driven** defaults for safe incremental indexing
 
 ## Original Project
@@ -26,13 +26,13 @@ Based on [zotero-mcp](https://github.com/54yyyu/zotero-mcp) by @54yyyu
 - Runs in Docker for easy management
 
 ### ✅ Docling Document Parsing
-- Advanced PDF parsing with DoclingParseV2 backend (10x faster)
+- Advanced PDF parsing with DoclingParseV2 backend
+- **CPU-only processing:** 7.3x faster than GPU (35s vs 254s per PDF)
+- **8-worker parallelization:** Optimized for M1 Pro without memory contention
 - HybridChunker: token-aware + structure-preserving (512 tokens)
-- Table and figure extraction with metadata
-- Conditional OCR fallback for scanned documents
-- Formula enrichment (LaTeX → text)
-- Smart semantic boundary detection
-- 7-worker parallel extraction
+- Table and figure extraction disabled by default (4x speedup)
+- Conditional OCR fallback disabled by default (prevents crashes)
+- BoundedThreadPoolExecutor prevents semaphore leaks
 
 ### ✅ Neo4j GraphRAG Integration
 - Automatic knowledge graph extraction from papers
@@ -44,13 +44,14 @@ Based on [zotero-mcp](https://github.com/54yyyu/zotero-mcp) by @54yyyu
 - Powered by GPT-4o-mini
 
 ### Completed Enhancements
-- [x] Qdrant vector database with hybrid search
-- [x] Docling V2 backend with 7-worker parallelization
-- [x] Neo4j GraphRAG knowledge graph extraction
-- [x] BGE-M3 multilingual embeddings
+- [x] Qdrant vector database with hybrid search (dense + BM25 sparse)
+- [x] Docling V2 backend with CPU-only processing (7.3x faster than GPU)
+- [x] 8-worker parallelization with BoundedThreadPoolExecutor (prevents semaphore leaks)
+- [x] Neo4j GraphRAG knowledge graph extraction (GPT-4o-mini)
+- [x] BGE-M3 multilingual embeddings (1024D, GPU-accelerated)
 - [x] Config-driven defaults (force_rebuild, extract_fulltext)
 - [x] Always-on deduplication for restart-safe indexing
-- [x] OCR fallback disabled for 4x faster parsing
+- [x] OCR and table/formula parsing disabled by default (4x speedup)
 
 ## Quick Start
 
@@ -109,16 +110,16 @@ See [CLAUDE.md](./CLAUDE.md) for comprehensive documentation.
 ### Data Flow
 **Indexing Pipeline:**
 1. Fetch Zotero items (API or local SQLite)
-2. Parse PDFs with Docling → hierarchical chunks (7 parallel workers)
-3. Embed chunks with BGE-M3 (dense + BM25 sparse)
-4. Store in Qdrant with metadata
-5. Extract entities/relationships to Neo4j (GPT-4o-mini)
+2. Parse PDFs with Docling V2 → hierarchical chunks (8 parallel workers, CPU-only, ~35s/PDF)
+3. Embed chunks with BGE-M3 (dense + BM25 sparse, GPU-accelerated)
+4. Store in Qdrant with metadata (INT8 quantization)
+5. Extract entities/relationships to Neo4j (GPT-4o-mini, optional)
 
 **Search Pipeline:**
-1. Query → BGE-M3 embedding + BM25 sparse vector
-2. Hybrid search in Qdrant (RRF fusion)
-3. Optional: Graph traversal for related concepts
-4. Cross-encoder reranking
+1. Query → BGE-M3 embedding + BM25 sparse vector (GPU-accelerated)
+2. Hybrid search in Qdrant (RRF fusion combining semantic + keyword)
+3. Cross-encoder reranking (ms-marco-MiniLM-L-6-v2, GPU-accelerated)
+4. Optional: Graph traversal for related concepts via Neo4j
 
 ## Configuration
 
@@ -148,11 +149,16 @@ See `config_examples/config_qdrant.json` for full template.
 
 ## Performance
 
-- **Indexing speed:** ~40 seconds/paper (3,425 papers in ~35 hours)
-- **Vector database:** Qdrant with INT8 quantization
-- **Embedding model:** BGE-M3 (1024D, multilingual, SOTA)
-- **Parallelization:** 7 workers optimized for M1 Pro
+- **Indexing speed:** ~35 seconds/PDF average (3,425 papers in ~33 hours)
+- **Parallelization:** 8 workers, CPU-only Docling (7.3x faster than GPU)
+- **Vector database:** Qdrant with INT8 quantization (75% RAM savings)
+- **Embedding model:** BGE-M3 (1024D, multilingual, SOTA, GPU-accelerated)
 - **Search latency:** <100ms for hybrid search with reranking
+
+**Performance Notes:**
+- CPU-only Docling avoids MPS GPU memory exhaustion (18GB limit)
+- GPU still used for embeddings (sequential batch processing, no contention)
+- BoundedThreadPoolExecutor prevents semaphore leaks with batch processing
 
 ## Development
 

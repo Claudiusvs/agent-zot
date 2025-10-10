@@ -62,7 +62,7 @@ class DoclingParser:
             do_table_structure=do_table_structure,
             accelerator_options=AcceleratorOptions(
                 num_threads=num_threads,
-                device="auto"  # MPS GPU acceleration on Apple Silicon
+                device="cpu"  # CPU-only to avoid MPS memory exhaustion with parallel workers
             )
         )
         v2_pipeline_options.do_ocr = False  # Explicitly disable OCR for V2 backend
@@ -87,7 +87,7 @@ class DoclingParser:
                 ),
                 accelerator_options=AcceleratorOptions(
                     num_threads=num_threads,
-                    device="auto"
+                    device="cpu"  # CPU-only to avoid MPS memory exhaustion
                 )
             )
 

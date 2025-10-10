@@ -9,11 +9,13 @@ over research libraries. Uses Docling for enhanced document parsing.
 import json
 import os
 import sys
+import gc
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 import logging
+from threading import BoundedSemaphore
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from pyzotero import zotero
@@ -26,6 +28,62 @@ from utils import format_creators, is_local_mode
 from local_db import LocalZoteroReader, get_local_zotero_reader
 
 logger = logging.getLogger(__name__)
+
+
+class BoundedThreadPoolExecutor:
+    """
+    Wrapper for ThreadPoolExecutor that limits queue size using BoundedSemaphore.
+
+    This prevents semaphore accumulation by blocking task submission when the queue
+    is full, automatically releasing slots as tasks complete.
+
+    Based on: https://gist.github.com/noxdafox/4150eff0059ea43f6adbdd66e5d5e87e
+    """
+
+    def __init__(self, max_workers=None, max_queue_size=None):
+        """
+        Initialize bounded thread pool.
+
+        Args:
+            max_workers: Maximum number of worker threads
+            max_queue_size: Maximum queue size (default: 2 * max_workers)
+        """
+        self.executor = ThreadPoolExecutor(max_workers=max_workers)
+        self.max_workers = max_workers or (os.cpu_count() or 1)
+        # Default queue size: 2x workers (allows some buffering without excess accumulation)
+        self.queue_semaphore = BoundedSemaphore(max_queue_size or (self.max_workers * 2))
+
+    def submit(self, fn, *args, **kwargs):
+        """
+        Submit task to executor, blocks if queue is full.
+
+        Args:
+            fn: Callable to execute
+            *args: Positional arguments for fn
+            **kwargs: Keyword arguments for fn
+
+        Returns:
+            Future object
+        """
+        self.queue_semaphore.acquire()
+        future = self.executor.submit(fn, *args, **kwargs)
+        future.add_done_callback(self._release_slot)
+        return future
+
+    def _release_slot(self, _future):
+        """Release semaphore slot when task completes."""
+        self.queue_semaphore.release()
+
+    def shutdown(self, wait=True):
+        """Shutdown the executor."""
+        self.executor.shutdown(wait=wait)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.shutdown(wait=True)
+        return False
 
 
 @contextmanager
@@ -402,9 +460,12 @@ class ZoteroSemanticSearch:
                 extraction_data = {}  # item_key -> {"fulltext": ..., "chunks": ..., "source": ..., "metadata": ...}
 
                 if extract_fulltext:
-                    # Parallel fulltext extraction with ThreadPoolExecutor
-                    # Using 7 workers (optimized for M1 Pro 10-core, accounting for Docling's internal threading)
-                    max_workers = 7
+                    # Parallel fulltext extraction with BoundedThreadPoolExecutor
+                    # Using 8 workers (optimized for M1 Pro 10-core, accounting for Docling's internal threading)
+                    # BoundedSemaphore prevents semaphore leak by limiting queue size to 2x workers (16)
+                    max_workers = 8
+                    max_queue_size = 16  # 2x workers prevents excessive semaphore accumulation
+                    batch_size = 100  # Process in batches with cleanup between
                     extracted = 0
 
                     def extract_item_fulltext(it):
@@ -449,25 +510,36 @@ class ZoteroSemanticSearch:
 
                         return (item_key, extraction_result)
 
-                    # Use ThreadPoolExecutor for parallel PDF parsing
-                    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                        # Submit all extraction tasks
-                        future_to_item = {executor.submit(extract_item_fulltext, it): it for it in local_items}
+                    # Process in batches to prevent semaphore accumulation
+                    for batch_start in range(0, len(local_items), batch_size):
+                        batch_end = min(batch_start + batch_size, len(local_items))
+                        batch_items = local_items[batch_start:batch_end]
 
-                        # Process results as they complete
-                        for future in as_completed(future_to_item):
-                            try:
-                                # Get the result (item_key, extraction_dict)
-                                item_key, extraction_result = future.result()
-                                extraction_data[item_key] = extraction_result
-                                extracted += 1
-                                if extracted % 25 == 0 and total_to_extract:
-                                    try:
-                                        sys.stderr.write(f"Extracted content for {extracted}/{total_to_extract} items (parallel with {max_workers} workers)...\n")
-                                    except Exception:
-                                        pass
-                            except Exception as e:
-                                logger.error(f"Error extracting fulltext: {e}")
+                        logger.info(f"Processing batch {batch_start}-{batch_end} ({len(batch_items)} items) with {max_workers} workers, queue size {max_queue_size}")
+
+                        # Use BoundedThreadPoolExecutor for parallel PDF parsing with limited queue
+                        with BoundedThreadPoolExecutor(max_workers=max_workers, max_queue_size=max_queue_size) as executor:
+                            # Submit all extraction tasks for this batch
+                            future_to_item = {executor.submit(extract_item_fulltext, it): it for it in batch_items}
+
+                            # Process results as they complete
+                            for future in as_completed(future_to_item):
+                                try:
+                                    # Get the result (item_key, extraction_dict)
+                                    item_key, extraction_result = future.result()
+                                    extraction_data[item_key] = extraction_result
+                                    extracted += 1
+                                    if extracted % 25 == 0 and total_to_extract:
+                                        try:
+                                            sys.stderr.write(f"Extracted content for {extracted}/{total_to_extract} items (parallel with {max_workers} workers)...\n")
+                                        except Exception:
+                                            pass
+                                except Exception as e:
+                                    logger.error(f"Error extracting fulltext: {e}")
+
+                        # Explicit cleanup after each batch
+                        gc.collect()
+                        logger.info(f"Batch {batch_start}-{batch_end} complete, garbage collected")
                 
                 # Convert to API-compatible format
                 api_items = []

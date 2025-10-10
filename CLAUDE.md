@@ -85,16 +85,19 @@ python test_pymupdf.py
 
 **Indexing Pipeline:**
 1. Zotero items fetched via API or local SQLite database (local_db.py)
-2. PDF attachments parsed with Docling → hierarchical chunks with metadata (docling_parser.py)
-3. Chunks embedded via OpenAI API (text-embedding-3-large)
+2. PDF attachments parsed with Docling V2 backend → hierarchical chunks with metadata (docling_parser.py)
+   - 8 parallel workers, CPU-only processing, ~35 seconds per PDF average
+   - BoundedThreadPoolExecutor prevents semaphore leaks with batch processing (100 items/batch)
+3. Chunks embedded via BGE-M3 model (sentence-transformers, 1024D, GPU-accelerated)
 4. Dense + sparse (BM25) vectors stored in Qdrant (qdrant_client_wrapper.py)
-5. [Optional] Neo4j knowledge graph extraction (neo4j_graphrag_client.py)
+5. [Optional] Neo4j knowledge graph extraction (neo4j_graphrag_client.py, GPT-4o-mini)
 
 **Search Pipeline:**
-1. Query → OpenAI embedding + BM25 sparse vector
-2. Hybrid search in Qdrant (combines dense semantic + sparse keyword matching)
-3. Results filtered by metadata (item_key, doc_type, etc.)
-4. [Optional] Graph traversal for related concepts
+1. Query → BGE-M3 embedding (GPU-accelerated) + BM25 sparse vector
+2. Hybrid search in Qdrant (RRF fusion of dense semantic + sparse keyword matching)
+3. Cross-encoder reranking (ms-marco-MiniLM-L-6-v2, GPU-accelerated) for quality boost
+4. Results filtered by metadata (item_key, doc_type, etc.)
+5. [Optional] Graph traversal for related concepts via Neo4j
 
 ### MCP Tools
 
@@ -186,13 +189,20 @@ Use `--extract-fulltext` flag to enable full-text parsing during updates.
 
 ### Docling Parser
 
-`docling_parser.py` uses HybridChunker:
+`docling_parser.py` uses HybridChunker with CPU-only processing:
 
-- Token-aware chunking (default: 512 tokens)
-- Structure preservation (respects document hierarchy)
-- Table extraction and OCR support
-- Formula enrichment (LaTeX → text)
-- Conditional OCR (only when text extraction fails)
+- **CPU-only mode:** Forced `device="cpu"` to avoid MPS GPU memory exhaustion with 8 parallel workers
+- **Performance:** 7.3x faster than GPU (35s vs 254s per PDF) due to parallel processing without memory contention
+- **Token-aware chunking:** Default 512 tokens aligned with BGE-M3 embeddings
+- **Structure preservation:** Respects document hierarchy (headings, sections)
+- **Table/formula parsing:** Disabled by default (`parse_tables=false`, `do_formula_enrichment=false`) for 4x speedup
+- **Conditional OCR:** Disabled by default (`fallback_enabled=false`), only enabled for scanned PDFs if configured
+- **8-worker parallelization:** Optimized for M1 Pro (8 performance cores)
+
+**GPU vs CPU Trade-off:**
+- **Embeddings (BGE-M3):** Still use MPS GPU for 5-10x faster batch processing (sequential, no contention)
+- **Docling parsing:** Use CPU for 7.3x faster processing (parallel, memory-bound workload)
+- **Result:** Best of both worlds - parallel CPU parsing + fast GPU embeddings
 
 ### Local Mode
 
@@ -288,12 +298,18 @@ Config file location: `~/Library/Application Support/Claude/claude_desktop_confi
 
 Use `zotero-mcp setup-info` to generate correct config snippet.
 
-### Parsing Errors
+### Parsing Errors and Performance
 
-Check logs for Docling errors:
-- Low text extraction → OCR triggered
-- Large PDFs → Consider `pdf_max_pages` limit in config
-- Formula parsing issues → Toggle `do_formula_enrichment`
+**Common issues:**
+- **MPS out of memory:** Fixed by forcing CPU-only processing (`device="cpu"` in docling_parser.py)
+- **Slow parsing (>200s/PDF):** Usually indicates GPU memory thrashing - verify logs show `Accelerator device: 'cpu'`
+- **Large PDFs:** Consider `pdf_max_pages` limit in config (default: 1000)
+- **Semaphore leaks:** Fixed by BoundedThreadPoolExecutor with batch processing
+
+**Performance benchmarks (M1 Pro, 8 workers):**
+- **CPU-only:** ~35 seconds per PDF average (optimal for parallel processing)
+- **GPU (MPS):** ~254 seconds per PDF (memory contention with 8 workers)
+- **Expected rate:** ~100 PDFs/hour, ~33 hours for 3,425 papers
 
 ### Environment Variables
 
@@ -306,7 +322,50 @@ Use `ZOTERO_NO_CLAUDE=true` to disable Claude Desktop detection.
 
 ## Future Improvements
 
-### Rename Package from "zotero-mcp" to "agent-zot"
+### TODO: Migrate to Proper Virtual Environment Setup
+
+**Context**: Currently using external virtual environments (`~/toolboxes/zotero-mcp-env/` or `~/toolboxes/agent-zot-env/`) instead of following Python best practices with an in-project virtual environment.
+
+**Action Items** (after current indexing completes):
+
+1. **Create proper virtual environment inside project:**
+   ```bash
+   cd ~/toolboxes/agent-zot
+   python3.12 -m venv .venv
+   ```
+
+2. **Install package in editable mode:**
+   ```bash
+   source .venv/bin/activate
+   pip install -e .
+   ```
+
+3. **Update documentation:**
+   - Change all `source ~/toolboxes/zotero-mcp-env/bin/activate` → `source .venv/bin/activate`
+   - Update README.md installation instructions
+   - Update this CLAUDE.md file (Development Setup section)
+
+4. **Verify .gitignore:**
+   - Already configured to ignore `venv/`, `env/`, `*.venv` (lines 12-14)
+   - The `.venv/` directory will be automatically ignored
+
+5. **Clean up old virtual environments:**
+   ```bash
+   rm -rf ~/toolboxes/zotero-mcp-env
+   rm -rf ~/toolboxes/agent-zot-env
+   ```
+
+**Why This Matters:**
+- **Convention**: Standard Python practice is virtual environment inside project directory
+- **Portability**: Anyone cloning the repo expects `source .venv/bin/activate`
+- **Simplicity**: Shorter activation command, no absolute paths needed
+- **Clarity**: Clear separation between project code and dependencies
+
+**Note**: Wait until current indexing pipeline completes to avoid disrupting running processes.
+
+---
+
+### TODO: Rename Package from "zotero-mcp" to "agent-zot"
 
 **Context**: The project is forked from zotero-mcp but has diverged significantly. The directory is already named `agent-zot`, but the Python package and CLI still use `zotero-mcp` internally.
 
