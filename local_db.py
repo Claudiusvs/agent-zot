@@ -215,13 +215,11 @@ class LocalZoteroReader:
         Even with proper cleanup in threads, C++ exceptions bypass Python exception handling,
         causing semaphore leaks and crashes after 150-200 PDFs.
 
-        Solution: Run Docling in isolated subprocess. If subprocess crashes, main process
-        continues unaffected. This guarantees crash-proof operation with minimal overhead.
+        Solution: Run Docling in isolated subprocess. If subprocess crashes or times out,
+        main process continues unaffected. Configurable timeout supports large documents.
 
-        Priority order:
-        1. Docling (subprocess-isolated) - Advanced parsing with crash protection
-        2. pdfminer - Legacy fallback
-        3. OCR - Final fallback for scanned PDFs
+        Strategy: Docling-only (no fallback) to ensure consistent high-quality output
+        with HybridChunker, structural metadata, and proper reading order.
         """
         import json
         import subprocess
@@ -231,15 +229,19 @@ class LocalZoteroReader:
         # Load config from standard location
         config_path = Path.home() / ".config" / "zotero-mcp" / "config.json"
         parser_config = {}
+        subprocess_timeout = 3600  # Default: 1 hour (handles large textbooks)
+
         if config_path.exists():
             try:
                 with open(config_path) as f:
                     full_config = json.load(f)
                     parser_config = full_config.get("semantic_search", {}).get("docling", {})
+                    # Get configurable timeout (null = infinite, int = seconds)
+                    subprocess_timeout = parser_config.get("subprocess_timeout", 3600)
             except Exception:
                 pass
 
-        # Try Docling first (PRIMARY PARSER - subprocess-isolated)
+        # Docling subprocess (ONLY PARSER - no fallback)
         try:
             ocr_config = parser_config.get("ocr", {})
 
@@ -249,7 +251,7 @@ class LocalZoteroReader:
             result_id = str(uuid.uuid4())
             result_file = Path(tempfile.gettempdir()) / f"docling_{result_id}.json"
 
-            # Simplified subprocess: just extract text and chunks, serialize as JSON
+            # Subprocess code: run Docling parser and serialize result as JSON
             subprocess_code = f'''
 import sys
 import json
@@ -289,7 +291,7 @@ try:
             json.dump(output, f)
         sys.exit(0)
     else:
-        sys.exit(1)  # No chunks
+        sys.exit(1)  # No chunks extracted
 
 except Exception as e:
     import traceback
@@ -299,31 +301,49 @@ except Exception as e:
 '''
 
             try:
-                # Run with 30s timeout (sufficient for most PDFs)
-                proc = subprocess.run(
-                    [sys.executable, "-c", subprocess_code],
-                    timeout=30,
-                    capture_output=True
-                )
+                # Run with configurable timeout (default: 3600s = 1 hour)
+                if subprocess_timeout is None:
+                    # No timeout - wait forever (for extremely large documents)
+                    logging.info(f"Docling parsing {file_path.name} (no timeout)")
+                    proc = subprocess.run(
+                        [sys.executable, "-c", subprocess_code],
+                        capture_output=True
+                    )
+                else:
+                    # With timeout (recommended)
+                    timeout_mins = subprocess_timeout / 60
+                    logging.info(f"Docling parsing {file_path.name} (timeout: {timeout_mins:.0f}min)")
+                    proc = subprocess.run(
+                        [sys.executable, "-c", subprocess_code],
+                        timeout=subprocess_timeout,
+                        capture_output=True
+                    )
 
                 if proc.returncode == 0 and result_file.exists():
                     # Success - load JSON result
                     with open(result_file) as f:
                         result = _json.load(f)
                     result_file.unlink()
-                    logging.info(f"Docling subprocess parsed {file_path.name} ({len(result['chunks'])} chunks)")
+                    logging.info(f"✓ Docling parsed {file_path.name} ({len(result['chunks'])} chunks)")
                     return (result, "docling")
                 else:
                     # Check for error file
                     err_file = Path(str(result_file) + ".err")
                     if err_file.exists():
-                        error_msg = err_file.read_text()[:200]
-                        logging.warning(f"Docling subprocess error for {file_path.name}: {error_msg}")
+                        error_msg = err_file.read_text()[:500]
+                        logging.error(f"✗ Docling failed for {file_path.name}: {error_msg}")
                         err_file.unlink()
-                    logging.warning(f"Docling subprocess failed for {file_path.name}, trying pdfminer")
+                    else:
+                        logging.error(f"✗ Docling failed for {file_path.name} (no chunks extracted)")
+
+                    # No fallback - fail loudly so user knows to investigate
+                    return ("", "failed")
 
             except subprocess.TimeoutExpired:
-                logging.error(f"Docling subprocess timeout (>30s) for {file_path.name}, trying pdfminer")
+                timeout_mins = subprocess_timeout / 60 if subprocess_timeout else "∞"
+                logging.error(f"✗ Docling timeout ({timeout_mins}min) for {file_path.name}")
+                return ("", "timeout")
+
             finally:
                 # Cleanup temp files
                 for f in [result_file, Path(str(result_file) + ".err")]:
@@ -334,34 +354,8 @@ except Exception as e:
                             pass
 
         except Exception as e:
-            logging.warning(f"Docling subprocess setup failed for {file_path.name}: {e}, trying pdfminer")
-
-        # Fallback to pdfminer (original method)
-        try:
-            from pdfminer.high_level import extract_text  # type: ignore
-
-            # Determine page cap: config value > env > default (1000)
-            if isinstance(self.pdf_max_pages, int) and self.pdf_max_pages > 0:
-                maxpages = self.pdf_max_pages
-            else:
-                max_pages_env = os.getenv("ZOTERO_PDF_MAXPAGES")
-                try:
-                    maxpages = int(max_pages_env) if max_pages_env else 1000
-                except ValueError:
-                    maxpages = 1000
-
-            text = extract_text(str(file_path), maxpages=maxpages)
-
-            # PATCH: If text is too short (likely scanned PDF), try OCR
-            if not text or len(text.strip()) < 100:
-                ocr_text = self._extract_text_with_ocr(file_path)
-                return (ocr_text, "pdf")
-
-            return (text or "", "pdf")
-        except Exception:
-            # Final fallback to OCR if pdfminer fails
-            ocr_text = self._extract_text_with_ocr(file_path)
-            return (ocr_text, "pdf")
+            logging.error(f"✗ Docling subprocess setup failed for {file_path.name}: {e}")
+            return ("", "error")
     
     def _extract_text_with_ocr(self, file_path: Path) -> str:
         """Extract text from PDF using OCR (for scanned PDFs)."""
