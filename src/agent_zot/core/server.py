@@ -1128,7 +1128,7 @@ def get_annotations(
             if os.environ.get("ZOTERO_LOCAL", "").lower() in ["true", "yes", "1"]:
                 try:
                     # Import Better BibTeX dependencies
-                    from better_bibtex_client import (
+                    from agent_zot.clients.better_bibtex import (
                         ZoteroBetterBibTexAPI, 
                         process_annotation, 
                         get_color_category
@@ -2168,7 +2168,7 @@ def find_citation_chain(
     """
     try:
         from pathlib import Path
-        from neo4j_graphrag_client import create_neo4j_graphrag_client
+        from agent_zot.clients.neo4j_graphrag import create_neo4j_graphrag_client
 
         config_path = Path.home() / ".config" / "agent-zot" / "config.json"
         graph_client = create_neo4j_graphrag_client(str(config_path))
@@ -2237,7 +2237,7 @@ def explore_concept_network(
     """
     try:
         from pathlib import Path
-        from neo4j_graphrag_client import create_neo4j_graphrag_client
+        from agent_zot.clients.neo4j_graphrag import create_neo4j_graphrag_client
 
         config_path = Path.home() / ".config" / "agent-zot" / "config.json"
         graph_client = create_neo4j_graphrag_client(str(config_path))
@@ -2307,7 +2307,7 @@ def find_collaborator_network(
     """
     try:
         from pathlib import Path
-        from neo4j_graphrag_client import create_neo4j_graphrag_client
+        from agent_zot.clients.neo4j_graphrag import create_neo4j_graphrag_client
 
         config_path = Path.home() / ".config" / "agent-zot" / "config.json"
         graph_client = create_neo4j_graphrag_client(str(config_path))
@@ -2375,7 +2375,7 @@ def find_seminal_papers(
     """
     try:
         from pathlib import Path
-        from neo4j_graphrag_client import create_neo4j_graphrag_client
+        from agent_zot.clients.neo4j_graphrag import create_neo4j_graphrag_client
 
         config_path = Path.home() / ".config" / "agent-zot" / "config.json"
         graph_client = create_neo4j_graphrag_client(str(config_path))
@@ -2443,7 +2443,7 @@ def track_topic_evolution(
     """
     try:
         from pathlib import Path
-        from neo4j_graphrag_client import create_neo4j_graphrag_client
+        from agent_zot.clients.neo4j_graphrag import create_neo4j_graphrag_client
 
         config_path = Path.home() / ".config" / "agent-zot" / "config.json"
         graph_client = create_neo4j_graphrag_client(str(config_path))
@@ -2607,7 +2607,7 @@ def analyze_venues(
     """
     try:
         from pathlib import Path
-        from neo4j_graphrag_client import create_neo4j_graphrag_client
+        from agent_zot.clients.neo4j_graphrag import create_neo4j_graphrag_client
 
         config_path = Path.home() / ".config" / "agent-zot" / "config.json"
         graph_client = create_neo4j_graphrag_client(str(config_path))
@@ -2956,7 +2956,7 @@ def export_graph(
     """
     try:
         from pathlib import Path
-        from neo4j_graphrag_client import create_neo4j_graphrag_client
+        from agent_zot.clients.neo4j_graphrag import create_neo4j_graphrag_client
 
         config_path = Path.home() / ".config" / "agent-zot" / "config.json"
         graph_client = create_neo4j_graphrag_client(str(config_path))

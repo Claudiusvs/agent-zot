@@ -258,9 +258,8 @@ import json
 from pathlib import Path
 
 try:
-    # Import inside subprocess for isolation
-    sys.path.insert(0, "{Path(__file__).parent}")
-    from docling_parser import DoclingParser
+    # Import from installed package
+    from agent_zot.parsers.docling import DoclingParser
 
     parser = DoclingParser(
         tokenizer="{parser_config.get("tokenizer", "BAAI/bge-m3")}",

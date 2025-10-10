@@ -213,7 +213,7 @@ def restore_configurations(backup_dir: Path) -> bool:
     claude_backup = backup_dir / "claude_desktop_config.json"
     if claude_backup.exists():
         # Find the current Claude config location
-        from setup_helper import find_claude_config
+        from agent_zot.utils.setup import find_claude_config
         
         try:
             current_config_path = find_claude_config()

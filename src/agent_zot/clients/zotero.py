@@ -151,7 +151,7 @@ def generate_bibtex(item: Dict[str, Any]) -> str:
     
     # Try Better BibTeX first
     try:
-        from better_bibtex_client import ZoteroBetterBibTexAPI
+        from agent_zot.clients.better_bibtex import ZoteroBetterBibTexAPI
         bibtex = ZoteroBetterBibTexAPI()
         
         if bibtex.is_zotero_running():

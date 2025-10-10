@@ -438,7 +438,7 @@ class ZoteroSemanticSearch:
 
                         try:
                             # Create thread-local reader to avoid SQLite threading issues
-                            from local_db import LocalZoteroReader
+                            from agent_zot.database.local_zotero import LocalZoteroReader
                             thread_reader = LocalZoteroReader()
                             result = thread_reader.extract_fulltext_for_item(it.item_id)
                             logger.info(f"[DEBUG] extract_fulltext_for_item returned: type={type(result)}, is_tuple={isinstance(result, tuple)}, len={len(result) if isinstance(result, (tuple, list)) else 'N/A'}")
