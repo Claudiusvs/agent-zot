@@ -1,6 +1,6 @@
 # Agent-Zot: Production-Ready Zotero MCP Server
 
-A production-grade semantic search system for Zotero research libraries, built on [zotero-mcp](https://github.com/54yyyu/zotero-mcp) with significant enhancements:
+A production-grade semantic search system for Zotero research libraries, built on [agent-zot](https://github.com/54yyyu/agent-zot) with significant enhancements:
 
 - **Qdrant** vector database with hybrid search (dense + BM25 sparse)
 - **Docling V2** advanced PDF parsing with CPU-only processing (7x faster than GPU)
@@ -11,7 +11,7 @@ A production-grade semantic search system for Zotero research libraries, built o
 
 ## Original Project
 
-Based on [zotero-mcp](https://github.com/54yyyu/zotero-mcp) by @54yyyu
+Based on [agent-zot](https://github.com/54yyyu/agent-zot) by @54yyyu
 
 ## Key Features
 
@@ -81,15 +81,15 @@ docker run -d -p 7474:7474 -p 7687:7687 \
 2. **Configure the system:**
 
 ```bash
-cp config_examples/config_qdrant.json ~/.config/zotero-mcp/config.json
+cp config_examples/config_qdrant.json ~/.config/agent-zot/config.json
 # Edit with your API keys and settings
 ```
 
 3. **Index your library:**
 
 ```bash
-source ~/toolboxes/zotero-mcp-env/bin/activate
-zotero-mcp update-db --fulltext
+source ~/toolboxes/agent-zot-env/bin/activate
+agent-zot update-db --fulltext
 ```
 
 The `--fulltext` flag is optional (defaults from config). Use `--force-rebuild` only when you need to completely rebuild the index.
@@ -125,7 +125,7 @@ See [CLAUDE.md](./CLAUDE.md) for comprehensive documentation.
 
 **📋 For complete configuration reference, see [CONFIGURATION.md](./CONFIGURATION.md) - the authoritative documentation of the standard default production pipeline.**
 
-All settings in `~/.config/zotero-mcp/config.json`. Key sections:
+All settings in `~/.config/agent-zot/config.json`. Key sections:
 
 ### Semantic Search
 - **embedding_model:** `sentence-transformers` (BGE-M3)
@@ -186,10 +186,10 @@ docker logs agent-zot-neo4j
 
 ```bash
 # Quick database status
-zotero-mcp db-status
+agent-zot db-status
 
 # Inspect specific item
-zotero-mcp db-inspect --key ITEM_KEY
+agent-zot db-inspect --key ITEM_KEY
 
 # Test search via Claude
 # Ask: "Search my library for papers about reinforcement learning"

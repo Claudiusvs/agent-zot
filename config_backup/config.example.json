@@ -10,7 +10,7 @@
     "embedding_model": "openai",
     "openai_model": "text-embedding-3-large",
     "collection_name": "zotero_library_openai",
-    "persist_directory": "~/.config/zotero-mcp/chroma_db",
+    "persist_directory": "~/.config/agent-zot/chroma_db",
     "embedding_config": {
       "api_key": "YOUR_OPENAI_API_KEY",
       "model_name": "text-embedding-3-large"
