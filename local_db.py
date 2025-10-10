@@ -209,14 +209,24 @@ class LocalZoteroReader:
 
     def _extract_text_from_pdf(self, file_path: Path) -> str:
         """
-        Extract text from a PDF using Docling with MPS GPU acceleration.
+        Extract text from a PDF using Docling with subprocess isolation.
 
-        Priority order (as originally designed):
-        1. Docling - Advanced AI parsing with MPS GPU acceleration
+        CRITICAL FIX (Oct 2025): Docling's pypdfium2 C++ backend can crash with AssertionErrors.
+        Even with proper cleanup in threads, C++ exceptions bypass Python exception handling,
+        causing semaphore leaks and crashes after 150-200 PDFs.
+
+        Solution: Run Docling in isolated subprocess. If subprocess crashes, main process
+        continues unaffected. This guarantees crash-proof operation with minimal overhead.
+
+        Priority order:
+        1. Docling (subprocess-isolated) - Advanced parsing with crash protection
         2. pdfminer - Legacy fallback
         3. OCR - Final fallback for scanned PDFs
         """
         import json
+        import subprocess
+        import sys
+        import tempfile
 
         # Load config from standard location
         config_path = Path.home() / ".config" / "zotero-mcp" / "config.json"
@@ -229,55 +239,102 @@ class LocalZoteroReader:
             except Exception:
                 pass
 
-        # Try Docling first (PRIMARY PARSER - as originally designed)
+        # Try Docling first (PRIMARY PARSER - subprocess-isolated)
         try:
-            from docling_parser import DoclingParser
-
-            # THREAD SAFETY FIX: Create fresh DoclingParser instance for EACH PDF
-            # According to Docling GitHub discussions, DocumentConverter and HybridChunker
-            # are NOT thread-safe. Sharing instances across threads causes race conditions
-            # leading to C++ crashes ("Pure virtual function called").
-            # Solution: Create a new parser instance for every PDF to ensure complete isolation.
-            # See: https://github.com/docling-project/docling/discussions/2285
-
             ocr_config = parser_config.get("ocr", {})
-            parser = DoclingParser(
-                tokenizer=parser_config.get("tokenizer", "sentence-transformers/all-MiniLM-L6-v2"),
-                max_tokens=parser_config.get("max_tokens", 512),
-                merge_peers=parser_config.get("merge_peers", True),
-                num_threads=parser_config.get("num_threads", 2),  # REDUCED from 8 to 2 (7 workers × 2 = 14 threads total)
-                do_formula_enrichment=parser_config.get("do_formula_enrichment", False),  # Match config default
-                do_table_structure=parser_config.get("parse_tables", False),  # Match config default
-                enable_ocr_fallback=ocr_config.get("fallback_enabled", False),  # DISABLED by default (4x speedup)
-                ocr_min_text_threshold=ocr_config.get("min_text_threshold", 100)
-            )
+
+            # Create temp file for result (safer than pickle with complex objects)
+            import json as _json
+            import uuid
+            result_id = str(uuid.uuid4())
+            result_file = Path(tempfile.gettempdir()) / f"docling_{result_id}.json"
+
+            # Simplified subprocess: just extract text and chunks, serialize as JSON
+            subprocess_code = f'''
+import sys
+import json
+from pathlib import Path
+
+try:
+    # Import inside subprocess for isolation
+    sys.path.insert(0, "{Path(__file__).parent}")
+    from docling_parser import DoclingParser
+
+    parser = DoclingParser(
+        tokenizer="{parser_config.get("tokenizer", "BAAI/bge-m3")}",
+        max_tokens={parser_config.get("max_tokens", 512)},
+        merge_peers={parser_config.get("merge_peers", True)},
+        num_threads={parser_config.get("num_threads", 2)},
+        do_formula_enrichment={parser_config.get("do_formula_enrichment", False)},
+        do_table_structure={parser_config.get("parse_tables", False)},
+        enable_ocr_fallback={ocr_config.get("fallback_enabled", False)},
+        ocr_min_text_threshold={ocr_config.get("min_text_threshold", 100)}
+    )
+
+    result = parser.parse_pdf("{str(file_path)}", force_ocr=False)
+
+    if result and result.get("chunks"):
+        # Convert to JSON-serializable format
+        output = {{
+            "text": result.get("text", ""),
+            "chunks": [
+                {{
+                    "text": chunk["text"],
+                    "meta": chunk.get("meta", {{}})
+                }}
+                for chunk in result["chunks"]
+            ]
+        }}
+        with open("{str(result_file)}", "w") as f:
+            json.dump(output, f)
+        sys.exit(0)
+    else:
+        sys.exit(1)  # No chunks
+
+except Exception as e:
+    import traceback
+    with open("{str(result_file)}.err", "w") as f:
+        f.write(str(e) + "\\n" + traceback.format_exc())
+    sys.exit(2)
+'''
 
             try:
-                # Parse PDF with conditional OCR
-                result = parser.parse_pdf(str(file_path), force_ocr=False)
+                # Run with 30s timeout (sufficient for most PDFs)
+                proc = subprocess.run(
+                    [sys.executable, "-c", subprocess_code],
+                    timeout=30,
+                    capture_output=True
+                )
 
-                # Return the full parsing result (includes chunks, text, tables, figures)
-                if result and result.get("chunks"):
-                    logging.info(f"Docling successfully parsed {file_path.name}")
-                    logging.info(f"[DEBUG] Returning from Docling: type={type(result)}, chunks={len(result.get('chunks', []))}")
-                    return (result, "docling")  # Return tuple format expected by semantic_search
+                if proc.returncode == 0 and result_file.exists():
+                    # Success - load JSON result
+                    with open(result_file) as f:
+                        result = _json.load(f)
+                    result_file.unlink()
+                    logging.info(f"Docling subprocess parsed {file_path.name} ({len(result['chunks'])} chunks)")
+                    return (result, "docling")
+                else:
+                    # Check for error file
+                    err_file = Path(str(result_file) + ".err")
+                    if err_file.exists():
+                        error_msg = err_file.read_text()[:200]
+                        logging.warning(f"Docling subprocess error for {file_path.name}: {error_msg}")
+                        err_file.unlink()
+                    logging.warning(f"Docling subprocess failed for {file_path.name}, trying pdfminer")
+
+            except subprocess.TimeoutExpired:
+                logging.error(f"Docling subprocess timeout (>30s) for {file_path.name}, trying pdfminer")
             finally:
-                # CRITICAL: Always cleanup parser resources, even on exceptions
-                # This prevents pypdfium2 assertion errors and semaphore leaks
-                try:
-                    del parser
-                    import gc
-                    gc.collect()  # Force garbage collection to clean up C++ objects
-                except Exception as cleanup_error:
-                    logging.warning(f"Error during parser cleanup: {cleanup_error}")
+                # Cleanup temp files
+                for f in [result_file, Path(str(result_file) + ".err")]:
+                    if f.exists():
+                        try:
+                            f.unlink()
+                        except:
+                            pass
 
-            # If Docling returned no chunks, try fallback
-            logging.warning(f"Docling returned no chunks for {file_path.name}, trying pdfminer")
-
-        except ImportError:
-            logging.debug("Docling not available, using pdfminer fallback")
         except Exception as e:
-            logging.warning(f"Docling parsing failed for {file_path.name}: {e}, trying pdfminer")
+            logging.warning(f"Docling subprocess setup failed for {file_path.name}: {e}, trying pdfminer")
 
         # Fallback to pdfminer (original method)
         try:
