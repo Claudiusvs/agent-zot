@@ -123,6 +123,8 @@ See [CLAUDE.md](./CLAUDE.md) for comprehensive documentation.
 
 ## Configuration
 
+**📋 For complete configuration reference, see [CONFIGURATION.md](./CONFIGURATION.md) - the authoritative documentation of the standard default production pipeline.**
+
 All settings in `~/.config/zotero-mcp/config.json`. Key sections:
 
 ### Semantic Search
@@ -136,8 +138,9 @@ All settings in `~/.config/zotero-mcp/config.json`. Key sections:
 ### Docling
 - **tokenizer:** `BAAI/bge-m3` (aligned with embeddings)
 - **max_tokens:** `512` (chunk size)
-- **num_threads:** `8` (M1 Pro 8 performance cores)
-- **ocr.fallback_enabled:** `false` (disabled for 4x speedup)
+- **num_threads:** `2` (per worker, 8 workers × 2 = 16 threads)
+- **subprocess_timeout:** `3600` (1 hour, handles large PDFs)
+- **ocr.fallback_enabled:** `false` (disabled for consistency)
 
 ### Neo4j GraphRAG
 - **enabled:** `true`

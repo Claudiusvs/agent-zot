@@ -92,6 +92,19 @@ pip install -e .
 python test_pymupdf.py
 ```
 
+## Standard Default Production Pipeline
+
+**📋 IMPORTANT: See [CONFIGURATION.md](./CONFIGURATION.md) for the complete, authoritative configuration reference.**
+
+This document describes the standard default production pipeline configuration including:
+- All Docling parser settings (HybridChunker, subprocess isolation, timeouts)
+- All Qdrant vector database settings (hybrid search, quantization, HNSW indexing)
+- All Neo4j GraphRAG settings (entity types, relationships, resolution)
+- Performance optimizations for M1 Pro (8 workers, 16 threads, batch sizes)
+- Critical fixes (subprocess isolation, removed pdfminer fallback)
+
+**When making changes to the pipeline, always update CONFIGURATION.md to reflect the new standard defaults.**
+
 ## Architecture
 
 ### Core Components
