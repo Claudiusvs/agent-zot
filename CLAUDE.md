@@ -41,6 +41,30 @@ zotero-mcp db-inspect --key ITEM_KEY
 zotero-mcp serve
 ```
 
+### Git Version Control
+
+Agent-Zot uses Git tags to snapshot stable versions for easy rollback:
+
+```bash
+# View available version tags
+git tag -l
+
+# Rollback to a specific version (read-only inspection)
+git checkout v1.0-subprocess-isolation
+
+# Create a new branch from a snapshot
+git checkout -b my-backup v1.0-subprocess-isolation
+
+# Hard reset to a version (destructive - use with caution)
+git reset --hard v1.0-subprocess-isolation
+
+# Return to latest version
+git checkout main
+```
+
+**Available Snapshots:**
+- `v1.0-subprocess-isolation` - Subprocess-isolated Docling with crash protection (Oct 2025)
+
 ### Docker Commands
 Qdrant runs in Docker:
 
