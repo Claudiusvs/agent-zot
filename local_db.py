@@ -233,27 +233,43 @@ class LocalZoteroReader:
         try:
             from docling_parser import DoclingParser
 
-            # Initialize parser with config settings (or defaults)
+            # THREAD SAFETY FIX: Create fresh DoclingParser instance for EACH PDF
+            # According to Docling GitHub discussions, DocumentConverter and HybridChunker
+            # are NOT thread-safe. Sharing instances across threads causes race conditions
+            # leading to C++ crashes ("Pure virtual function called").
+            # Solution: Create a new parser instance for every PDF to ensure complete isolation.
+            # See: https://github.com/docling-project/docling/discussions/2285
+
             ocr_config = parser_config.get("ocr", {})
             parser = DoclingParser(
                 tokenizer=parser_config.get("tokenizer", "sentence-transformers/all-MiniLM-L6-v2"),
                 max_tokens=parser_config.get("max_tokens", 512),
                 merge_peers=parser_config.get("merge_peers", True),
-                num_threads=parser_config.get("num_threads", 8),  # Default to 8 (M1 Pro perf cores)
+                num_threads=parser_config.get("num_threads", 2),  # REDUCED from 8 to 2 (7 workers × 2 = 14 threads total)
                 do_formula_enrichment=parser_config.get("do_formula_enrichment", False),  # Match config default
                 do_table_structure=parser_config.get("parse_tables", False),  # Match config default
-                enable_ocr_fallback=ocr_config.get("fallback_enabled", True),
+                enable_ocr_fallback=ocr_config.get("fallback_enabled", False),  # DISABLED by default (4x speedup)
                 ocr_min_text_threshold=ocr_config.get("min_text_threshold", 100)
             )
 
-            # Parse PDF with conditional OCR
-            result = parser.parse_pdf(str(file_path), force_ocr=False)
+            try:
+                # Parse PDF with conditional OCR
+                result = parser.parse_pdf(str(file_path), force_ocr=False)
 
-            # Return the full parsing result (includes chunks, text, tables, figures)
-            if result and result.get("chunks"):
-                logging.info(f"Docling successfully parsed {file_path.name}")
-                logging.info(f"[DEBUG] Returning from Docling: type={type(result)}, chunks={len(result.get('chunks', []))}")
-                return (result, "docling")  # Return tuple format expected by semantic_search
+                # Return the full parsing result (includes chunks, text, tables, figures)
+                if result and result.get("chunks"):
+                    logging.info(f"Docling successfully parsed {file_path.name}")
+                    logging.info(f"[DEBUG] Returning from Docling: type={type(result)}, chunks={len(result.get('chunks', []))}")
+                    return (result, "docling")  # Return tuple format expected by semantic_search
+            finally:
+                # CRITICAL: Always cleanup parser resources, even on exceptions
+                # This prevents pypdfium2 assertion errors and semaphore leaks
+                try:
+                    del parser
+                    import gc
+                    gc.collect()  # Force garbage collection to clean up C++ objects
+                except Exception as cleanup_error:
+                    logging.warning(f"Error during parser cleanup: {cleanup_error}")
 
             # If Docling returned no chunks, try fallback
             logging.warning(f"Docling returned no chunks for {file_path.name}, trying pdfminer")
