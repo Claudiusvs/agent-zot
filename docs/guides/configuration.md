@@ -257,7 +257,7 @@ Last updated: October 2025 (Subprocess isolation release)
 | **Database** | `neo4j` | Default database |
 | **User** | `neo4j` | Default username |
 | **Password** | `demodemo` | Configure in Docker |
-| **LLM Model** | `gpt-4o-mini` | For entity/relationship extraction |
+| **LLM Model** | `ollama/mistral:7b-instruct` | For entity/relationship extraction |
 
 **Config location**: `~/.config/agent-zot/config.json` → `neo4j_graphrag`
 
@@ -269,14 +269,14 @@ Last updated: October 2025 (Subprocess isolation release)
     "neo4j_user": "neo4j",
     "neo4j_password": "demodemo",
     "neo4j_database": "neo4j",
-    "llm_model": "gpt-4o-mini"
+    "llm_model": "ollama/mistral:7b-instruct"
   }
 }
 ```
 
 ### Entity Types
 
-**6 primary entity types** extracted from research papers:
+**8 primary entity types** extracted from research papers:
 
 1. **Person** - Authors, researchers, historical figures
 2. **Institution** - Universities, research labs, companies
@@ -284,10 +284,12 @@ Last updated: October 2025 (Subprocess isolation release)
 4. **Method** - Techniques, algorithms, approaches
 5. **Dataset** - Benchmark datasets, corpora, collections
 6. **Theory** - Theoretical frameworks, models, hypotheses
+7. **Journal** - Publication venues, academic journals
+8. **Field** - Academic disciplines, research areas
 
 ### Relationship Types
 
-**10 relationship types** connecting entities:
+**12 relationship types** connecting entities:
 
 1. **AUTHORED_BY** - Paper → Person
 2. **AFFILIATED_WITH** - Person → Institution
@@ -299,17 +301,21 @@ Last updated: October 2025 (Subprocess isolation release)
 8. **EXTENDS** - Work → Prior Work
 9. **RELATED_TO** - Generic relationship
 10. **CITES** - Paper → Paper
+11. **PUBLISHED_IN** - Paper → Journal
+12. **BELONGS_TO_FIELD** - Paper/Concept → Field
 
 ```json
 {
   "entity_types": [
     "Person", "Institution", "Concept",
-    "Method", "Dataset", "Theory"
+    "Method", "Dataset", "Theory",
+    "Journal", "Field"
   ],
   "relation_types": [
     "AUTHORED_BY", "AFFILIATED_WITH", "USES_METHOD",
     "USES_DATASET", "APPLIES_THEORY", "DISCUSSES_CONCEPT",
-    "BUILDS_ON", "EXTENDS", "RELATED_TO", "CITES"
+    "BUILDS_ON", "EXTENDS", "RELATED_TO", "CITES",
+    "PUBLISHED_IN", "BELONGS_TO_FIELD"
   ]
 }
 ```
