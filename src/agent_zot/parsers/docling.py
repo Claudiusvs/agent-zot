@@ -32,7 +32,7 @@ class DoclingParser:
                  num_threads: int = 10,
                  do_formula_enrichment: bool = False,
                  do_table_structure: bool = False,
-                 enable_ocr_fallback: bool = True,
+                 enable_ocr_fallback: bool = False,
                  ocr_min_text_threshold: int = 100,
                  enable_granite_fallback: bool = False,
                  granite_min_text_threshold: int = 100):

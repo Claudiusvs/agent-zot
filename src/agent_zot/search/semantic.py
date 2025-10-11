@@ -80,7 +80,7 @@ class ZoteroSemanticSearch:
             num_threads=docling_config.get("num_threads", 10),
             do_formula_enrichment=docling_config.get("do_formula_enrichment", True),
             do_table_structure=docling_config.get("parse_tables", True),
-            enable_ocr_fallback=docling_config.get("ocr", {}).get("fallback_enabled", True),
+            enable_ocr_fallback=docling_config.get("ocr", {}).get("fallback_enabled", False),
             ocr_min_text_threshold=docling_config.get("ocr", {}).get("min_text_threshold", 100),
             enable_granite_fallback=docling_config.get("granite_fallback_enabled", False),
             granite_min_text_threshold=docling_config.get("granite_min_text_threshold", 100)

@@ -395,3 +395,37 @@ CLI loads env vars from:
 3. Claude Desktop config (if present)
 
 Use `ZOTERO_NO_CLAUDE=true` to disable Claude Desktop detection.
+
+## Future Enhancements
+
+### Granite VLM Fallback (TODO)
+
+**Current Status**: V2-only parsing (fast, born-digital PDFs)
+
+**Future Enhancement**: Add Granite VLM as intelligent fallback for scanned/complex PDFs
+
+**Benefits:**
+- IBM Granite 3.0 Vision multimodal LLM
+- Complete document understanding (text, layout, tables, equations, code)
+- MLX acceleration for Apple Silicon (M1/M2/M3)
+- Better than EasyOCR for complex layouts
+
+**Implementation:**
+1. Enable `granite_fallback_enabled: true` in config
+2. Install Granite dependencies: `pip install docling[vlm]`
+3. Configure fallback threshold (default: 100 chars)
+4. Strategy: V2 backend → Granite VLM (if <100 chars) → Skip (no OCR)
+
+**Trade-offs:**
+- Adds 2-5x slower processing for difficult PDFs (~10% of library)
+- Requires ~3-8GB model download
+- More RAM usage during inference
+- Net impact: ~12-15 hours total vs 10-12 hours V2-only
+
+**When to enable:**
+- After initial bulk indexing completes
+- If you find PDFs with poor text extraction
+- For scanned journal articles (pre-2000s)
+- For complex multi-column layouts with figures
+
+See `src/agent_zot/parsers/docling.py` for implementation details.
