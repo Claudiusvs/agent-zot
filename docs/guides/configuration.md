@@ -701,8 +701,118 @@ open http://localhost:7474
 
 ---
 
+## Active Pipeline Components
+
+**For the complete, detailed execution path of the production indexing pipeline, see the [Active Pipeline Reference](../CLAUDE.md#active-pipeline-reference) section in CLAUDE.md.**
+
+This section provides a high-level overview of which files and directories are active in the standard production pipeline:
+
+### Standard Production Command
+
+```bash
+agent-zot update-db --force-rebuild --fulltext
+```
+
+### Active Execution Path
+
+**Core files used** (in order of execution):
+
+1. **CLI Entry Point**: `src/agent_zot/core/cli.py`
+   - Parses command-line flags
+   - Loads config from `~/.config/agent-zot/config.json`
+
+2. **Orchestration**: `src/agent_zot/search/semantic.py`
+   - Routes to appropriate indexing path
+   - For fulltext + local mode → delegates to `local_zotero.py`
+
+3. **Local Database Access** (MAIN ACTIVE PATH): `src/agent_zot/database/local_zotero.py`
+   - Direct SQLite access to Zotero database
+   - Parallel PDF processing (8 workers)
+   - **Contains correct hardcoded defaults** for all Docling settings
+   - **This is where the magic happens for production indexing**
+
+4. **PDF Parsing**: `src/agent_zot/parsers/docling.py`
+   - Runs in isolated subprocess (crash protection)
+   - HybridChunker with BGE-M3 tokenizer
+   - CPU-only processing (7.3x faster than GPU)
+
+5. **Vector Storage**: `src/agent_zot/clients/qdrant.py`
+   - BGE-M3 embedding generation (GPU-accelerated)
+   - Hybrid vectors (dense 1024D + sparse BM25)
+   - Batch upsert to Qdrant (batch_size=500)
+
+### Data Locations
+
+**Active storage locations**:
+
+| Location | Purpose | Required |
+|----------|---------|----------|
+| `~/.config/agent-zot/config.json` | User configuration overrides | ✅ Yes |
+| `~/Zotero/zotero.sqlite` | Zotero source database | ✅ Yes |
+| `~/toolboxes/agent-zot/qdrant_storage/` | Vector data storage | ✅ Yes |
+| `/tmp/agent-zot-bge-m3-reindex.log` | Live indexing log | ✅ Yes |
+
+### Minimal Required Configuration
+
+**Only 4 settings need to be in `config.json`** - everything else uses smart defaults:
+
+```json
+{
+  "client_env": {
+    "ZOTERO_LOCAL": "true"
+  },
+  "semantic_search": {
+    "embedding_model": "sentence-transformers",
+    "sentence_transformer_model": "BAAI/bge-m3",
+    "collection_name": "zotero_library_qdrant"
+  }
+}
+```
+
+All other settings documented in this file (Docling chunking, HNSW parameters, quantization, etc.) have correct hardcoded defaults in `local_zotero.py` and only need to be added to `config.json` if you want to override them.
+
+### Files NOT in Active Path
+
+These files exist but are NOT used for the standard production pipeline:
+
+- ❌ `src/agent_zot/parsers/pymupdf_parser.py` - Deprecated parser
+- ❌ `src/agent_zot/clients/chroma_client.py` - Old vector database
+- ❌ `src/agent_zot/clients/better_bibtex.py` - Optional, not required
+- ❌ `config_examples/config_chroma.json` - Old template
+
+### Why Two Code Paths?
+
+**Short answer**: `semantic.py` handles both API mode and local mode. For fulltext + local mode (our standard production pipeline), it delegates to `local_zotero.py` which has optimized parallel processing and correct defaults.
+
+**Key insight**: The DoclingParser defaults in `semantic.py:77-87` are NOT used for fulltext indexing with local mode. Instead, `local_zotero.py:265-272` provides the correct defaults via subprocess code generation.
+
+### Verification
+
+**How to verify the correct pipeline is active**:
+
+```bash
+# Check config has BGE-M3
+grep "sentence_transformer_model" ~/.config/agent-zot/config.json
+
+# Verify BGE-M3 loading in log
+tail -f /tmp/agent-zot-bge-m3-reindex.log | grep "Load pretrained"
+# Should show: "BAAI/bge-m3"
+
+# Verify 1024D vectors
+tail -f /tmp/agent-zot-bge-m3-reindex.log | grep "dimension"
+# Should show: "dimension: 1024"
+
+# Check physical storage
+du -sh ~/toolboxes/agent-zot/qdrant_storage/collections/zotero_library_qdrant/
+```
+
+**For complete details on the execution flow, verification points, and troubleshooting, see [CLAUDE.md - Active Pipeline Reference](../CLAUDE.md#active-pipeline-reference).**
+
+---
+
 ## See Also
 
+- **[CLAUDE.md - Active Pipeline Reference](../CLAUDE.md#active-pipeline-reference)** - Complete execution path documentation
 - **CLAUDE.md** - Development guide for AI assistants
 - **README.md** - Quick start and architecture overview
 - **config_examples/config_qdrant.json** - Full configuration template

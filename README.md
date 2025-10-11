@@ -164,8 +164,10 @@ Agent-Zot uses a single JSON config at `~/.config/agent-zot/config.json`. Here a
 ### 📚 Advanced Configuration
 
 **For complete details**, see:
-- **[CONFIGURATION.md](docs/guides/configuration.md)** - Full reference guide
-- **[CLAUDE.md](docs/CLAUDE.md)** - Developer documentation
+- **[CONFIGURATION.md](docs/guides/configuration.md)** - Full reference guide with active pipeline overview
+- **[CLAUDE.md](docs/CLAUDE.md)** - Complete technical documentation with detailed execution flow
+
+**💡 New to Agent-Zot?** Check out the [Active Pipeline Reference](docs/CLAUDE.md#active-pipeline-reference) to understand exactly which files and code paths are used during indexing. This helps prevent confusion and ensures you're configuring the right settings.
 
 ### 🎨 Performance Tuning
 
