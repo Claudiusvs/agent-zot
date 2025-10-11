@@ -1,7 +1,6 @@
 <div align="center">
 
-<!-- TODO: Add robot mascot image at docs/assets/agent-zot-mascot.png -->
-<!-- <img src="docs/assets/agent-zot-mascot.png" alt="Agent-Zot Mascot" width="300"/> -->
+<img src="docs/assets/agent-zot-mascot.png" alt="Agent-Zot Mascot" width="300"/>
 
 # 🤖 Agent-Zot
 
