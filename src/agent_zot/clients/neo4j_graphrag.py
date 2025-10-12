@@ -8,6 +8,7 @@ knowledge graphs from research papers.
 import json
 import os
 import logging
+import asyncio
 from typing import Dict, List, Optional, Any
 from pathlib import Path
 
@@ -63,6 +64,20 @@ class OllamaLLM(LLMInterface):
                 self.content = text
 
         return OllamaResponse(response['response'])
+
+    async def ainvoke(self, input: str) -> Any:
+        """
+        Async invoke the LLM with a prompt (required by neo4j-graphrag).
+
+        Args:
+            input: The prompt text
+
+        Returns:
+            LLM response with content attribute
+        """
+        # Ollama Python client doesn't have native async support yet,
+        # so we'll use the sync method (wrapped in async for compatibility)
+        return self.invoke(input)
 
 
 # Define explicit schema for research papers
@@ -209,7 +224,9 @@ class Neo4jGraphRAGClient:
                  neo4j_database: str = "neo4j",
                  llm_model: str = "gpt-4o-mini",
                  openai_api_key: Optional[str] = None,
-                 ollama_base_url: str = "http://localhost:11434"):
+                 ollama_base_url: str = "http://localhost:11434",
+                 entity_types: Optional[List[str]] = None,
+                 relation_types: Optional[List[str]] = None):
         """
         Initialize Neo4j GraphRAG client with OpenAI or Ollama support.
 
@@ -221,11 +238,26 @@ class Neo4jGraphRAGClient:
             llm_model: Model for entity extraction. Use "ollama/" prefix for Ollama models (e.g., "ollama/mistral:7b-instruct")
             openai_api_key: OpenAI API key (required for OpenAI models)
             ollama_base_url: Ollama API base URL (default: http://localhost:11434)
+            entity_types: List of entity types to extract (defaults to standard research paper entities)
+            relation_types: List of relationship types to extract (defaults to standard research paper relationships)
         """
         self.neo4j_uri = neo4j_uri
         self.neo4j_user = neo4j_user
         self.neo4j_password = neo4j_password
         self.neo4j_database = neo4j_database
+
+        # Store entity and relationship types (use defaults if not provided)
+        self.entity_types = entity_types or [
+            "Person", "Institution", "Concept", "Method", "Dataset", "Theory", "Journal", "Field"
+        ]
+        self.relation_types = relation_types or [
+            "AUTHORED_BY", "AFFILIATED_WITH", "USES_METHOD", "USES_DATASET",
+            "APPLIES_THEORY", "DISCUSSES_CONCEPT", "BUILDS_ON", "EXTENDS",
+            "RELATED_TO", "CITES", "PUBLISHED_IN", "BELONGS_TO_FIELD"
+        ]
+
+        logger.info(f"Configured entity types ({len(self.entity_types)}): {', '.join(self.entity_types)}")
+        logger.info(f"Configured relationship types ({len(self.relation_types)}): {', '.join(self.relation_types)}")
 
         # Initialize Neo4j driver
         self.driver = GraphDatabase.driver(
@@ -240,16 +272,22 @@ class Neo4jGraphRAGClient:
             self.llm = OllamaLLM(model_name=ollama_model, base_url=ollama_base_url)
             logger.info(f"Using Ollama LLM: {ollama_model} (free, local)")
 
-            # For Ollama, we still need OpenAI for embeddings (or could switch to sentence-transformers)
+            # For Ollama, use free local embeddings with SentenceTransformers
             api_key = openai_api_key or os.getenv("OPENAI_API_KEY")
             if api_key:
+                # Use OpenAI embeddings if API key provided
                 self.embeddings = OpenAIEmbeddings(
                     model="text-embedding-3-large",
                     api_key=api_key
                 )
+                logger.info("Using OpenAI embeddings for Neo4j GraphRAG")
             else:
-                logger.warning("No OpenAI API key provided - embeddings disabled for Ollama mode")
-                self.embeddings = None
+                # Use free local SentenceTransformer embeddings (same model as Qdrant)
+                from neo4j_graphrag.embeddings import SentenceTransformerEmbeddings
+                self.embeddings = SentenceTransformerEmbeddings(
+                    model="BAAI/bge-m3"
+                )
+                logger.info("Using free local SentenceTransformer embeddings: BAAI/bge-m3")
 
         else:
             # Use OpenAI
@@ -325,7 +363,7 @@ class Neo4jGraphRAGClient:
         if self.driver:
             self.driver.close()
 
-    def add_paper_to_graph(self,
+    async def add_paper_to_graph(self,
                           paper_key: str,
                           title: str,
                           abstract: str,
@@ -380,21 +418,23 @@ class Neo4jGraphRAGClient:
             )
 
             # Create knowledge graph pipeline with optimized settings
-            kg_builder = SimpleKGPipeline(
-                llm=self.llm,
-                driver=self.driver,
-                database=self.neo4j_database,
-                embedder=self.embeddings,
-                entities=["Person", "Institution", "Concept", "Method", "Dataset", "Theory"],
-                relations=["AUTHORED_BY", "AFFILIATED_WITH", "USES_METHOD", "USES_DATASET",
-                          "APPLIES_THEORY", "DISCUSSES_CONCEPT", "BUILDS_ON", "EXTENDS",
-                          "RELATED_TO", "CITES"],
-                potential_schema=RESEARCH_PAPER_SCHEMA + RESEARCH_PAPER_RELATIONS,
-                from_pdf=False,
-                prompt_template=extraction_template,
-                perform_entity_resolution=True,  # Merge similar entities
-                lexical_graph_config=lexical_config  # Enable keyword-based connections
-            )
+            # Build kwargs conditionally based on whether embeddings are available
+            pipeline_kwargs = {
+                "llm": self.llm,
+                "driver": self.driver,
+                "entities": self.entity_types,
+                "relations": self.relation_types,
+                "from_pdf": False,
+                "prompt_template": extraction_template,
+                "perform_entity_resolution": True,  # Merge similar entities
+                "lexical_graph_config": lexical_config  # Enable keyword-based connections
+            }
+
+            # Only add embedder if available (skip for Ollama mode)
+            if self.embeddings is not None:
+                pipeline_kwargs["embedder"] = self.embeddings
+
+            kg_builder = SimpleKGPipeline(**pipeline_kwargs)
 
             # Add paper metadata as a node first
             with self.driver.session(database=self.neo4j_database) as session:
@@ -414,7 +454,7 @@ class Neo4jGraphRAGClient:
                 )
 
             # Extract entities and relationships from content
-            result = kg_builder.run_async(text=full_content)
+            result = await kg_builder.run_async(text=full_content)
 
             # Link extracted entities to the paper
             with self.driver.session(database=self.neo4j_database) as session:
@@ -436,7 +476,7 @@ class Neo4jGraphRAGClient:
             }
 
         except Exception as e:
-            logger.error(f"Error adding paper to graph: {e}")
+            logger.error(f"Error adding paper to graph: {e}", exc_info=True)
             return {
                 "status": "error",
                 "error": str(e)
@@ -498,21 +538,24 @@ class Neo4jGraphRAGClient:
                 })
 
                 # Create pipeline for batch
-                kg_builder = SimpleKGPipeline(
-                    llm=self.llm,
-                    driver=self.driver,
-                    database=self.neo4j_database,
-                    embedder=self.embeddings,
-                    entities=["Person", "Institution", "Concept", "Method", "Dataset", "Theory"],
-                    relations=["AUTHORED_BY", "AFFILIATED_WITH", "USES_METHOD", "USES_DATASET",
+                batch_pipeline_kwargs = {
+                    "llm": self.llm,
+                    "driver": self.driver,
+                    "entities": ["Person", "Institution", "Concept", "Method", "Dataset", "Theory"],
+                    "relations": ["AUTHORED_BY", "AFFILIATED_WITH", "USES_METHOD", "USES_DATASET",
                               "APPLIES_THEORY", "DISCUSSES_CONCEPT", "BUILDS_ON", "EXTENDS",
                               "RELATED_TO", "CITES"],
-                    potential_schema=RESEARCH_PAPER_SCHEMA + RESEARCH_PAPER_RELATIONS,
-                    from_pdf=False,
-                    prompt_template=extraction_template,
-                    perform_entity_resolution=True,
-                    lexical_graph_config=lexical_config
-                )
+                    "from_pdf": False,
+                    "prompt_template": extraction_template,
+                    "perform_entity_resolution": True,
+                    "lexical_graph_config": lexical_config
+                }
+
+                # Only add embedder if available (skip for Ollama mode)
+                if self.embeddings is not None:
+                    batch_pipeline_kwargs["embedder"] = self.embeddings
+
+                kg_builder = SimpleKGPipeline(**batch_pipeline_kwargs)
 
                 # Add paper metadata nodes for batch
                 with self.driver.session(database=self.neo4j_database) as session:
