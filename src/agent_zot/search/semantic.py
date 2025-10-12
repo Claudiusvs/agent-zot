@@ -1170,14 +1170,25 @@ class ZoteroSemanticSearch:
     def _enrich_search_results(self, qdrant_results: Dict[str, Any], query: str) -> List[Dict[str, Any]]:
         """Enrich Qdrant results with full Zotero item data."""
         enriched = []
-        
-        if not qdrant_results.get("ids") or not qdrant_results["ids"][0]:
+
+        # Check if we have results
+        if not qdrant_results.get("ids") or not qdrant_results["ids"]:
             return enriched
 
-        ids = qdrant_results["ids"][0]
-        distances = qdrant_results.get("distances", [[]])[0]
-        documents = qdrant_results.get("documents", [[]])[0]
-        metadatas = qdrant_results.get("metadatas", [[]])[0]
+        # Safely extract nested lists with proper bounds checking
+        ids_nested = qdrant_results.get("ids", [])
+        if not ids_nested or not ids_nested[0]:
+            return enriched
+
+        ids = ids_nested[0]
+        distances_nested = qdrant_results.get("distances", [[]])
+        documents_nested = qdrant_results.get("documents", [[]])
+        metadatas_nested = qdrant_results.get("metadatas", [[]])
+
+        # Extract first element safely, defaulting to empty list if not present
+        distances = distances_nested[0] if distances_nested and len(distances_nested) > 0 else []
+        documents = documents_nested[0] if documents_nested and len(documents_nested) > 0 else []
+        metadatas = metadatas_nested[0] if metadatas_nested and len(metadatas_nested) > 0 else []
 
         for i, point_id in enumerate(ids):
             try:
