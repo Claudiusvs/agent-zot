@@ -54,10 +54,11 @@ Agent-Zot transforms your Zotero research library into an intelligent, searchabl
 
 ### 🕸️ **Knowledge Graph (Optional)**
 - **Auto-Extraction**: Identify entities, concepts, and relationships
-- **Entity Types**: Person, Institution, Concept, Method, Dataset, Theory, Journal, Field
+- **Config-Driven Schema**: 8 entity types, 12 relationship types (fully customizable)
 - **Smart Merging**: Entity resolution consolidates similar concepts
-- **Fast Queries**: Database indexes for 10-100x speedup
-- **Powered by**: GPT-4o-mini or Ollama (local)
+- **Free Local LLM**: Ollama with Mistral 7B Instruct or GPT-4o-mini
+- **Free Local Embeddings**: BGE-M3 via SentenceTransformer (no API costs)
+- **Concurrent Population**: 6-9x faster graph building (73h → 10-12h for 2,411 papers)
 
 ### 🎛️ **Production-Grade Infrastructure**
 - **Vector Database**: Qdrant with HNSW indexing (sub-100ms searches)
@@ -88,10 +89,12 @@ docker run -d -p 6333:6333 -p 6334:6334 \
   qdrant/qdrant
 
 # Neo4j (knowledge graph) - Optional
+# Requires Neo4j 5.23.0+ with APOC plugin for relationship vector support
 docker run -d -p 7474:7474 -p 7687:7687 \
   -e NEO4J_AUTH=neo4j/demodemo \
+  -e NEO4J_PLUGINS='["apoc"]' \
   --name agent-zot-neo4j \
-  neo4j:5.15.0
+  neo4j:5.23.0
 ```
 
 #### 2️⃣ Install & Configure

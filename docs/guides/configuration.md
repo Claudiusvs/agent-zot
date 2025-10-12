@@ -246,7 +246,16 @@ Last updated: October 2025 (Subprocess isolation release)
 
 ## Neo4j GraphRAG
 
-**Purpose**: Knowledge graph extraction for relationship-aware search.
+**Purpose**: Knowledge graph extraction for relationship-aware search and discovery.
+
+### System Requirements
+
+| Requirement | Specification | Notes |
+|------------|---------------|-------|
+| **Neo4j Version** | 5.23.0+ | Required for relationship vector support |
+| **APOC Plugin** | ✅ Required | Enable with `NEO4J_PLUGINS='["apoc"]'` |
+| **LLM Options** | Ollama (free, local) or OpenAI (paid) | Mistral 7B Instruct recommended |
+| **Embedding Options** | BGE-M3 (free, local) or OpenAI (paid) | BGE-M3 matches Qdrant for consistency |
 
 ### Connection Settings
 
@@ -259,6 +268,15 @@ Last updated: October 2025 (Subprocess isolation release)
 | **Password** | `demodemo` | Configure in Docker |
 | **LLM Model** | `ollama/mistral:7b-instruct` | For entity/relationship extraction |
 
+**Docker command** (Neo4j 5.23.0+ with APOC):
+```bash
+docker run -d -p 7474:7474 -p 7687:7687 \
+  -e NEO4J_AUTH=neo4j/demodemo \
+  -e NEO4J_PLUGINS='["apoc"]' \
+  --name agent-zot-neo4j \
+  neo4j:5.23.0
+```
+
 **Config location**: `~/.config/agent-zot/config.json` → `neo4j_graphrag`
 
 ```json
@@ -269,14 +287,24 @@ Last updated: October 2025 (Subprocess isolation release)
     "neo4j_user": "neo4j",
     "neo4j_password": "demodemo",
     "neo4j_database": "neo4j",
-    "llm_model": "ollama/mistral:7b-instruct"
+    "llm_model": "ollama/mistral:7b-instruct",
+    "entity_types": [
+      "Person", "Institution", "Concept", "Method",
+      "Dataset", "Theory", "Journal", "Field"
+    ],
+    "relation_types": [
+      "AUTHORED_BY", "AFFILIATED_WITH", "USES_METHOD",
+      "USES_DATASET", "APPLIES_THEORY", "DISCUSSES_CONCEPT",
+      "BUILDS_ON", "EXTENDS", "RELATED_TO", "CITES",
+      "PUBLISHED_IN", "BELONGS_TO_FIELD"
+    ]
   }
 }
 ```
 
-### Entity Types
+### Config-Driven Schema
 
-**8 primary entity types** extracted from research papers:
+**Entity types** (customizable via config):
 
 1. **Person** - Authors, researchers, historical figures
 2. **Institution** - Universities, research labs, companies
@@ -287,9 +315,7 @@ Last updated: October 2025 (Subprocess isolation release)
 7. **Journal** - Publication venues, academic journals
 8. **Field** - Academic disciplines, research areas
 
-### Relationship Types
-
-**12 relationship types** connecting entities:
+**Relationship types** (customizable via config):
 
 1. **AUTHORED_BY** - Paper → Person
 2. **AFFILIATED_WITH** - Person → Institution
@@ -304,21 +330,122 @@ Last updated: October 2025 (Subprocess isolation release)
 11. **PUBLISHED_IN** - Paper → Journal
 12. **BELONGS_TO_FIELD** - Paper/Concept → Field
 
+**Customization**: Add/remove entity or relationship types in config.json. The Neo4j client dynamically creates schemas based on configured types.
+
+### LLM Options
+
+#### Option 1: Free Local LLM (Ollama + Mistral)
+
+**Benefits**:
+- ✅ Zero API costs (fully local)
+- ✅ No rate limits
+- ✅ Privacy-preserving (data never leaves machine)
+- ✅ Good quality (Mistral 7B competitive with GPT-3.5)
+
+**Requirements**:
+- 8GB RAM minimum
+- Ollama installed (`brew install ollama`)
+- Model pulled (`ollama pull mistral:7b-instruct`)
+
+**Configuration**:
 ```json
 {
-  "entity_types": [
-    "Person", "Institution", "Concept",
-    "Method", "Dataset", "Theory",
-    "Journal", "Field"
-  ],
-  "relation_types": [
-    "AUTHORED_BY", "AFFILIATED_WITH", "USES_METHOD",
-    "USES_DATASET", "APPLIES_THEORY", "DISCUSSES_CONCEPT",
-    "BUILDS_ON", "EXTENDS", "RELATED_TO", "CITES",
-    "PUBLISHED_IN", "BELONGS_TO_FIELD"
-  ]
+  "llm_model": "ollama/mistral:7b-instruct"
 }
 ```
+
+#### Option 2: OpenAI (GPT-4o-mini)
+
+**Benefits**:
+- ✅ Higher accuracy than Mistral 7B
+- ✅ No local resource requirements
+- ✅ Faster processing (cloud infrastructure)
+
+**Requirements**:
+- OpenAI API key with credits
+- `OPENAI_API_KEY` environment variable or in config
+
+**Configuration**:
+```json
+{
+  "llm_model": "gpt-4o-mini"
+}
+```
+
+### Embedding Options
+
+#### Option 1: Free Local Embeddings (BGE-M3)
+
+**When enabled**: Automatically used when `llm_model` starts with "ollama/" and no OpenAI API key provided
+
+**Benefits**:
+- ✅ Zero API costs
+- ✅ Same embeddings as Qdrant (consistency)
+- ✅ 1024 dimensions (efficient)
+- ✅ Multilingual support
+
+**Implementation** (automatic):
+```python
+self.embeddings = SentenceTransformerEmbeddings(model="BAAI/bge-m3")
+```
+
+#### Option 2: OpenAI Embeddings
+
+**When enabled**: Used when OpenAI API key is provided (regardless of LLM choice)
+
+**Benefits**:
+- ✅ 3072 dimensions (richer representations)
+- ✅ text-embedding-3-large model
+- ✅ Optimized for semantic similarity
+
+**Configuration**:
+```json
+{
+  "client_env": {
+    "OPENAI_API_KEY": "sk-..."
+  }
+}
+```
+
+### Population Script
+
+**Script**: `populate_neo4j_from_qdrant.py`
+
+**Purpose**: Populate Neo4j knowledge graph from existing Qdrant fulltext data
+
+**Key Features**:
+- ✅ Read-only Qdrant access (never modifies vector database)
+- ✅ Concurrent processing with asyncio (configurable parallelism)
+- ✅ 6-9x performance improvement over sequential processing
+- ✅ Safe to run alongside semantic search
+
+**Usage**:
+```bash
+# Dry run (test without writing to Neo4j)
+python populate_neo4j_from_qdrant.py --dry-run
+
+# Process first 5 items (testing)
+python populate_neo4j_from_qdrant.py --limit 5
+
+# Full population with default concurrency (4 parallel tasks)
+python populate_neo4j_from_qdrant.py
+
+# High concurrency (8 parallel tasks)
+python populate_neo4j_from_qdrant.py --concurrency 8
+```
+
+**Performance**:
+| Concurrency | Processing Time (2,411 papers) | Speedup |
+|-------------|-------------------------------|---------|
+| Sequential (1) | ~73 hours | 1x baseline |
+| 2 parallel | ~36 hours | 2x faster |
+| 4 parallel (default) | ~10-12 hours | 6-7x faster |
+| 8 parallel | ~8-10 hours | 7-9x faster |
+
+**CLI Flags**:
+- `--dry-run` - Test without writing to Neo4j
+- `--limit N` - Process only first N items
+- `--concurrency N` - Number of parallel tasks (default: 4)
 
 ### Advanced Features
 
@@ -328,6 +455,8 @@ Last updated: October 2025 (Subprocess isolation release)
 | **Lexical Graph** | ✅ Enabled | Keyword connections for full-text search |
 | **Custom Extraction Prompt** | ✅ Active | Optimized for research papers |
 | **Database Indexes** | ✅ Created | 10-100x faster queries |
+| **Vector Embeddings** | ✅ Supported | Requires Neo4j 5.23.0+ with APOC |
+| **Concurrent Population** | ✅ Available | 6-9x faster graph building |
 
 ```json
 {
@@ -338,12 +467,21 @@ Last updated: October 2025 (Subprocess isolation release)
 
 ### Graph Schema
 
-**Optimized for research paper queries:**
+**Optimized for research paper queries**:
 - Author collaboration networks
 - Methodological lineages
 - Conceptual relationships
 - Citation graphs
 - Institution affiliations
+
+**Verification**:
+```bash
+# Check graph statistics
+curl -X POST http://localhost:7474/db/neo4j/tx/commit \
+  -H "Authorization: Basic bmVvNGo6ZGVtb2RlbW8=" \
+  -H "Content-Type: application/json" \
+  -d '{"statements":[{"statement":"MATCH (n) RETURN labels(n) as type, count(n) as count"}]}'
+```
 
 ---
 
@@ -641,12 +779,13 @@ services:
     container_name: agent-zot-qdrant
 
   neo4j:
-    image: neo4j:5.15.0
+    image: neo4j:5.23.0
     ports:
       - "7474:7474"
       - "7687:7687"
     environment:
       - NEO4J_AUTH=neo4j/demodemo
+      - NEO4J_PLUGINS=["apoc"]
     container_name: agent-zot-neo4j
 ```
 

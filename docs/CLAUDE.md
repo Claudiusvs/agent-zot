@@ -527,13 +527,199 @@ When `ZOTERO_LOCAL=true`:
 
 ### Neo4j GraphRAG (Optional)
 
-`neo4j_graphrag_client.py` extracts knowledge graphs:
+**Purpose**: Extract knowledge graphs from research papers for relationship-aware search and discovery.
 
-- Entities: Person, Institution, Concept, Method, Dataset, Theory
-- Relationships: AUTHORED_BY, USES_METHOD, DISCUSSES_CONCEPT, etc.
-- Schema defined in `RESEARCH_PAPER_SCHEMA` and `RESEARCH_PAPER_RELATIONS`
+#### Core Components
 
-Enabled by setting Neo4j connection in config.
+1. **Client**: `src/agent_zot/clients/neo4j_graphrag.py`
+   - Config-driven schema (8 entity types, 12 relationship types)
+   - Free local LLM support via Ollama (Mistral 7B Instruct)
+   - Free local embeddings via SentenceTransformer (BGE-M3)
+   - OpenAI support (GPT-4o-mini + text-embedding-3-large)
+
+2. **Population Script**: `populate_neo4j_from_qdrant.py`
+   - Read-only Qdrant access (never modifies vector DB)
+   - Concurrent processing with asyncio (default: 4 parallel tasks)
+   - 6-9x performance improvement (73 hours → 10-12 hours for 2,411 papers)
+   - CLI flags: `--dry-run`, `--limit`, `--concurrency`
+
+#### Config-Driven Schema
+
+**Entity types** (configurable via `config.json`):
+1. **Person** - Authors, researchers, historical figures
+2. **Institution** - Universities, research labs, companies
+3. **Concept** - Abstract ideas, frameworks, paradigms
+4. **Method** - Techniques, algorithms, approaches
+5. **Dataset** - Benchmark datasets, corpora, collections
+6. **Theory** - Theoretical frameworks, models, hypotheses
+7. **Journal** - Publication venues, academic journals
+8. **Field** - Academic disciplines, research areas
+
+**Relationship types** (configurable via `config.json`):
+1. **AUTHORED_BY** - Paper → Person
+2. **AFFILIATED_WITH** - Person → Institution
+3. **USES_METHOD** - Paper/Study → Method
+4. **USES_DATASET** - Paper/Study → Dataset
+5. **APPLIES_THEORY** - Paper/Study → Theory
+6. **DISCUSSES_CONCEPT** - Paper → Concept
+7. **BUILDS_ON** - Paper → Paper
+8. **EXTENDS** - Work → Prior Work
+9. **RELATED_TO** - Generic relationship
+10. **CITES** - Paper → Paper
+11. **PUBLISHED_IN** - Paper → Journal
+12. **BELONGS_TO_FIELD** - Paper/Concept → Field
+
+#### Requirements
+
+- **Neo4j Version**: 5.23.0+ with APOC plugin (for relationship vector support)
+- **Docker Command**:
+  ```bash
+  docker run -d -p 7474:7474 -p 7687:7687 \
+    -e NEO4J_AUTH=neo4j/demodemo \
+    -e NEO4J_PLUGINS='["apoc"]' \
+    --name agent-zot-neo4j \
+    neo4j:5.23.0
+  ```
+
+#### Configuration
+
+**Config location**: `~/.config/agent-zot/config.json` → `neo4j_graphrag`
+
+```json
+{
+  "neo4j_graphrag": {
+    "enabled": true,
+    "neo4j_uri": "neo4j://127.0.0.1:7687",
+    "neo4j_user": "neo4j",
+    "neo4j_password": "demodemo",
+    "neo4j_database": "neo4j",
+    "llm_model": "ollama/mistral:7b-instruct",
+    "entity_types": [
+      "Person", "Institution", "Concept", "Method",
+      "Dataset", "Theory", "Journal", "Field"
+    ],
+    "relation_types": [
+      "AUTHORED_BY", "AFFILIATED_WITH", "USES_METHOD",
+      "USES_DATASET", "APPLIES_THEORY", "DISCUSSES_CONCEPT",
+      "BUILDS_ON", "EXTENDS", "RELATED_TO", "CITES",
+      "PUBLISHED_IN", "BELONGS_TO_FIELD"
+    ]
+  }
+}
+```
+
+#### Free Local LLM Option
+
+Use Ollama with Mistral 7B Instruct for zero-cost entity extraction:
+
+```bash
+# Install Ollama (macOS)
+brew install ollama
+
+# Pull Mistral 7B Instruct
+ollama pull mistral:7b-instruct
+
+# Verify it's running
+ollama list
+
+# Configure in config.json
+"llm_model": "ollama/mistral:7b-instruct"
+```
+
+**Benefits**:
+- Zero API costs (fully local)
+- No rate limits
+- Privacy-preserving (data never leaves your machine)
+- Good quality (Mistral 7B competitive with GPT-3.5)
+
+**When to use OpenAI instead**:
+- Need higher accuracy (GPT-4o-mini)
+- Already have OpenAI credits
+- Don't want to run local LLM (8GB RAM required)
+
+#### Free Local Embeddings
+
+When using Ollama LLM without OpenAI API key, Neo4j automatically uses free local embeddings:
+
+```python
+# Automatically configured when llm_model starts with "ollama/" and no OpenAI key
+self.embeddings = SentenceTransformerEmbeddings(model="BAAI/bge-m3")
+```
+
+**Benefits**:
+- Same embeddings as Qdrant (BGE-M3) for consistency
+- Zero API costs
+- 1024 dimensions (vs OpenAI's 3072)
+- Multilingual support
+
+#### Population Script Usage
+
+After initial Qdrant indexing, populate Neo4j graph:
+
+```bash
+# Dry run (test without writing to Neo4j)
+python populate_neo4j_from_qdrant.py --dry-run
+
+# Process first 5 items (testing)
+python populate_neo4j_from_qdrant.py --limit 5
+
+# Full population with default concurrency (4 parallel tasks)
+python populate_neo4j_from_qdrant.py
+
+# High concurrency (8 parallel tasks)
+python populate_neo4j_from_qdrant.py --concurrency 8
+
+# Low concurrency (2 parallel tasks, for memory-constrained systems)
+python populate_neo4j_from_qdrant.py --concurrency 2
+```
+
+#### Performance
+
+**Concurrent processing** (new):
+- Default: 4 parallel tasks
+- Performance: 6-9x faster than sequential
+- Example: 2,411 papers in 10-12 hours (vs 73 hours sequential)
+
+**Read-only Qdrant access**:
+- Script NEVER modifies vector database
+- Safe to run alongside semantic search
+- Reconstructs fulltext from Qdrant chunks
+
+#### Advanced Features
+
+| Feature | Status | Description |
+|---------|--------|-------------|
+| **Entity Resolution** | ✅ Enabled | Merges similar entities (e.g., "Stanford" = "Stanford University") |
+| **Lexical Graph** | ✅ Enabled | Keyword connections for full-text search |
+| **Custom Extraction Prompt** | ✅ Active | Optimized for research papers |
+| **Database Indexes** | ✅ Created | 10-100x faster queries |
+| **Vector Embeddings** | ✅ Supported | Requires Neo4j 5.23.0+ with APOC |
+
+#### Graph Schema
+
+**Optimized for research paper queries**:
+- Author collaboration networks
+- Methodological lineages
+- Conceptual relationships
+- Citation graphs
+- Institution affiliations
+
+#### Verification
+
+```bash
+# Check Neo4j status
+docker logs agent-zot-neo4j
+
+# Access Neo4j browser
+open http://localhost:7474
+# Login: neo4j / demodemo
+
+# Check graph statistics
+curl -X POST http://localhost:7474/db/neo4j/tx/commit \
+  -H "Authorization: Basic bmVvNGo6ZGVtb2RlbW8=" \
+  -H "Content-Type: application/json" \
+  -d '{"statements":[{"statement":"MATCH (n) RETURN labels(n) as type, count(n) as count"}]}'
+```
 
 ## Development Patterns
 
