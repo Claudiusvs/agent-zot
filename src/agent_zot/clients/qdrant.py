@@ -273,8 +273,7 @@ class QdrantClientWrapper:
 
         # Set up embedding function
         self.embedding_function = self._create_embedding_function()
-        logger.info(f"[DEBUG] Initialized embedding function: {type(self.embedding_function).__name__}, model: {getattr(self.embedding_function, 'model_name', 'unknown')}, dimension: {self.embedding_function.get_dimension()}")
-        print(f"[DEBUG] Initialized embedding function: {type(self.embedding_function).__name__}, model: {getattr(self.embedding_function, 'model_name', 'unknown')}, dimension: {self.embedding_function.get_dimension()}")
+        logger.debug(f"Initialized embedding function: {type(self.embedding_function).__name__}, model: {getattr(self.embedding_function, 'model_name', 'unknown')}, dimension: {self.embedding_function.get_dimension()}")
 
         # Set up sparse embedding function for hybrid search
         self.sparse_embedding = BM25SparseEmbedding() if enable_hybrid_search else None
@@ -289,8 +288,7 @@ class QdrantClientWrapper:
             # Check if collection exists
             collections = self.client.get_collections().collections
             collection_exists = any(c.name == self.collection_name for c in collections)
-            logger.info(f"[DEBUG] Collection {self.collection_name} exists: {collection_exists}")
-            print(f"[DEBUG] Collection {self.collection_name} exists: {collection_exists}")
+            logger.debug(f"Collection {self.collection_name} exists: {collection_exists}")
 
             if not collection_exists:
                 # Create collection with appropriate vector size and optimizations
@@ -448,8 +446,7 @@ class QdrantClientWrapper:
             total_docs = len(documents)
             mode = "hybrid" if self.enable_hybrid_search else "dense"
 
-            logger.info(f"[DEBUG] add_documents called with {total_docs} documents, collection: {self.collection_name}")
-            print(f"[DEBUG] add_documents called with {total_docs} documents, collection: {self.collection_name}")
+            logger.debug(f"add_documents called with {total_docs} documents, collection: {self.collection_name}")
 
             # Process in batches for better performance
             for batch_start in range(0, total_docs, batch_size):
