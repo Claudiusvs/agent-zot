@@ -1187,18 +1187,32 @@ class ZoteroSemanticSearch:
                     logger.warning(f"No item_key found in metadata for point_id {point_id}")
                     continue
 
+                # If this is a chunk (item_key ends with _chunk_N), use parent_item_key
+                if "_chunk_" in item_key:
+                    parent_key = metadatas[i].get("parent_item_key", "")
+                    if parent_key:
+                        logger.debug(f"Resolved chunk {item_key} to parent {parent_key}")
+                        zotero_key = parent_key
+                    else:
+                        # Fallback: strip chunk suffix manually
+                        zotero_key = item_key.split("_chunk_")[0]
+                        logger.debug(f"No parent_item_key, stripping suffix: {item_key} -> {zotero_key}")
+                else:
+                    zotero_key = item_key
+
                 # Get full item data from Zotero
-                zotero_item = self.zotero_client.item(item_key)
-                
+                zotero_item = self.zotero_client.item(zotero_key)
+
                 enriched_result = {
-                    "item_key": item_key,
+                    "item_key": zotero_key,  # Use parent key for Claude, not chunk key
+                    "original_chunk_key": item_key if "_chunk_" in item_key else None,  # Preserve chunk info
                     "similarity_score": 1 - distances[i] if i < len(distances) else 0,
                     "matched_text": documents[i] if i < len(documents) else "",
                     "metadata": metadatas[i] if i < len(metadatas) else {},
                     "zotero_item": zotero_item,
                     "query": query
                 }
-                
+
                 enriched.append(enriched_result)
                 
             except Exception as e:
