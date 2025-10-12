@@ -102,7 +102,7 @@ def find_claude_config():
     # Check all possible locations
     for path in config_paths:
         if path.exists():
-            print(f"Found Claude Desktop config at: {path}")
+            logger.debug(f"Found Claude Desktop config at: {path}")
             return path
     
     # Return the default path for the platform if not found
