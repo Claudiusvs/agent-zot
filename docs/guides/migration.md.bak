@@ -100,7 +100,7 @@ This will use Docling to parse all your PDFs:
 
 ```bash
 # Activate virtual environment
-source ~/toolboxes/agent-zot/.venv/bin/activate
+source ~/toolboxes/agent-zot-env/bin/activate
 
 # Run re-index (this may take a while for large libraries)
 agent-zot update-database --force-rebuild --extract-fulltext
@@ -190,7 +190,7 @@ docker restart agent-zot-qdrant
 
 If you see `ModuleNotFoundError`:
 ```bash
-source ~/toolboxes/agent-zot/.venv/bin/activate
+source ~/toolboxes/agent-zot-env/bin/activate
 pip install qdrant-client docling
 ```
 

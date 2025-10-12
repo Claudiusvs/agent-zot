@@ -255,7 +255,7 @@ Run anytime to verify all 52 configuration settings:
 
 ```bash
 cd /Users/claudiusv.schroder/toolboxes/agent-zot
-/Users/claudiusv.schroder/toolboxes/agent-zot/.venv/bin/python verify_all_settings.py
+/Users/claudiusv.schroder/toolboxes/agent-zot-env/bin/python verify_all_settings.py
 ```
 
 ---

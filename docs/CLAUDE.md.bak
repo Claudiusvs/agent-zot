@@ -338,7 +338,7 @@ curl http://localhost:6333/collections
 
 ```bash
 # Activate virtual environment (typical location)
-source ~/toolboxes/agent-zot/.venv/bin/activate
+source ~/toolboxes/agent-zot-env/bin/activate
 
 # Install in development mode
 pip install -e .

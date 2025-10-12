@@ -7,7 +7,7 @@
 
 ```json
 "agent-zot": {
-  "command": "/Users/claudiusv.schroder/toolboxes/agent-zot/.venv/bin/agent-zot",
+  "command": "/Users/claudiusv.schroder/toolboxes/agent-zot-env/bin/agent-zot",
   "args": ["serve"],
   "env": {
     "ZOTERO_LOCAL": "true"
@@ -17,9 +17,9 @@
 
 ## Current Setup Details
 
-- **Virtual Environment:** `~/toolboxes/agent-zot/.venv/`
+- **Virtual Environment:** `~/toolboxes/agent-zot-env/`
 - **Python Version:** 3.12
-- **Executable:** `~/toolboxes/agent-zot/.venv/bin/agent-zot`
+- **Executable:** `~/toolboxes/agent-zot-env/bin/agent-zot`
 - **Config File:** `~/.config/agent-zot/config.json`
 - **Vector Database:** Qdrant (http://localhost:6333)
 - **Vector Storage:** `~/toolboxes/agent-zot/qdrant_storage/`
@@ -84,7 +84,7 @@ Source code installed at:
 
 2. **Index your library**:
    ```bash
-   source ~/toolboxes/agent-zot/.venv/bin/activate
+   source ~/toolboxes/agent-zot-env/bin/activate
    agent-zot update-db --fulltext
    ```
 
@@ -94,7 +94,7 @@ Source code installed at:
 
 Test the MCP server from command line:
 ```bash
-source ~/toolboxes/agent-zot/.venv/bin/activate
+source ~/toolboxes/agent-zot-env/bin/activate
 agent-zot serve
 ```
 
@@ -107,7 +107,7 @@ Ask Claude in Claude Desktop:
 
 **Server not showing up in Claude Desktop:**
 - Check config file syntax: `cat ~/Library/Application\ Support/Claude/claude_desktop_config.json | python3 -m json.tool`
-- Check executable path exists: `ls -la ~/toolboxes/agent-zot/.venv/bin/agent-zot`
+- Check executable path exists: `ls -la ~/toolboxes/agent-zot-env/bin/agent-zot`
 - Restart Claude Desktop completely
 
 **Qdrant connection errors:**

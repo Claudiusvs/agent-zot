@@ -98,8 +98,8 @@ docker run -d -p 7474:7474 -p 7687:7687 \
 
 ```bash
 # Create virtual environment
-python3.12 -m venv ~/toolboxes/agent-zot/.venv
-source ~/toolboxes/agent-zot/.venv/bin/activate
+python3.12 -m venv ~/agent-zot-env
+source ~/agent-zot-env/bin/activate
 
 # Install Agent-Zot
 pip install -e .
