@@ -86,6 +86,177 @@ grep -E "(Extracted content for|Batch.*complete)" /tmp/agent-zot-production-inde
 
 **Why this matters:** Multiple indexing runs create multiple log files. If you check the wrong log (e.g., one from a stuck/old run), you'll report incorrect progress. The user will catch your mistake and lose trust. ALWAYS verify with Qdrant's live data.
 
+### 6. Generating Complete Status Reports
+
+**When the user asks for a "status report" or "progress update", generate a comprehensive report using this exact template and data collection process:**
+
+#### Data Collection Commands (run in sequence):
+
+```bash
+# 1. Check reference file for active log location
+cat /tmp/ACTIVE_INDEXING_LOG.txt
+
+# 2. Find parsing completion
+grep -E "(Extracted content for|Batch.*complete)" /tmp/agent-zot-production-index.log | tail -5
+
+# 3. Find current embedding stage
+tail -100 /tmp/agent-zot-production-index.log | grep -E "(add_documents|Processing batch|Uploaded batch)" | tail -10
+
+# 4. Check Qdrant point count (ground truth)
+curl -s http://localhost:6333/collections/zotero_library_qdrant | python3 -c "import sys, json; data = json.load(sys.stdin); print(f\"Points: {data['result']['points_count']:,}\")"
+
+# 5. Verify process is running
+ps aux | grep "agent-zot update-db" | grep -v grep
+```
+
+#### Report Template Structure:
+
+**ALWAYS use this exact structure:**
+
+```markdown
+# 📊 COMPLETE INDEXING PIPELINE STATUS REPORT
+**Generated:** [current date/time]
+**Runtime:** [hours since start from ACTIVE_INDEXING_LOG.txt]
+
+---
+
+## ✅ STAGE 1: PDF PARSING & TEXT EXTRACTION
+**Status:** [100% COMPLETE or X% IN PROGRESS]
+
+### Papers Processed
+- **Total papers:** X papers
+- **Parsed:** X / X (XX.XX%)
+- **Completion time:** [timestamp from log]
+
+### Technical Details
+- **Parser:** Docling V2 (pypdfium2 backend) with HybridChunker
+- **Tokenizer:** BAAI/bge-m3 (aligned with embedding model)
+- **Chunk size:** 512 tokens per chunk
+- **Workers:** 8 parallel workers (M1 Pro optimization)
+- **Subprocess isolation:** Enabled (prevents crashes)
+- **OCR:** Disabled (born-digital PDFs only)
+
+### Output
+- **Chunks generated:** ~X document chunks extracted
+- **Storage:** In-memory (passed to embedding stage)
+
+---
+
+## 🔄 STAGE 2: EMBEDDING & VECTOR UPLOAD
+**Status:** [X% COMPLETE] (X of Y batches done)
+
+### Current Progress
+- **Embedding batch:** X / Y (processing batch X now)
+- **Chunks embedded:** X / Y (XX%)
+- **Uploaded to Qdrant:** X points (includes metadata entries)
+- **Batch size:** 500 docs per batch
+
+### Technical Details
+- **Model:** BAAI/bge-m3 (1024 dimensions)
+- **Device:** MPS GPU (Apple Silicon acceleration)
+- **Vector types:** Dense (1024D) + Sparse (BM25, 10K features)
+- **Quantization:** INT8 (75% memory savings)
+- **Upload batch size:** 500 points
+
+### Timeline
+- **Started:** [timestamp from log]
+- **Current:** Processing batch X/Y
+- **Expected completion:** [calculate based on remaining batches × 2 min/batch]
+
+---
+
+## ⏸️ STAGE 3: NEO4J KNOWLEDGE GRAPH
+**Status:** [NOT STARTED or COMPLETE]
+
+[Include configuration status and details]
+
+---
+
+## 📈 OVERALL COMPLETION
+
+### Pipeline Progress
+```
+Stage 1 (Parsing):    [ASCII progress bar] XX% ✅/🔄
+Stage 2 (Embedding):  [ASCII progress bar] XX% 🔄/⏸️
+Stage 3 (Neo4j):      [ASCII progress bar] XX% ⏸️
+─────────────────────────────────────────────
+TOTAL:                [ASCII progress bar] XX% complete
+```
+
+### Time Analysis
+- **Total runtime:** X hours
+  - Parsing: Xh Xm (XX%)
+  - Wait time: Xh (gap between stages)
+  - Embedding: Xm (X% of runtime so far)
+- **Estimated completion:** [calculation]
+
+---
+
+## 🔍 VERIFICATION DATA
+
+### Log File
+- **Active log:** [path] (X MB)
+- **Last update:** [X minutes ago]
+- **Old logs:** [archived count]
+
+### Process Status
+- **PID:** [from ps output]
+- **CPU usage:** [from ps output]
+- **Memory:** [from ps output]
+- **State:** [from ps output + interpretation]
+
+### Qdrant Database
+- **Collection:** zotero_library_qdrant
+- **Points stored:** [from Qdrant API]
+- **URL:** http://localhost:6333
+- **Storage:** ~/toolboxes/agent-zot/qdrant_storage/
+
+---
+
+## 📝 CONFIGURATION SUMMARY
+[Include embedding model, parser config, vector DB settings]
+
+---
+
+## 🎯 WHAT'S LEFT
+[Enumerate remaining tasks with checkboxes]
+
+---
+
+## 🔬 FINAL STATS (Projected)
+[Project final numbers after completion]
+```
+
+#### Calculation Rules:
+
+1. **Parsing percentage:** (Extracted count / Total papers) × 100
+2. **Embedding percentage:** (Current batch / Total batches) × 100
+3. **Overall percentage:**
+   - If parsing incomplete: (Parsing % × 0.9)
+   - If embedding incomplete: 90 + (Embedding % × 0.1)
+   - If both complete: 100%
+
+4. **Time remaining:** (Batches remaining) × 2 minutes per batch
+
+5. **ASCII progress bars:** Use 20 characters, filled = ████, empty = ░░░░
+
+#### Critical Requirements:
+
+- ✅ **ALWAYS verify data with all 5 commands** - never assume or use cached data
+- ✅ **Include timestamps** from actual log entries, not estimates
+- ✅ **Show both chunk counts AND point counts** - they may differ (metadata entries)
+- ✅ **Calculate percentages** - don't just show raw numbers
+- ✅ **Estimate completion time** - based on observed batch timing
+- ✅ **Use emojis consistently** - ✅ (complete), 🔄 (in progress), ⏸️ (not started)
+
+#### Common Pitfalls to Avoid:
+
+❌ **DON'T** report progress based on Qdrant count alone (includes metadata)
+❌ **DON'T** assume parsing finished without checking log for "Batch complete"
+❌ **DON'T** forget to search backwards for stage transitions
+❌ **DON'T** use old/cached data - always fetch fresh data
+❌ **DON'T** skip the verification section - process status is critical
+
 ## Project Overview
 
 Agent-Zot is a customized Zotero Model Context Protocol (MCP) server that provides semantic search capabilities over Zotero research libraries. Built on [zotero-mcp](https://github.com/54yyyu/zotero-mcp), it has been enhanced with:
