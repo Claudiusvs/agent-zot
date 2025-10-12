@@ -47,6 +47,43 @@ cat /tmp/ACTIVE_INDEXING_LOG.txt
 # Always check this file first to know which log is active
 ```
 
+### 5. Understanding Pipeline Stages (CRITICAL)
+
+**The log does NOT show clear "Stage 1 Complete, Stage 2 Started" messages. You MUST search backwards through the log to understand what stage the pipeline is in.**
+
+**Pipeline has 2 sequential stages:**
+1. **Stage 1: PDF Parsing** (8-10 hours) - Extract text and chunks from ALL PDFs
+2. **Stage 2: Embedding & Upload** (1-2 hours) - Generate vectors and upload to Qdrant
+
+**To determine current stage, search the log backwards:**
+
+```bash
+# Find parsing completion
+grep -E "(Extracted content for|Batch.*complete)" /tmp/agent-zot-production-index.log | tail -20
+
+# Look for these markers:
+# - "Extracted content for 3425/3426 items" = parsing progress
+# - "Batch 3400-3426 complete, garbage collected" = parsing FINISHED
+# - "add_documents called with XXXX documents" = embedding STARTED
+# - "Processing batch X/Y (500 docs)" = embedding in progress
+# - "Uploaded batch X" = uploading to Qdrant
+```
+
+**Example analysis:**
+```
+2025-10-11 22:28:25 - INFO - Batch 3400-3426 complete, garbage collected  ← PARSING FINISHED
+...
+2025-10-12 03:14:14 - INFO - add_documents called with 3238 documents     ← EMBEDDING STARTED
+2025-10-12 03:20:32 - INFO - Processing batch 5/7 (500 docs)              ← EMBEDDING IN PROGRESS
+```
+
+**This means:**
+- ✅ Stage 1 (Parsing): 100% complete (finished at 22:28 on Oct 11)
+- 🔄 Stage 2 (Embedding): 71% complete (batch 5 of 7)
+- ⏱️ Expected completion: ~30 minutes (2 batches remaining × ~2 min/batch)
+
+**Why this matters:** The log only shows "Processing batch 5/7" without context. Without searching backwards, you cannot tell if this is batch 5 of parsing or batch 5 of embedding. You MUST search to find the "Batch complete, garbage collected" message that marks the transition between stages.
+
 **Why this matters:** Multiple indexing runs create multiple log files. If you check the wrong log (e.g., one from a stuck/old run), you'll report incorrect progress. The user will catch your mistake and lose trust. ALWAYS verify with Qdrant's live data.
 
 ## Project Overview
