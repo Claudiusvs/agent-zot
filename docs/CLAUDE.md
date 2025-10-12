@@ -2,6 +2,53 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ⚠️ CRITICAL: Monitoring Long-Running Indexing Jobs
+
+**NEVER trust log files alone. ALWAYS verify with multiple sources.**
+
+When checking indexing status, you MUST follow this protocol:
+
+### 1. Find the Active Log (NEVER assume)
+```bash
+# Get most recently modified log file
+ls -lt /tmp/*.log | head -1
+
+# Multiple log files may exist from old runs - they can mislead you!
+```
+
+### 2. Verify with Qdrant (Ground Truth)
+```bash
+# Check actual point count in Qdrant
+curl -s http://localhost:6333/collections/zotero_library_qdrant | \
+  python3 -c "import sys, json; data = json.load(sys.stdin); print(f\"Points: {data['result']['points_count']:,}\")"
+```
+
+### 3. Check Process Status
+```bash
+# Verify process is actually running and not stuck
+ps aux | grep "agent-zot update-db" | grep -v grep
+# Look for: CPU usage (should be 10-15%), process state (should not be 'S' for sleeping)
+```
+
+### 4. Cross-Reference All Three
+- **Log shows progress** + **Qdrant count increasing** + **Process active** = ✅ Running correctly
+- **Log stopped** + **Qdrant count static** + **Process sleeping** = ❌ Stuck/frozen
+- **Log active** but **Qdrant count not matching** = ⚠️ Wrong log file
+
+### Quick Status Script
+```bash
+/tmp/check-indexing-status.sh
+# This script checks all sources automatically
+```
+
+### Reference File
+```bash
+cat /tmp/ACTIVE_INDEXING_LOG.txt
+# Always check this file first to know which log is active
+```
+
+**Why this matters:** Multiple indexing runs create multiple log files. If you check the wrong log (e.g., one from a stuck/old run), you'll report incorrect progress. The user will catch your mistake and lose trust. ALWAYS verify with Qdrant's live data.
+
 ## Project Overview
 
 Agent-Zot is a customized Zotero Model Context Protocol (MCP) server that provides semantic search capabilities over Zotero research libraries. Built on [zotero-mcp](https://github.com/54yyyu/zotero-mcp), it has been enhanced with:
