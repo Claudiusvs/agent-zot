@@ -526,10 +526,166 @@ def get_collection_items(
             output.append("")  # Empty line between items
         
         return "\n".join(output)
-    
+
     except Exception as e:
         ctx.error(f"Error fetching collection items: {str(e)}")
         return f"Error fetching collection items: {str(e)}"
+
+
+@mcp.tool(
+    name="zot_create_collection",
+    description="Create a new collection in your Zotero library."
+)
+def create_collection(
+    name: str,
+    parent_collection_key: Optional[str] = None,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Create a new collection in your Zotero library.
+
+    Args:
+        name: Name of the new collection
+        parent_collection_key: Optional parent collection key to nest this collection under
+        ctx: MCP context
+
+    Returns:
+        Success message with the new collection's key
+    """
+    try:
+        if not name.strip():
+            return "Error: Collection name cannot be empty"
+
+        ctx.info(f"Creating collection '{name}'")
+        zot = get_zotero_client()
+
+        # Build the collection payload
+        payload = [{
+            "name": name,
+            "parentCollection": parent_collection_key if parent_collection_key else False
+        }]
+
+        # Create the collection
+        result = zot.create_collections(payload)
+
+        if result and "successful" in result and result["successful"]:
+            new_key = result["successful"]["0"]["key"]
+            parent_msg = f" under parent {parent_collection_key}" if parent_collection_key else ""
+            return f"✓ Collection '{name}' created successfully{parent_msg}\nCollection Key: {new_key}"
+        else:
+            return f"Failed to create collection '{name}'. Result: {result}"
+
+    except Exception as e:
+        ctx.error(f"Error creating collection: {str(e)}")
+        return f"Error creating collection: {str(e)}"
+
+
+@mcp.tool(
+    name="zot_add_to_collection",
+    description="Add one or more items to a collection."
+)
+def add_to_collection(
+    collection_key: str,
+    item_keys: List[str],
+    *,
+    ctx: Context
+) -> str:
+    """
+    Add one or more items to a collection.
+
+    Args:
+        collection_key: The collection key/ID to add items to
+        item_keys: List of item keys to add to the collection
+        ctx: MCP context
+
+    Returns:
+        Success message
+    """
+    try:
+        if not item_keys:
+            return "Error: Must provide at least one item key"
+
+        if not collection_key.strip():
+            return "Error: Collection key cannot be empty"
+
+        ctx.info(f"Adding {len(item_keys)} items to collection {collection_key}")
+        zot = get_zotero_client()
+
+        # Get collection name for confirmation message
+        try:
+            collection = zot.collection(collection_key)
+            collection_name = collection["data"].get("name", f"Collection {collection_key}")
+        except Exception:
+            collection_name = f"Collection {collection_key}"
+
+        # Add items to collection
+        # pyzotero expects item keys as a list
+        result = zot.addto_collection(collection_key, item_keys)
+
+        # Check if successful
+        if result:
+            items_str = f"{len(item_keys)} item(s)" if len(item_keys) > 1 else "item"
+            return f"✓ Successfully added {items_str} to collection '{collection_name}'\nCollection Key: {collection_key}"
+        else:
+            return f"Failed to add items to collection '{collection_name}'"
+
+    except Exception as e:
+        ctx.error(f"Error adding items to collection: {str(e)}")
+        return f"Error adding items to collection: {str(e)}"
+
+
+@mcp.tool(
+    name="zot_remove_from_collection",
+    description="Remove one or more items from a collection."
+)
+def remove_from_collection(
+    collection_key: str,
+    item_keys: List[str],
+    *,
+    ctx: Context
+) -> str:
+    """
+    Remove one or more items from a collection.
+
+    Args:
+        collection_key: The collection key/ID to remove items from
+        item_keys: List of item keys to remove from the collection
+        ctx: MCP context
+
+    Returns:
+        Success message
+    """
+    try:
+        if not item_keys:
+            return "Error: Must provide at least one item key"
+
+        if not collection_key.strip():
+            return "Error: Collection key cannot be empty"
+
+        ctx.info(f"Removing {len(item_keys)} items from collection {collection_key}")
+        zot = get_zotero_client()
+
+        # Get collection name for confirmation message
+        try:
+            collection = zot.collection(collection_key)
+            collection_name = collection["data"].get("name", f"Collection {collection_key}")
+        except Exception:
+            collection_name = f"Collection {collection_key}"
+
+        # Remove items from collection
+        result = zot.deletefrom_collection(collection_key, item_keys)
+
+        # Check if successful
+        if result:
+            items_str = f"{len(item_keys)} item(s)" if len(item_keys) > 1 else "item"
+            return f"✓ Successfully removed {items_str} from collection '{collection_name}'\nCollection Key: {collection_key}"
+        else:
+            return f"Failed to remove items from collection '{collection_name}'"
+
+    except Exception as e:
+        ctx.error(f"Error removing items from collection: {str(e)}")
+        return f"Error removing items from collection: {str(e)}"
 
 
 @mcp.tool(
@@ -640,10 +796,149 @@ def get_item_children(
                 output.append("")
         
         return "\n".join(output)
-    
+
     except Exception as e:
         ctx.error(f"Error fetching item children: {str(e)}")
         return f"Error fetching item children: {str(e)}"
+
+
+@mcp.tool(
+    name="zot_get_item",
+    description="Unified tool to retrieve complete information about a Zotero item. Gets metadata, full text, children (attachments/notes), and related info all in one call. Use this instead of calling multiple separate get_item_* tools."
+)
+def get_item(
+    item_key: str,
+    include_fulltext: bool = False,
+    include_children: bool = True,
+    include_abstract: bool = True,
+    format: str = "markdown",
+    *,
+    ctx: Context
+) -> str:
+    """
+    Get complete information about a Zotero item in a single call.
+
+    Args:
+        item_key: Zotero item key/ID
+        include_fulltext: Whether to fetch and include full PDF text (slow, default: False)
+        include_children: Whether to include child items like attachments and notes (default: True)
+        include_abstract: Whether to include abstract in metadata (default: True)
+        format: Output format - "markdown" or "bibtex" (default: "markdown")
+        ctx: MCP context
+
+    Returns:
+        Comprehensive item information in specified format
+    """
+    try:
+        # Validate format parameter
+        if format not in ["markdown", "bibtex"]:
+            return f"Error: Invalid format '{format}'. Must be 'markdown' or 'bibtex'"
+
+        ctx.info(f"Fetching complete item data for {item_key}")
+        zot = get_zotero_client()
+
+        # Get the main item
+        item = zot.item(item_key)
+        if not item:
+            return f"No item found with key: {item_key}"
+
+        # For BibTeX format, just return BibTeX (no other sections)
+        if format == "bibtex":
+            return generate_bibtex(item)
+
+        # Build comprehensive markdown output
+        output_parts = []
+
+        # 1. Metadata section
+        metadata = format_item_metadata(item, include_abstract)
+        output_parts.append(metadata)
+
+        # 2. Children section (if requested)
+        if include_children:
+            try:
+                children = zot.children(item_key)
+                if children:
+                    output_parts.append("\n---\n\n## Attachments & Notes")
+
+                    # Group children by type
+                    attachments = [c for c in children if c.get("data", {}).get("itemType") == "attachment"]
+                    notes = [c for c in children if c.get("data", {}).get("itemType") == "note"]
+
+                    # Format attachments
+                    if attachments:
+                        output_parts.append("\n### Attachments")
+                        for i, att in enumerate(attachments, 1):
+                            data = att.get("data", {})
+                            title = data.get("title", "Untitled")
+                            key = att.get("key", "")
+                            content_type = data.get("contentType", "Unknown")
+                            filename = data.get("filename", "")
+
+                            output_parts.append(f"\n{i}. **{title}**")
+                            output_parts.append(f"   - Key: {key}")
+                            output_parts.append(f"   - Type: {content_type}")
+                            if filename:
+                                output_parts.append(f"   - Filename: {filename}")
+
+                    # Format notes
+                    if notes:
+                        output_parts.append("\n### Notes")
+                        for i, note in enumerate(notes, 1):
+                            data = note.get("data", {})
+                            key = note.get("key", "")
+                            note_text = data.get("note", "")
+
+                            # Clean up HTML in notes
+                            note_text = note_text.replace("<p>", "").replace("</p>", "\n\n")
+                            note_text = note_text.replace("<br/>", "\n").replace("<br>", "\n")
+
+                            # Limit note length for display
+                            if len(note_text) > 500:
+                                note_text = note_text[:500] + "...\n\n(Note truncated)"
+
+                            output_parts.append(f"\n{i}. Note (Key: {key})")
+                            output_parts.append(f"```\n{note_text}\n```")
+            except Exception as children_error:
+                ctx.info(f"Could not fetch children: {str(children_error)}")
+
+        # 3. Full text section (if requested)
+        if include_fulltext:
+            try:
+                attachment = get_attachment_details(zot, item)
+                if attachment:
+                    ctx.info(f"Found attachment: {attachment.key} ({attachment.content_type})")
+
+                    # Try fetching from Zotero's full text index first
+                    try:
+                        full_text_data = zot.fulltext_item(attachment.key)
+                        if full_text_data and "content" in full_text_data and full_text_data["content"]:
+                            ctx.info("Successfully retrieved full text from Zotero's index")
+                            output_parts.append("\n---\n\n## Full Text\n\n" + full_text_data['content'])
+                    except Exception:
+                        # Try to download and convert the file
+                        ctx.info(f"Attempting to download and convert attachment {attachment.key}")
+                        import tempfile
+                        import os
+
+                        with tempfile.TemporaryDirectory() as tmpdir:
+                            file_path = os.path.join(tmpdir, attachment.filename or f"{attachment.key}.pdf")
+                            zot.dump(attachment.key, filename=os.path.basename(file_path), path=tmpdir)
+
+                            if os.path.exists(file_path):
+                                ctx.info(f"Downloaded file to {file_path}, converting to markdown")
+                                converted_text = convert_to_markdown(file_path)
+                                output_parts.append("\n---\n\n## Full Text\n\n" + converted_text)
+                else:
+                    output_parts.append("\n---\n\n## Full Text\n\nNo suitable attachment found for full text extraction.")
+            except Exception as fulltext_error:
+                ctx.info(f"Could not fetch full text: {str(fulltext_error)}")
+                output_parts.append(f"\n---\n\n## Full Text\n\nError: {str(fulltext_error)}")
+
+        return "\n".join(output_parts)
+
+    except Exception as e:
+        ctx.error(f"Error fetching item: {str(e)}")
+        return f"Error fetching item: {str(e)}"
 
 
 @mcp.tool(
