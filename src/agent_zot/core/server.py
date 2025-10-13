@@ -72,9 +72,7 @@ mcp = FastMCP(
 
 @mcp.tool(
     name="zot_search_items",
-    description="⚪ FALLBACK - Direct Zotero API metadata search. Use ONLY when semantic/graph search fail or for exact title/author/year lookups. Supports tags and item type filtering. This is keyword-based, not semantic - try zot_semantic_search first.\n\nUse for: Precise metadata queries like 'author:[name]' or 'title:[exact phrase]'",
-    readOnlyHint=True,
-    title="Search Items by Metadata"
+    description="⚪ FALLBACK - Direct Zotero API metadata search. Use ONLY when semantic/graph search fail or for exact title/author/year lookups. Supports tags and item type filtering. This is keyword-based, not semantic - try zot_semantic_search first.\n\nUse for: Precise metadata queries like 'author:[name]' or 'title:[exact phrase]'"
 )
 def search_items(
     query: str,
@@ -167,8 +165,10 @@ def search_items(
 @mcp.tool(
     name="zot_search_by_tag",
     description="Search for items by tag with advanced operators. Supports disjunction (tag1 || tag2), exclusion (-tag), and AND logic across conditions. More powerful than zot_search_items for complex tag-based queries.\n\nUse for: Complex tag queries like ['important || urgent', '-draft'] for (important OR urgent) AND NOT draft",
-    readOnlyHint=True,
-    title="Search by Tag with Operators"
+    annotations={
+        "readOnlyHint": True,
+        "title": "Search by Tag with Operators"
+    }
 )
 def search_by_tag(
     tag: List[str],
@@ -257,8 +257,10 @@ def search_by_tag(
 @mcp.tool(
     name="zot_get_item_metadata",
     description="⚠️ DEPRECATED: Use zot_get_item() instead for unified retrieval.\n\nGet detailed metadata for a specific Zotero item by its key.\n\nUse for: Retrieving bibliographic details (title, authors, date, abstract) for a known item key",
-    readOnlyHint=True,
-    title="Get Item Metadata (Deprecated)"
+    annotations={
+        "readOnlyHint": True,
+        "title": "Get Item Metadata (Deprecated)"
+    }
 )
 def get_item_metadata(
     item_key: str,
@@ -304,8 +306,10 @@ def get_item_metadata(
 @mcp.tool(
     name="zot_get_item_fulltext",
     description="⚠️ DEPRECATED: Use zot_get_item(include_fulltext=True) instead for unified retrieval.\n\nGet the full text content of a Zotero item by its key.\n\nUse for: Extracting complete document text from a paper's PDF attachment",
-    readOnlyHint=True,
-    title="Get Item Full Text (Deprecated)"
+    annotations={
+        "readOnlyHint": True,
+        "title": "Get Item Full Text (Deprecated)"
+    }
 )
 def get_item_fulltext(
     item_key: str,
@@ -379,9 +383,7 @@ def get_item_fulltext(
 
 @mcp.tool(
     name="zot_get_collections",
-    description="List all collections in your Zotero library.\n\nUse for: Browsing library organization structure and collection hierarchy",
-    readOnlyHint=True,
-    title="List Collections"
+    description="List all collections in your Zotero library.\n\nUse for: Browsing library organization structure and collection hierarchy"
 )
 def get_collections(
     limit: Optional[int] = None,
@@ -472,9 +474,7 @@ def get_collections(
 
 @mcp.tool(
     name="zot_get_collection_items",
-    description="Get all items in a specific Zotero collection.\n\nUse for: Retrieving all papers in a specific collection by collection key",
-    readOnlyHint=True,
-    title="Get Collection Items"
+    description="Get all items in a specific Zotero collection.\n\nUse for: Retrieving all papers in a specific collection by collection key"
 )
 def get_collection_items(
     collection_key: str,
@@ -542,9 +542,7 @@ def get_collection_items(
 
 @mcp.tool(
     name="zot_create_collection",
-    description="Create a new collection in your Zotero library.\n\nUse for: Organizing papers into new collection like 'Machine Learning 2024'",
-    readOnlyHint=False,
-    title="Create Collection"
+    description="Create a new collection in your Zotero library.\n\nUse for: Organizing papers into new collection like 'Machine Learning 2024'"
 )
 def create_collection(
     name: str,
@@ -593,9 +591,7 @@ def create_collection(
 
 @mcp.tool(
     name="zot_add_to_collection",
-    description="Add one or more items to a collection.\n\nUse for: Batch adding multiple paper keys to an existing collection",
-    readOnlyHint=False,
-    title="Add Items to Collection"
+    description="Add one or more items to a collection.\n\nUse for: Batch adding multiple paper keys to an existing collection"
 )
 def add_to_collection(
     collection_key: str,
@@ -649,9 +645,7 @@ def add_to_collection(
 
 @mcp.tool(
     name="zot_remove_from_collection",
-    description="Remove one or more items from a collection.\n\nUse for: Batch removing papers from a collection without deleting them",
-    readOnlyHint=False,
-    title="Remove Items from Collection"
+    description="Remove one or more items from a collection.\n\nUse for: Batch removing papers from a collection without deleting them"
 )
 def remove_from_collection(
     collection_key: str,
@@ -705,8 +699,10 @@ def remove_from_collection(
 @mcp.tool(
     name="zot_get_item_children",
     description="⚠️ DEPRECATED: Use zot_get_item(include_children=True) instead for unified retrieval.\n\nGet all child items (attachments, notes) for a specific Zotero item.\n\nUse for: Listing attachments, notes, and related items for a parent item",
-    readOnlyHint=True,
-    title="Get Item Children (Deprecated)"
+    annotations={
+        "readOnlyHint": True,
+        "title": "Get Item Children (Deprecated)"
+    }
 )
 def get_item_children(
     item_key: str,
@@ -821,8 +817,10 @@ def get_item_children(
 @mcp.tool(
     name="zot_get_item",
     description="Unified tool to retrieve complete information about a Zotero item. Gets metadata, full text, children (attachments/notes), and related info all in one call. Use this instead of calling multiple separate get_item_* tools.\n\nUse for: Unified retrieval of metadata, fulltext, children, and related info in one call",
-    readOnlyHint=True,
-    title="Get Complete Item Info"
+    annotations={
+        "readOnlyHint": True,
+        "title": "Get Complete Item Info"
+    }
 )
 def get_item(
     item_key: str,
@@ -961,9 +959,7 @@ def get_item(
 
 @mcp.tool(
     name="zot_get_tags",
-    description="Get all tags used in your Zotero library.\n\nUse for: Exploring tag vocabulary and frequency across library",
-    readOnlyHint=True,
-    title="List All Tags"
+    description="Get all tags used in your Zotero library.\n\nUse for: Exploring tag vocabulary and frequency across library"
 )
 def get_tags(
     limit: Optional[int] = None,
@@ -1015,9 +1011,7 @@ def get_tags(
 
 @mcp.tool(
     name="zot_get_recent",
-    description="Get recently added items to your Zotero library.\n\nUse for: Finding recently added or modified papers",
-    readOnlyHint=True,
-    title="Get Recent Items"
+    description="Get recently added items to your Zotero library.\n\nUse for: Finding recently added or modified papers"
 )
 def get_recent(
     limit: int = 10,
@@ -1084,9 +1078,7 @@ def get_recent(
 
 @mcp.tool(
     name="zot_batch_update_tags",
-    description="Batch update tags across multiple items matching a search query.\n\nUse for: Adding/removing tags across multiple items efficiently",
-    readOnlyHint=False,
-    title="Batch Update Tags"
+    description="Batch update tags across multiple items matching a search query.\n\nUse for: Adding/removing tags across multiple items efficiently"
 )
 def batch_update_tags(
     query: str,
@@ -1305,9 +1297,7 @@ This tool will be fixed in a future update. See AUDIT_REPORT.md for details.
 
 @mcp.tool(
     name="zot_get_annotations",
-    description="Get all annotations for a specific item or across your entire Zotero library.\n\nUse for: Retrieving highlights and comments from PDF annotations",
-    readOnlyHint=True,
-    title="Get Annotations"
+    description="Get all annotations for a specific item or across your entire Zotero library.\n\nUse for: Retrieving highlights and comments from PDF annotations"
 )
 def get_annotations(
     item_key: Optional[str] = None,
@@ -1610,9 +1600,7 @@ def get_annotations(
 
 @mcp.tool(
     name="zot_get_notes",
-    description="Retrieve notes from your Zotero library, with options to filter by parent item.\n\nUse for: Fetching standalone notes or notes attached to items",
-    readOnlyHint=True,
-    title="Get Notes"
+    description="Retrieve notes from your Zotero library, with options to filter by parent item.\n\nUse for: Fetching standalone notes or notes attached to items"
 )
 def get_notes(
     item_key: Optional[str] = None,
@@ -1697,9 +1685,7 @@ def get_notes(
 
 @mcp.tool(
     name="zot_search_notes",
-    description="Search for notes across your Zotero library.\n\nUse for: Finding notes by text content across library",
-    readOnlyHint=True,
-    title="Search Notes"
+    description="Search for notes across your Zotero library.\n\nUse for: Finding notes by text content across library"
 )
 def search_notes(
     query: str,
@@ -1855,9 +1841,7 @@ def search_notes(
 
 @mcp.tool(
     name="zot_create_note",
-    description="Create a new note for a Zotero item.\n\nUse for: Adding research notes to items or library",
-    readOnlyHint=False,
-    title="Create Note"
+    description="Create a new note for a Zotero item.\n\nUse for: Adding research notes to items or library"
 )
 def create_note(
     item_key: str,
@@ -1934,9 +1918,7 @@ def create_note(
 
 @mcp.tool(
     name="zot_semantic_search",
-    description="🔹 PRIMARY SEARCH TOOL - Use this FIRST for any query about finding papers, research topics, or concepts. AI-powered semantic search using BGE-M3 embeddings over full PDF content. Finds papers by meaning and context, not just keyword matching. This should be your default choice for research queries.\n\nUse for: Broad topic searches like \"papers about [concept]\" or \"research on [method]\"",
-    readOnlyHint=True,
-    title="Semantic Search Papers"
+    description="🔹 PRIMARY SEARCH TOOL - Use this FIRST for any query about finding papers, research topics, or concepts. AI-powered semantic search using BGE-M3 embeddings over full PDF content. Finds papers by meaning and context, not just keyword matching. This should be your default choice for research queries.\n\nUse for: Broad topic searches like \"papers about [concept]\" or \"research on [method]\""
 )
 def semantic_search(
     query: str,
@@ -2073,8 +2055,10 @@ def semantic_search(
 @mcp.tool(
     name="zot_update_search_database",
     description="Index or re-index the Zotero library for semantic search. Extracts full PDF text using AI-powered parsing (Docling with OCR). Use this when the user asks to 'index my library', 'update the search database', or 'enable semantic search'. Automatically handles full-text extraction from PDFs.\n\nUse for: Rebuilding semantic search database after adding new papers",
-    readOnlyHint=False,
-    title="Update Search Index"
+    annotations={
+        "readOnlyHint": False,
+        "title": "Update Search Index"
+    }
 )
 def update_search_database(
     force_rebuild: bool = False,
@@ -2154,9 +2138,7 @@ def update_search_database(
 
 @mcp.tool(
     name="zot_get_search_database_status",
-    description="Get status information about the semantic search database.\n\nUse for: Verifying semantic search database health and statistics",
-    readOnlyHint=True,
-    title="Check Search Index Status"
+    description="Get status information about the semantic search database.\n\nUse for: Verifying semantic search database health and statistics"
 )
 def get_search_database_status(*, ctx: Context) -> str:
     """
@@ -2249,9 +2231,7 @@ def _extract_item_key_from_input(value: str) -> Optional[str]:
 
 @mcp.tool(
     name="zot_graph_search",
-    description="🔸 SECONDARY - Use when you need to explore relationships between authors, institutions, concepts, methods, or other entities. Neo4j knowledge graph search for finding connections and research networks. Use AFTER trying semantic search when relationships matter.\n\nUse for: Exploring relationships like \"who collaborated with [author]?\" or \"institutions working on [topic]\"",
-    readOnlyHint=True,
-    title="Graph Search"
+    description="🔸 SECONDARY - Use when you need to explore relationships between authors, institutions, concepts, methods, or other entities. Neo4j knowledge graph search for finding connections and research networks. Use AFTER trying semantic search when relationships matter.\n\nUse for: Exploring relationships like \"who collaborated with [author]?\" or \"institutions working on [topic]\""
 )
 def graph_search(
     query: str,
@@ -2323,9 +2303,7 @@ def graph_search(
 
 @mcp.tool(
     name="zot_find_related_papers",
-    description="Find papers related to a given paper via shared entities in the knowledge graph.\n\nUse for: Discovering papers connected through citations, authors, or concepts",
-    readOnlyHint=True,
-    title="Find Related Papers"
+    description="Find papers related to a given paper via shared entities in the knowledge graph.\n\nUse for: Discovering papers connected through citations, authors, or concepts"
 )
 def find_related_papers(
     item_key: str,
@@ -2394,8 +2372,10 @@ def find_related_papers(
 @mcp.tool(
     name="zot_find_citation_chain",
     description="Find papers citing papers that cite a given paper (multi-hop citation analysis). Useful for discovering extended citation networks and understanding how research builds on foundational work.\n\nUse for: Tracing how ideas propagate through citation networks",
-    readOnlyHint=True,
-    title="Find Citation Chain"
+    annotations={
+        "readOnlyHint": True,
+        "title": "Find Citation Chain"
+    }
 )
 def find_citation_chain(
     paper_key: str,
@@ -2465,8 +2445,10 @@ def find_citation_chain(
 @mcp.tool(
     name="zot_explore_concept_network",
     description="Find concepts related through intermediate concepts (concept propagation). Discovers conceptual relationships by traversing the knowledge graph through papers that discuss multiple concepts.\n\nUse for: Mapping relationships between research concepts and methods",
-    readOnlyHint=True,
-    title="Explore Concept Network"
+    annotations={
+        "readOnlyHint": True,
+        "title": "Explore Concept Network"
+    }
 )
 def explore_concept_network(
     concept: str,
@@ -2537,8 +2519,10 @@ def explore_concept_network(
 @mcp.tool(
     name="zot_find_collaborator_network",
     description="Find collaborators of collaborators (co-authorship network). Discovers extended collaboration networks by traversing author relationships through shared papers.\n\nUse for: Analyzing author collaboration patterns and networks",
-    readOnlyHint=True,
-    title="Find Collaborator Network"
+    annotations={
+        "readOnlyHint": True,
+        "title": "Find Collaborator Network"
+    }
 )
 def find_collaborator_network(
     author: str,
@@ -2608,9 +2592,7 @@ def find_collaborator_network(
 
 @mcp.tool(
     name="zot_find_seminal_papers",
-    description="Find most influential papers using citation-based analysis. Identifies highly-cited foundational papers in your library or within a specific research field. Uses citation counts as a proxy for influence/impact.\n\nUse for: Identifying highly-cited foundational works in a topic",
-    readOnlyHint=True,
-    title="Find Seminal Papers"
+    description="Find most influential papers using citation-based analysis. Identifies highly-cited foundational papers in your library or within a specific research field. Uses citation counts as a proxy for influence/impact.\n\nUse for: Identifying highly-cited foundational works in a topic"
 )
 def find_seminal_papers(
     field: str = None,
@@ -2677,8 +2659,10 @@ def find_seminal_papers(
 @mcp.tool(
     name="zot_track_topic_evolution",
     description="Track how a research topic/concept has evolved over time. Shows yearly paper counts, related concepts that emerged, and overall trend (increasing/stable/decreasing). Useful for understanding research trajectory and identifying emerging themes.\n\nUse for: Analyzing how research topics develop over time",
-    readOnlyHint=True,
-    title="Track Topic Evolution"
+    annotations={
+        "readOnlyHint": True,
+        "title": "Track Topic Evolution"
+    }
 )
 def track_topic_evolution(
     concept: str,
@@ -2765,8 +2749,10 @@ def track_topic_evolution(
 @mcp.tool(
     name="zot_find_recent_developments",
     description="Find recent papers on a topic (default: last 2 years). Uses hybrid semantic search with temporal filtering to discover latest research developments.\n\nUse for: Discovering latest papers on established research areas",
-    readOnlyHint=True,
-    title="Find Recent Developments"
+    annotations={
+        "readOnlyHint": True,
+        "title": "Find Recent Developments"
+    }
 )
 def find_recent_developments(
     topic: str,
@@ -2852,8 +2838,10 @@ def find_recent_developments(
 @mcp.tool(
     name="zot_analyze_venues",
     description="Analyze publication venues (journals/conferences) to identify top outlets in your library or within a specific field. Shows paper counts and sample publications for each venue.\n\nUse for: Examining where research on a topic gets published",
-    readOnlyHint=True,
-    title="Analyze Publication Venues"
+    annotations={
+        "readOnlyHint": True,
+        "title": "Analyze Publication Venues"
+    }
 )
 def analyze_venues(
     field: str = None,
@@ -2922,8 +2910,10 @@ def analyze_venues(
 @mcp.tool(
     name="zot_export_markdown",
     description="Export Zotero items to Markdown files with YAML frontmatter (Obsidian-compatible). Exports items matching a query or from a collection to a specified directory.\n\nUse for: Converting bibliographic data to markdown format for documentation",
-    readOnlyHint=True,
-    title="Export to Markdown"
+    annotations={
+        "readOnlyHint": True,
+        "title": "Export to Markdown"
+    }
 )
 def export_markdown(
     output_dir: str,
@@ -3098,9 +3088,7 @@ def export_markdown(
 
 @mcp.tool(
     name="zot_export_bibtex",
-    description="Export Zotero items to BibTeX format. Can export items matching a query or from a collection to a .bib file.\n\nUse for: Generating BibTeX citations for LaTeX documents",
-    readOnlyHint=True,
-    title="Export to BibTeX"
+    description="Export Zotero items to BibTeX format. Can export items matching a query or from a collection to a .bib file.\n\nUse for: Generating BibTeX citations for LaTeX documents"
 )
 def export_bibtex(
     output_file: str,
@@ -3204,9 +3192,7 @@ def export_bibtex(
 
 @mcp.tool(
     name="zot_export_graph",
-    description="Export Neo4j knowledge graph to GraphML format for visualization in Gephi or Cytoscape. Requires Neo4j GraphRAG to be enabled.\n\nUse for: Exporting Neo4j graph data for external analysis",
-    readOnlyHint=True,
-    title="Export Knowledge Graph"
+    description="Export Neo4j knowledge graph to GraphML format for visualization in Gephi or Cytoscape. Requires Neo4j GraphRAG to be enabled.\n\nUse for: Exporting Neo4j graph data for external analysis"
 )
 def export_graph(
     output_file: str,
@@ -3268,9 +3254,7 @@ def export_graph(
 
 @mcp.tool(
     name="zot_hybrid_vector_graph_search",
-    description="🔸 SECONDARY - Combines semantic search with relationship discovery. Use when you want both content relevance AND network connections in results. Requires Neo4j. Use AFTER trying semantic search when both meaning and relationships are important.\n\nUse for: Combined semantic+relationship queries when both content and connections matter",
-    readOnlyHint=True,
-    title="Hybrid Vector-Graph Search"
+    description="🔸 SECONDARY - Combines semantic search with relationship discovery. Use when you want both content relevance AND network connections in results. Requires Neo4j. Use AFTER trying semantic search when both meaning and relationships are important.\n\nUse for: Combined semantic+relationship queries when both content and connections matter"
 )
 def hybrid_vector_graph_search(
     query: str,
@@ -3363,9 +3347,7 @@ def hybrid_vector_graph_search(
 
 @mcp.tool(
     name="search",
-    description="ChatGPT-compatible search wrapper. Performs semantic search and returns JSON results.\n\nUse for: Internal connector for ChatGPT - use zot_semantic_search instead",
-    readOnlyHint=True,
-    title="ChatGPT Connector Search"
+    description="ChatGPT-compatible search wrapper. Performs semantic search and returns JSON results.\n\nUse for: Internal connector for ChatGPT - use zot_semantic_search instead"
 )
 def chatgpt_connector_search(
     query: str,
@@ -3409,9 +3391,7 @@ def chatgpt_connector_search(
 
 @mcp.tool(
     name="fetch",
-    description="ChatGPT-compatible fetch wrapper. Retrieves fulltext/metadata for a Zotero item by ID.\n\nUse for: Internal connector for ChatGPT - use zot_get_item instead",
-    readOnlyHint=True,
-    title="ChatGPT Connector Fetch"
+    description="ChatGPT-compatible fetch wrapper. Retrieves fulltext/metadata for a Zotero item by ID.\n\nUse for: Internal connector for ChatGPT - use zot_get_item instead"
 )
 def connector_fetch(
     id: str,
@@ -3500,9 +3480,7 @@ def connector_fetch(
         }, separators=(",", ":"))
 @mcp.tool(
     name="zot_ask_paper",
-    description="Ask questions about a specific paper's content. Returns relevant text chunks from the paper's full text using semantic search. This does NOT generate AI answers - it returns source text for you to analyze.\n\nUse for: Finding specific information within a paper's PDF content",
-    readOnlyHint=True,
-    title="Ask Paper Questions"
+    description="Ask questions about a specific paper's content. Returns relevant text chunks from the paper's full text using semantic search. This does NOT generate AI answers - it returns source text for you to analyze.\n\nUse for: Finding specific information within a paper's PDF content"
 )
 def ask_paper(
     item_key: str,
@@ -3592,8 +3570,10 @@ def ask_paper(
 @mcp.tool(
     name="zot_literature_review",
     description="Automated literature review workflow: search papers → analyze themes → identify gaps → generate structured summary. Coordinates multiple tools (semantic search, graph analysis, temporal trends) for comprehensive research synthesis.\n\nUse for: Generating structured literature reviews on research topics",
-    readOnlyHint=True,
-    title="Literature Review Workflow"
+    annotations={
+        "readOnlyHint": True,
+        "title": "Literature Review Workflow"
+    }
 )
 def literature_review(
     topic: str,
