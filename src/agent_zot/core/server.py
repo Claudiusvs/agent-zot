@@ -67,6 +67,62 @@ mcp = FastMCP(
     "Zotero",
     dependencies=["pyzotero", "mcp[cli]", "python-dotenv", "markitdown", "fastmcp", "chromadb", "sentence-transformers", "openai", "google-genai"],
     lifespan=server_lifespan,
+    instructions="""
+# Agent-Zot Tool Coordination Guide
+
+## Query-Driven Tool Selection
+
+Agent-Zot provides 33 tools across 3 backends. Tool selection should be **query-driven**, not hierarchical. Choose tools based on what the query asks for:
+
+### Content/Semantic Queries ("papers about X", "research on Y")
+**Primary:** 🔵 Qdrant tools
+- zot_semantic_search - discover papers by meaning/content
+- zot_ask_paper - read and analyze paper content
+
+**Often combined with:** Neo4j tools to explore relationships between found papers
+
+### Relationship/Network Queries ("who collaborated with X", "how are Y and Z connected")
+**Primary:** 🟢 Neo4j knowledge graph tools
+- zot_graph_search - relationship discovery
+- zot_find_related_papers, zot_find_citation_chain, zot_explore_concept_network, etc.
+
+**Often combined with:** zot_semantic_search to first find papers, then explore connections
+
+### Complex Multi-Dimensional Queries
+**Orchestrate multiple backends together:**
+- Use zot_semantic_search (Qdrant) for content discovery
+- Use Neo4j tools for relationship analysis
+- Use zot_ask_paper (Qdrant) for content summarization
+- Use Zotero API tools for metadata/collections/tags/export
+
+### Specialized Tasks (collections, tags, notes, export)
+**Use Zotero API tools** - these are the only options for:
+- Collection management (create/add/remove)
+- Tag management (get/update)
+- Notes and annotations (get/create/search)
+- Export (markdown/bibtex/graph)
+
+## Anti-Patterns to Avoid
+
+❌ **DON'T:** Use zot_search_items after zot_semantic_search (redundant - you already have item keys)
+❌ **DON'T:** Use zot_get_item for paper content (use zot_ask_paper instead - much more efficient)
+❌ **DON'T:** Call Neo4j tools when query is purely content-based (use Qdrant instead)
+❌ **DON'T:** Use include_fulltext=True unless comprehensive summarization requires it (rare)
+
+## Efficient Patterns
+
+✅ Semantic discovery → Ask paper for content
+✅ Semantic discovery → Graph tools for relationships
+✅ Semantic + Graph tools together for comprehensive analysis
+✅ Multiple zot_ask_paper calls for comprehensive paper summarization
+✅ zot_literature_review for end-to-end research synthesis (orchestrates all backends)
+
+## Backend Capabilities
+
+**Qdrant (Vector DB):** Semantic search over 2,411+ papers, full-text chunked, BGE-M3 embeddings
+**Neo4j (Knowledge Graph):** Citation networks, author collaborations, concept relationships (0.5% populated currently)
+**Zotero API:** Metadata, collections, tags, notes, annotations, export
+"""
 )
 
 
@@ -1929,7 +1985,11 @@ def create_note(
 
 @mcp.tool(
     name="zot_semantic_search",
-    description="🔹 PRIMARY SEARCH TOOL - Use this FIRST for any query about finding papers, research topics, or concepts. AI-powered semantic search using BGE-M3 embeddings over full PDF content. Finds papers by meaning and context, not just keyword matching. This should be your default choice for research queries.\n\nUse for: Broad topic searches like \"papers about [concept]\" or \"research on [method]\""
+    description="🔵 PRIMARY for content/topic discovery. Use when query involves meaning, concepts, or \"papers about X\". AI-powered semantic search using BGE-M3 embeddings over full PDF content. Finds papers by meaning and context, not just keyword matching.\n\n💡 Often combines with:\n- zot_ask_paper() to read content of found papers\n- Neo4j tools to explore relationships between found papers\n\nUse for: Semantic discovery like \"papers about [concept]\" or \"research on [method]\"",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Semantic Search (Content Discovery)"
+    }
 )
 def semantic_search(
     query: str,
@@ -2242,7 +2302,11 @@ def _extract_item_key_from_input(value: str) -> Optional[str]:
 
 @mcp.tool(
     name="zot_graph_search",
-    description="🔸 SECONDARY - Use when you need to explore relationships between authors, institutions, concepts, methods, or other entities. Neo4j knowledge graph search for finding connections and research networks. Use AFTER trying semantic search when relationships matter.\n\nUse for: Exploring relationships like \"who collaborated with [author]?\" or \"institutions working on [topic]\""
+    description="🟢 PRIMARY for relationship/network queries. Use when query involves connections, collaborations, or \"who/what is related to X\". Neo4j knowledge graph search for finding relationships between authors, institutions, concepts, methods, or other entities.\n\n💡 Often combines with zot_semantic_search to first discover papers by content, then explore their relationships.\n\nUse for: Exploring relationships like \"who collaborated with [author]?\" or \"institutions working on [topic]\"",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Graph Search (Relationships)"
+    }
 )
 def graph_search(
     query: str,
