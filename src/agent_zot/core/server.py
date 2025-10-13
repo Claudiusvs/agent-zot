@@ -168,10 +168,10 @@ def search_items(
 
 @mcp.tool(
     name="zot_search_by_tag",
-    description="Search for items by tag with advanced operators. Supports disjunction (tag1 || tag2), exclusion (-tag), and AND logic across conditions. More powerful than zot_search_items for complex tag-based queries.\n\nUse for: Complex tag queries like ['important || urgent', '-draft'] for (important OR urgent) AND NOT draft",
+    description="⚪ FALLBACK - Search for items by tag with advanced operators. Use when filtering by tags/metadata, not for semantic content search.\n\nSupports disjunction (tag1 || tag2), exclusion (-tag), and AND logic across conditions.\n\n⚠️ For semantic research queries, use zot_semantic_search first.\n\nUse for: Complex tag-based filtering like ['important || urgent', '-draft'] for (important OR urgent) AND NOT draft",
     annotations={
         "readOnlyHint": True,
-        "title": "Search by Tag with Operators"
+        "title": "Search by Tag (Metadata Filter)"
     }
 )
 def search_by_tag(
@@ -823,7 +823,7 @@ def get_item_children(
 
 @mcp.tool(
     name="zot_get_item",
-    description="⚪ Get bibliographic metadata for a Zotero item (title, authors, journal, abstract, DOI, etc.). Returns metadata + child items only - does NOT include paper content by default.\n\n⚠️ For paper content analysis, use zot_ask_paper() instead (more efficient, targeted chunk retrieval).\n\nUse for: Bibliographic information, citations, metadata - NOT for reading paper content",
+    description="⚪ Get bibliographic metadata for a Zotero item (title, authors, journal, abstract, DOI, etc.). Returns metadata + child items by default.\n\n⚠️ For paper content analysis, use zot_ask_paper() instead (more efficient, targeted chunk retrieval).\n⚠️ include_fulltext=True is RARELY needed - only for comprehensive summarization when multiple zot_ask_paper() calls aren't sufficient.\n\nUse for: Bibliographic information, citations, metadata. For content: use zot_ask_paper() instead",
     annotations={
         "readOnlyHint": True,
         "title": "Get Item Metadata"
@@ -1018,7 +1018,11 @@ def get_tags(
 
 @mcp.tool(
     name="zot_get_recent",
-    description="Get recently added items to your Zotero library.\n\nUse for: Finding recently added or modified papers"
+    description="⚪ FALLBACK - Get recently added/modified items from Zotero API by timestamp.\n\n⚠️ For semantic queries about recent research on a topic, use zot_find_recent_developments instead.\n\nUse for: Chronologically listing items you recently added to your library (not topic-specific)",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Get Recent Items (Chronological)"
+    }
 )
 def get_recent(
     limit: int = 10,
@@ -2310,7 +2314,11 @@ def graph_search(
 
 @mcp.tool(
     name="zot_find_related_papers",
-    description="Find papers related to a given paper via shared entities in the knowledge graph.\n\nUse for: Discovering papers connected through citations, authors, or concepts"
+    description="🟢 SECONDARY - Find papers related to a given paper via shared entities in the knowledge graph. Use when you want to discover connections through citations, authors, or concepts.\n\n⚠️ Try zot_semantic_search first for content-based similarity.\n\nUse for: Discovering papers connected through citations, authors, or shared concepts (relationship-based, not content-based)",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Find Related Papers (Graph)"
+    }
 )
 def find_related_papers(
     item_key: str,
@@ -2378,10 +2386,10 @@ def find_related_papers(
 
 @mcp.tool(
     name="zot_find_citation_chain",
-    description="Find papers citing papers that cite a given paper (multi-hop citation analysis). Useful for discovering extended citation networks and understanding how research builds on foundational work.\n\nUse for: Tracing how ideas propagate through citation networks",
+    description="🟢 SECONDARY - Find papers citing papers that cite a given paper (multi-hop citation analysis). Use for discovering extended citation networks.\n\n⚠️ Requires Neo4j knowledge graph. Try zot_semantic_search for content-based discovery first.\n\nUse for: Tracing how ideas propagate through citation networks (relationship analysis, not content analysis)",
     annotations={
         "readOnlyHint": True,
-        "title": "Find Citation Chain"
+        "title": "Find Citation Chain (Graph)"
     }
 )
 def find_citation_chain(
@@ -2451,10 +2459,10 @@ def find_citation_chain(
 
 @mcp.tool(
     name="zot_explore_concept_network",
-    description="Find concepts related through intermediate concepts (concept propagation). Discovers conceptual relationships by traversing the knowledge graph through papers that discuss multiple concepts.\n\nUse for: Mapping relationships between research concepts and methods",
+    description="🟢 SECONDARY - Find concepts related through intermediate concepts (concept propagation). Discovers conceptual relationships by traversing the knowledge graph.\n\n⚠️ Requires Neo4j knowledge graph. Try zot_semantic_search for content-based concept discovery first.\n\nUse for: Mapping how concepts connect through shared papers (network analysis, not content analysis)",
     annotations={
         "readOnlyHint": True,
-        "title": "Explore Concept Network"
+        "title": "Explore Concept Network (Graph)"
     }
 )
 def explore_concept_network(
@@ -2525,10 +2533,10 @@ def explore_concept_network(
 
 @mcp.tool(
     name="zot_find_collaborator_network",
-    description="Find collaborators of collaborators (co-authorship network). Discovers extended collaboration networks by traversing author relationships through shared papers.\n\nUse for: Analyzing author collaboration patterns and networks",
+    description="🟢 SECONDARY - Find collaborators of collaborators (co-authorship network). Discovers extended collaboration networks by traversing author relationships.\n\n⚠️ Requires Neo4j knowledge graph. Try zot_semantic_search with author filters for simpler author queries.\n\nUse for: Analyzing multi-hop author collaboration patterns and networks (network analysis)",
     annotations={
         "readOnlyHint": True,
-        "title": "Find Collaborator Network"
+        "title": "Find Collaborator Network (Graph)"
     }
 )
 def find_collaborator_network(
@@ -2599,7 +2607,11 @@ def find_collaborator_network(
 
 @mcp.tool(
     name="zot_find_seminal_papers",
-    description="Find most influential papers using citation-based analysis. Identifies highly-cited foundational papers in your library or within a specific research field. Uses citation counts as a proxy for influence/impact.\n\nUse for: Identifying highly-cited foundational works in a topic"
+    description="🟢 SECONDARY - Find most influential papers using citation-based analysis. Identifies highly-cited foundational papers using graph metrics.\n\n⚠️ Requires Neo4j knowledge graph. Try zot_semantic_search with relevance ranking for content-based importance first.\n\nUse for: Identifying papers by citation impact (citation-based ranking, not content-based relevance)",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Find Seminal Papers (Graph)"
+    }
 )
 def find_seminal_papers(
     field: str = None,
@@ -2665,10 +2677,10 @@ def find_seminal_papers(
 
 @mcp.tool(
     name="zot_track_topic_evolution",
-    description="Track how a research topic/concept has evolved over time. Shows yearly paper counts, related concepts that emerged, and overall trend (increasing/stable/decreasing). Useful for understanding research trajectory and identifying emerging themes.\n\nUse for: Analyzing how research topics develop over time",
+    description="🟢 SECONDARY - Track how a research topic/concept has evolved over time using graph analysis. Shows yearly paper counts, related concepts, and trends.\n\n⚠️ Requires Neo4j knowledge graph. Try zot_find_recent_developments for simpler temporal queries.\n\nUse for: Analyzing research trajectory and concept emergence over time (temporal network analysis)",
     annotations={
         "readOnlyHint": True,
-        "title": "Track Topic Evolution"
+        "title": "Track Topic Evolution (Graph)"
     }
 )
 def track_topic_evolution(
@@ -2755,10 +2767,10 @@ def track_topic_evolution(
 
 @mcp.tool(
     name="zot_find_recent_developments",
-    description="Find recent papers on a topic (default: last 2 years). Uses hybrid semantic search with temporal filtering to discover latest research developments.\n\nUse for: Discovering latest papers on established research areas",
+    description="🟢 SECONDARY - Find recent papers on a topic (default: last 2 years). Uses hybrid semantic search with temporal filtering.\n\n💡 This combines Qdrant semantic search with temporal filtering - good for \"recent papers about X\" queries.\n\nUse for: Discovering latest research developments on established topics (time-filtered semantic search)",
     annotations={
         "readOnlyHint": True,
-        "title": "Find Recent Developments"
+        "title": "Find Recent Developments (Temporal)"
     }
 )
 def find_recent_developments(
@@ -2844,10 +2856,10 @@ def find_recent_developments(
 
 @mcp.tool(
     name="zot_analyze_venues",
-    description="Analyze publication venues (journals/conferences) to identify top outlets in your library or within a specific field. Shows paper counts and sample publications for each venue.\n\nUse for: Examining where research on a topic gets published",
+    description="🟢 SECONDARY - Analyze publication venues (journals/conferences) to identify top outlets using graph analysis. Shows paper counts and sample publications.\n\n⚠️ Requires Neo4j knowledge graph. Try zot_semantic_search for content queries first.\n\nUse for: Examining publication venue patterns and outlet rankings (venue analysis, not content analysis)",
     annotations={
         "readOnlyHint": True,
-        "title": "Analyze Publication Venues"
+        "title": "Analyze Venues (Graph)"
     }
 )
 def analyze_venues(
@@ -3487,7 +3499,7 @@ def connector_fetch(
         }, separators=(",", ":"))
 @mcp.tool(
     name="zot_ask_paper",
-    description="🔵 PRIMARY tool for accessing paper content. Uses semantic search to retrieve relevant text chunks from a paper's full text. Much more efficient than zot_get_item(include_fulltext=True). This does NOT generate AI answers - it returns source text chunks for you to analyze.\n\n✅ Use this when you need to read, analyze, or extract information from a paper's actual content.\n\nUse for: Reading paper content, extracting findings, analyzing methodology, understanding results",
+    description="🔵 PRIMARY tool for accessing paper content. Uses semantic search to retrieve relevant text chunks from a paper's full text. Much more efficient than zot_get_item(include_fulltext=True). This does NOT generate AI answers - it returns source text chunks for you to analyze.\n\n✅ Use this when you need to read, analyze, or extract information from a paper's actual content.\n💡 For comprehensive paper summarization, call this multiple times with different questions (e.g., methods, results, conclusions) or use high top_k value.\n\nUse for: Reading paper content, extracting findings, analyzing methodology, understanding results, comprehensive summarization",
     annotations={
         "readOnlyHint": True,
         "title": "Ask Paper (Content Retrieval)"
@@ -3580,10 +3592,10 @@ def ask_paper(
 
 @mcp.tool(
     name="zot_literature_review",
-    description="Automated literature review workflow: search papers → analyze themes → identify gaps → generate structured summary. Coordinates multiple tools (semantic search, graph analysis, temporal trends) for comprehensive research synthesis.\n\nUse for: Generating structured literature reviews on research topics",
+    description="🔵 WORKFLOW - Automated literature review workflow: search papers → analyze themes → identify gaps → generate structured summary. Coordinates multiple tools (semantic search, graph analysis, temporal trends) for comprehensive research synthesis.\n\n💡 This orchestrates Qdrant, Neo4j, and Zotero API tools automatically for comprehensive reviews.\n\nUse for: Generating structured literature reviews on research topics (end-to-end workflow)",
     annotations={
         "readOnlyHint": True,
-        "title": "Literature Review Workflow"
+        "title": "Literature Review (Workflow)"
     }
 )
 def literature_review(
