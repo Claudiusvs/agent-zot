@@ -423,6 +423,22 @@ The server exposes 38 active tools prefixed with `zot_` (36 original + 2 new wor
 2. 🔸 **SECONDARY** - `zot_graph_search`, `zot_hybrid_vector_graph_search` (Neo4j) - Use when relationships matter
 3. ⚪ **FALLBACK** - `zot_search_items` (Zotero API) - Use only for exact metadata lookups
 
+**⚠️ Neo4j Graph Tool Availability:**
+Graph-based tools (🔸 SECONDARY) require the Neo4j knowledge graph to be populated:
+- **`zot_find_seminal_papers`** - Returns "No seminal papers found" if graph is incomplete
+- **`zot_find_citation_chain`** - Requires citation relationships in graph
+- **`zot_find_collaborator_network`** - Needs author/affiliation nodes
+- **`zot_explore_concept_network`** - Depends on entity extraction
+
+**Fallback when Neo4j unavailable:**
+Use `zot_semantic_search` + manual analysis:
+1. Search with semantic query (e.g., "memory suppression")
+2. Sort results by publication year (older = more foundational)
+3. Filter by citation counts or journal impact
+4. Use `zot_get_item()` to get full details
+
+Check graph status: `tail /tmp/neo4j-populate-all.log` (30-40 hours to populate 2,400+ papers)
+
 #### MCP Protocol Enhancements (Phase 4)
 
 **All 38 tools now include:**
