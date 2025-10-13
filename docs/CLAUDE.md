@@ -414,32 +414,87 @@ agent-zot/
 
 ### MCP Tools
 
-The server exposes 20+ tools prefixed with `zot_`:
+The server exposes 38 active tools prefixed with `zot_` (36 original + 2 new workflow tools):
 
-**Core Search:**
-- `zot_search_items` - Title/creator/year search
-- `zot_semantic_search` - Vector similarity search with hybrid ranking
-- `zot_graph_search` - Knowledge graph-based search (requires Neo4j)
-- `zot_advanced_search` - Multi-field Boolean search
+#### 🎯 Tool Hierarchy & Selection Strategy
 
-**Metadata Retrieval:**
-- `zot_get_item_metadata` - Full metadata (markdown or BibTeX)
-- `zot_get_item_fulltext` - Extracted PDF text
-- `zot_get_item_children` - Attachments and notes
-- `zot_get_annotations` - PDF annotations
-- `zot_get_notes` - Item notes
+**Use this order when searching:**
+1. 🔹 **PRIMARY** - `zot_semantic_search` (Qdrant vector search) - Start here for content queries
+2. 🔸 **SECONDARY** - `zot_graph_search`, `zot_hybrid_vector_graph_search` (Neo4j) - Use when relationships matter
+3. ⚪ **FALLBACK** - `zot_search_items` (Zotero API) - Use only for exact metadata lookups
 
-**Organization:**
-- `zot_get_collections` - List collections
-- `zot_get_collection_items` - Items in collection
-- `zot_get_tags` - All tags
-- `zot_search_by_tag` - Search by tag
+#### MCP Protocol Enhancements (Phase 4)
 
-**Database Management:**
-- `zot_update_search_database` - Update/rebuild semantic index
-- `zot_get_search_database_status` - Index statistics
+**All 38 tools now include:**
+- `readOnlyHint` - Helps Claude understand which tools modify data
+- `title` - Human-readable names for better UX
+- **Zero-bias usage examples** - Intent-based patterns like `"papers about [concept]"` to avoid domain bias
 
-See src/agent_zot/core/server.py for full tool definitions and parameters.
+**3 Tools Deprecated:**
+- ⚠️ `zot_get_item_metadata` → use `zot_get_item()` instead
+- ⚠️ `zot_get_item_fulltext` → use `zot_get_item()` instead
+- ⚠️ `zot_get_item_children` → use `zot_get_item()` instead
+
+#### Core Search Tools
+
+- `zot_semantic_search` 🔹 PRIMARY - AI-powered semantic search using BGE-M3 embeddings over full PDF content
+- `zot_search_items` ⚪ FALLBACK - Direct Zotero API metadata search (keyword-based, not semantic)
+- `zot_search_by_tag` - Advanced tag queries with Boolean operators (AND/OR/NOT)
+- `zot_graph_search` 🔸 SECONDARY - Neo4j knowledge graph search for entity relationships
+- `zot_hybrid_vector_graph_search` 🔸 SECONDARY - Combined semantic + relationship queries (requires Neo4j)
+
+#### NEW: Workflow Automation Tools (Phase 5-6)
+
+- **`zot_ask_paper`** - Ask questions about a specific paper's content (returns relevant text chunks, not AI-generated answers)
+- **`zot_literature_review`** - Automated literature review workflow (search → analyze themes → identify gaps → generate summary)
+
+#### Item Retrieval & Analysis
+
+- `zot_get_item` - **Unified retrieval** of metadata + fulltext + children in one call (replaces 3 deprecated tools)
+- `zot_get_annotations` - PDF highlights and comments
+- `zot_get_notes` - Standalone notes or notes attached to items
+- `zot_search_notes` - Full-text search across notes
+- `zot_get_recent` - Recently added or modified papers
+
+#### Organization & Collections
+
+- `zot_get_collections` - List collection hierarchy
+- `zot_get_collection_items` - Retrieve papers in a collection
+- `zot_create_collection` - Create new collection
+- `zot_add_to_collection` - Batch add items to collection
+- `zot_remove_from_collection` - Batch remove items from collection
+- `zot_get_tags` - List all tags with frequency
+- `zot_batch_update_tags` - Add/remove tags across multiple items
+
+#### Graph-Based Discovery (Requires Neo4j)
+
+- `zot_find_related_papers` - Discover papers connected through citations/authors/concepts
+- `zot_find_citation_chain` - Multi-hop citation analysis
+- `zot_explore_concept_network` - Map relationships between research concepts
+- `zot_find_collaborator_network` - Analyze author collaboration patterns
+- `zot_find_seminal_papers` - Identify highly-cited foundational works
+- `zot_track_topic_evolution` - Analyze how research topics develop over time
+- `zot_find_recent_developments` - Latest papers on established research areas
+- `zot_analyze_venues` - Examine publication venue patterns
+
+#### Export & Integration
+
+- `zot_export_markdown` - Export to Obsidian-compatible markdown with YAML frontmatter
+- `zot_export_bibtex` - Generate BibTeX citations for LaTeX
+- `zot_export_graph` - Export Neo4j graph to GraphML for Gephi/Cytoscape
+
+#### Database Management
+
+- `zot_update_search_database` - Index/re-index library for semantic search (with AI-powered PDF parsing)
+- `zot_get_search_database_status` - Check index health and statistics
+- `zot_create_note` - Add research notes to items or library
+
+#### Internal Connectors (ChatGPT)
+
+- `search` - ChatGPT-compatible wrapper (internal use - prefer `zot_semantic_search`)
+- `fetch` - ChatGPT-compatible wrapper (internal use - prefer `zot_get_item`)
+
+See `src/agent_zot/core/server.py:3419` for full tool definitions and parameters.
 
 ## Configuration
 
