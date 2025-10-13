@@ -1,0 +1,30 @@
+{
+  "client_env": {
+    "ZOTERO_LOCAL": "true"
+  },
+  "semantic_search": {
+    "embedding_model": "sentence-transformers",
+    "sentence_transformer_model": "BAAI/bge-m3",
+    "collection_name": "zotero_library_qdrant",
+    "qdrant_url": "http://localhost:6333",
+    "qdrant_api_key": null,
+    "docling": {
+      "tokenizer": "BAAI/bge-m3",
+      "max_tokens": 512,
+      "merge_peers": true,
+      "num_threads": 2,
+      "do_formula_enrichment": false,
+      "parse_tables": false,
+      "ocr": {
+        "fallback_enabled": false,
+        "min_text_threshold": 100
+      }
+    },
+    "update_config": {
+      "auto_update": false,
+      "update_frequency": "manual",
+      "last_update": "2025-10-12T09:30:21.736939",
+      "update_days": 7
+    }
+  }
+}

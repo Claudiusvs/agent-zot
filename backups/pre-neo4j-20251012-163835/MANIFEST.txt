@@ -1,0 +1,61 @@
+===========================================
+AGENT-ZOT BACKUP MANIFEST
+===========================================
+
+Backup Date: Sun Oct 12 16:39:58 CEST 2025
+Backup Purpose: Pre-Neo4j GraphRAG integration
+Qdrant Collection: zotero_library_qdrant
+Qdrant Points: 3,087 vectors (BGE-M3 1024D + BM25 sparse)
+Backup Size: 101MB
+Indexing Runtime: 18 hours 54 minutes
+
+===========================================
+CONTENTS
+===========================================
+
+1. qdrant_storage_backup/ - Full Qdrant collection
+   - All 3,087 vector embeddings
+   - Collection configuration
+   - HNSW indexes
+   - Payload data
+
+2. config_backup.json - Agent-Zot configuration
+   - Embedding model: BAAI/bge-m3
+   - Collection settings
+   - Docling parser config
+
+3. RESTORE.sh - Automated restore script
+   - Stops Qdrant Docker container
+   - Restores collection files
+   - Restarts Qdrant
+   - Verifies restoration
+
+===========================================
+RESTORATION
+===========================================
+
+To restore this backup:
+
+Option 1: Automated (Recommended)
+  cd "/Users/claudiusv.schroder/toolboxes/agent-zot/backups/pre-neo4j-20251012-163835"
+  ./RESTORE.sh
+
+Option 2: Manual
+  docker stop agent-zot-qdrant
+  rm -rf ~/toolboxes/agent-zot/qdrant_storage/*
+  cp -r qdrant_storage_backup/* ~/toolboxes/agent-zot/qdrant_storage/
+  docker start agent-zot-qdrant
+
+Verification:
+  curl http://localhost:6333/collections/zotero_library_qdrant
+
+===========================================
+NOTES
+===========================================
+
+- This backup was created before enabling Neo4j GraphRAG
+- Original indexing completed: October 11, 2025
+- Backup is complete and ready for restoration
+- Keep this backup until Neo4j integration is verified
+
+===========================================

@@ -162,11 +162,14 @@ def search_items(
         ctx.error(f"Error searching Zotero: {str(e)}")
         return f"Error searching Zotero: {str(e)}"
 
-@mcp.tool(
-    name="zot_search_by_tag",
-    description="Search for items in your Zotero library by tag. " \
-    "Conditions are ANDed, each term supports disjunction`||` and exclusion`-`."
-)
+# REMOVED: zot_search_by_tag - redundant with zot_search_items(tag=[...])
+# See AUDIT_REPORT.md for details. Use zot_search_items instead.
+#
+# @mcp.tool(
+#     name="zot_search_by_tag",
+#     description="Search for items in your Zotero library by tag. " \
+#     "Conditions are ANDed, each term supports disjunction`||` and exclusion`-`."
+# )
 def search_by_tag(
     tag: List[str],
     item_type: str = "-attachment",
@@ -680,7 +683,7 @@ def get_tags(
         # Group tags alphabetically
         current_letter = None
         for tag in sorted_tags:
-            first_letter = tag[0].upper() if tag else "#"
+            first_letter = tag[0].upper() if (tag and len(tag) > 0) else "#"
             
             if first_letter != current_letter:
                 current_letter = first_letter
@@ -907,10 +910,13 @@ def batch_update_tags(
         return f"Error in batch tag update: {str(e)}"
 
 
-@mcp.tool(
-    name="zot_advanced_search",
-    description="[TEMPORARILY DISABLED] Perform an advanced search with multiple criteria. This tool is currently disabled due to API compatibility issues. Please use zot_search_items or zot_semantic_search instead."
-)
+# REMOVED: zot_advanced_search - broken tool using wrong API method
+# See AUDIT_REPORT.md for details. Alternatives: zot_semantic_search, zot_search_items
+#
+# @mcp.tool(
+#     name="zot_advanced_search",
+#     description="[TEMPORARILY DISABLED] Perform an advanced search with multiple criteria."
+# )
 def advanced_search(
     conditions: List[Dict[str, str]],
     join_mode: str = "all",
@@ -1080,7 +1086,7 @@ def get_annotations(
                                 # Determine library ID
                                 library_id = 1  # Default to personal library
                                 search_results = bibtex._make_request("item.search", [citation_key])
-                                if search_results:
+                                if search_results and isinstance(search_results, list):
                                     matched_item = next((item for item in search_results if item.get('citekey') == citation_key), None)
                                     if matched_item:
                                         library_id = matched_item.get('libraryID', 1)
