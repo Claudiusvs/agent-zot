@@ -74,14 +74,14 @@ mcp = FastMCP(
 
 Agent-Zot provides 33 tools across 3 backends. Tool selection should be **query-driven**, not hierarchical. Choose tools based on what the query asks for:
 
-### Content/Semantic Queries ("papers about X", "research on Y")
+### Content/Semantic Queries ("papers about [topic]", "research on [concept]", "what does [author] say about [topic]")
 **Primary:** 🔵 Qdrant tools
 - zot_semantic_search - discover papers by meaning/content
 - zot_ask_paper - read and analyze paper content
 
 **Often combined with:** Neo4j tools to explore relationships between found papers
 
-### Relationship/Network Queries ("who collaborated with X", "how are Y and Z connected")
+### Relationship/Network Queries ("who collaborated with [author]", "how are [topic A] and [topic B] connected", "citation network for [paper]")
 **Primary:** 🟢 Neo4j knowledge graph tools
 - zot_graph_search - relationship discovery
 - zot_find_related_papers, zot_find_citation_chain, zot_explore_concept_network, etc.
