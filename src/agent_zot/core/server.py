@@ -254,14 +254,15 @@ def search_by_tag(
         ctx.error(f"Error searching Zotero: {str(e)}")
         return f"Error searching Zotero: {str(e)}"
 
-@mcp.tool(
-    name="zot_get_item_metadata",
-    description="⚠️ DEPRECATED: Use zot_get_item() instead for unified retrieval.\n\nGet detailed metadata for a specific Zotero item by its key.\n\nUse for: Retrieving bibliographic details (title, authors, date, abstract) for a known item key",
-    annotations={
-        "readOnlyHint": True,
-        "title": "Get Item Metadata (Deprecated)"
-    }
-)
+# DEPRECATED - Use zot_get_item() instead
+# @mcp.tool(
+#     name="zot_get_item_metadata",
+#     description="⚠️ DEPRECATED: Use zot_get_item() instead for unified retrieval.\n\nGet detailed metadata for a specific Zotero item by its key.\n\nUse for: Retrieving bibliographic details (title, authors, date, abstract) for a known item key",
+#     annotations={
+#         "readOnlyHint": True,
+#         "title": "Get Item Metadata (Deprecated)"
+#     }
+# )
 def get_item_metadata(
     item_key: str,
     include_abstract: bool = True,
@@ -303,14 +304,15 @@ def get_item_metadata(
         return f"Error fetching item metadata: {str(e)}"
 
 
-@mcp.tool(
-    name="zot_get_item_fulltext",
-    description="⚠️ DEPRECATED: Use zot_get_item(include_fulltext=True) instead for unified retrieval.\n\nGet the full text content of a Zotero item by its key.\n\nUse for: Extracting complete document text from a paper's PDF attachment",
-    annotations={
-        "readOnlyHint": True,
-        "title": "Get Item Full Text (Deprecated)"
-    }
-)
+# DEPRECATED - Use zot_get_item(include_fulltext=True) instead
+# @mcp.tool(
+#     name="zot_get_item_fulltext",
+#     description="⚠️ DEPRECATED: Use zot_get_item(include_fulltext=True) instead for unified retrieval.\n\nGet the full text content of a Zotero item by its key.\n\nUse for: Extracting complete document text from a paper's PDF attachment",
+#     annotations={
+#         "readOnlyHint": True,
+#         "title": "Get Item Full Text (Deprecated)"
+#     }
+# )
 def get_item_fulltext(
     item_key: str,
     *,
@@ -696,14 +698,15 @@ def remove_from_collection(
         return f"Error removing items from collection: {str(e)}"
 
 
-@mcp.tool(
-    name="zot_get_item_children",
-    description="⚠️ DEPRECATED: Use zot_get_item(include_children=True) instead for unified retrieval.\n\nGet all child items (attachments, notes) for a specific Zotero item.\n\nUse for: Listing attachments, notes, and related items for a parent item",
-    annotations={
-        "readOnlyHint": True,
-        "title": "Get Item Children (Deprecated)"
-    }
-)
+# DEPRECATED - Use zot_get_item(include_children=True) instead
+# @mcp.tool(
+#     name="zot_get_item_children",
+#     description="⚠️ DEPRECATED: Use zot_get_item(include_children=True) instead for unified retrieval.\n\nGet all child items (attachments, notes) for a specific Zotero item.\n\nUse for: Listing attachments, notes, and related items for a parent item",
+#     annotations={
+#         "readOnlyHint": True,
+#         "title": "Get Item Children (Deprecated)"
+#     }
+# )
 def get_item_children(
     item_key: str,
     *,
