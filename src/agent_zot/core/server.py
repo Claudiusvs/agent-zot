@@ -909,7 +909,7 @@ def batch_update_tags(
 
 @mcp.tool(
     name="zot_advanced_search",
-    description="Perform an advanced search with multiple criteria."
+    description="[TEMPORARILY DISABLED] Perform an advanced search with multiple criteria. This tool is currently disabled due to API compatibility issues. Please use zot_search_items or zot_semantic_search instead."
 )
 def advanced_search(
     conditions: List[Dict[str, str]],
@@ -923,166 +923,59 @@ def advanced_search(
     """
     Perform an advanced search with multiple criteria.
 
+    **CURRENTLY DISABLED**: This tool has a known bug with the pyzotero API
+    (uses incorrect API method for saved search execution).
+
+    Use alternative tools:
+    - For text search: zot_search_items (simple queries)
+    - For semantic search: zot_semantic_search (vector search)
+    - For tag search: zot_search_by_tag
+
+    This tool will be fixed in a future update.
+
     Args:
-        conditions: List of search condition dictionaries, each containing:
-                   - field: The field to search (title, creator, date, tag, etc.)
-                   - operation: The operation to perform (is, isNot, contains, etc.)
-                   - value: The value to search for
-        join_mode: Whether all conditions must match ("all") or any condition can match ("any") (default: "all")
-        sort_by: Field to sort by (dateAdded, dateModified, title, creator, etc.)
-        sort_direction: Direction to sort - must be "asc" or "desc" (default: "asc")
-        limit: Maximum number of results to return
+        conditions: List of search condition dictionaries
+        join_mode: Whether all conditions must match ("all") or any can match ("any")
+        sort_by: Field to sort by
+        sort_direction: Direction to sort - "asc" or "desc"
+        limit: Maximum number of results
         ctx: MCP context
 
     Returns:
-        Markdown-formatted search results
+        Error message directing to alternative tools
     """
-    try:
-        if not conditions:
-            return "Error: No search conditions provided"
+    ctx.warn("zot_advanced_search called but is currently disabled")
 
-        # Validate join_mode parameter
-        if join_mode not in ["all", "any"]:
-            return f"Error: Invalid join_mode '{join_mode}'. Must be 'all' or 'any'"
+    return """# Advanced Search Currently Unavailable
 
-        # Validate sort_direction parameter
-        if sort_direction not in ["asc", "desc"]:
-            return f"Error: Invalid sort_direction '{sort_direction}'. Must be 'asc' or 'desc'"
-        
-        ctx.info(f"Performing advanced search with {len(conditions)} conditions")
-        zot = get_zotero_client()
-        
-        # Prepare search parameters
-        params = {}
-        
-        # Add sorting parameters if specified
-        if sort_by:
-            params["sort"] = sort_by
-            params["direction"] = sort_direction
-        
-        
-        # Add limit parameter
-        params["limit"] = limit
-        
-        # Build search conditions
-        search_conditions = []
-        for i, condition in enumerate(conditions):
-            if "field" not in condition or "operation" not in condition or "value" not in condition:
-                return f"Error: Condition {i+1} is missing required fields (field, operation, value)"
-            
-            # Map common field names to Zotero API fields if needed
-            field = condition["field"]
-            operation = condition["operation"]
-            value = condition["value"]
-            
-            # Handle special fields
-            if field == "author" or field == "creator":
-                field = "creator"
-            elif field == "year":
-                field = "date"
-                # Convert year to partial date format for matching
-                value = str(value)
-            
-            search_conditions.append({
-                "condition": field,
-                "operator": operation,
-                "value": value
-            })
-        
-        # Add join mode condition
-        search_conditions.append({
-            "condition": "joinMode",
-            "operator": join_mode,
-            "value": ""
-        })
-        
-        # Create a saved search
-        search_name = f"temp_search_{uuid.uuid4().hex[:8]}"
-        saved_search = zot.saved_search(
-            search_name,
-            search_conditions
-        )
-        
-        # Extract the search key from the result
-        if not saved_search.get("success"):
-            return f"Error creating saved search: {saved_search.get('failed', 'Unknown error')}"
+This tool is temporarily disabled due to a bug in the pyzotero API integration (incorrect method for executing saved searches).
 
-        # Safe dict access - check key exists before calling .values()
-        success_dict = saved_search.get("success")
-        if not success_dict:
-            return f"Error creating saved search: No success data returned"
+## Alternative Tools
 
-        search_key = next(iter(success_dict.values()), None)
-        if not search_key:
-            return "Error: No search key returned from saved search"
-        
-        # Execute the saved search
-        try:
-            results = zot.collection_items(search_key)
-        finally:
-            # Clean up the temporary saved search
-            try:
-                zot.delete_saved_search([search_key])
-            except Exception as cleanup_error:
-                ctx.warn(f"Error cleaning up saved search: {str(cleanup_error)}")
-        
-        # Format the results
-        if not results:
-            return "No items found matching the search criteria."
-        
-        output = ["# Advanced Search Results", ""]
-        output.append(f"Found {len(results)} items matching the search criteria:")
-        output.append("")
-        
-        # Add search criteria summary
-        output.append("## Search Criteria")
-        output.append(f"Join mode: {join_mode.upper()}")
-        
-        for i, condition in enumerate(conditions, 1):
-            output.append(f"{i}. {condition['field']} {condition['operation']} \"{condition['value']}\"")
-        
-        output.append("")
-        
-        # Format results
-        output.append("## Results")
-        
-        for i, item in enumerate(results, 1):
-            data = item.get("data", {})
-            title = data.get("title", "Untitled")
-            item_type = data.get("itemType", "unknown")
-            date = data.get("date", "No date")
-            key = item.get("key", "")
-            
-            # Format creators
-            creators = data.get("creators", [])
-            creators_str = format_creators(creators)
-            
-            # Build the formatted entry
-            output.append(f"### {i}. {title}")
-            output.append(f"**Type:** {item_type}")
-            output.append(f"**Item Key:** {key}")
-            output.append(f"**Date:** {date}")
-            output.append(f"**Authors:** {creators_str}")
-            
-            # Add abstract snippet if present
-            if abstract := data.get("abstractNote"):
-                # Limit abstract length for search results
-                abstract_snippet = abstract[:150] + "..." if len(abstract) > 150 else abstract
-                output.append(f"**Abstract:** {abstract_snippet}")
-            
-            # Add tags if present
-            if tags := data.get("tags"):
-                tag_list = [f"`{tag['tag']}`" for tag in tags]
-                if tag_list:
-                    output.append(f"**Tags:** {' '.join(tag_list)}")
-            
-            output.append("")  # Empty line between items
-        
-        return "\n".join(output)
-    
-    except Exception as e:
-        ctx.error(f"Error in advanced search: {str(e)}")
-        return f"Error in advanced search: {str(e)}"
+Please use these working alternatives:
+
+### For Simple Text Search
+```
+zot_search_items(query="your search terms", limit=50)
+```
+
+### For Semantic/Vector Search
+```
+zot_semantic_search(query="research question or concept", top_k=20)
+```
+
+### For Tag-Based Search
+```
+zot_search_by_tag(tag="your-tag", limit=50)
+```
+
+### For Collection Search
+```
+zot_get_collection_items(collection_id="COLLECTION_KEY", limit=50)
+```
+
+This tool will be fixed in a future update. See AUDIT_REPORT.md for details.
+"""
 
 
 @mcp.tool(
@@ -2366,7 +2259,7 @@ def find_collaborator_network(
 
 @mcp.tool(
     name="zot_find_seminal_papers",
-    description="Find most influential papers using citation analysis (PageRank-based). Identifies highly-cited foundational papers in your library or within a specific research field."
+    description="Find most influential papers using citation-based analysis. Identifies highly-cited foundational papers in your library or within a specific research field. Uses citation counts as a proxy for influence/impact."
 )
 def find_seminal_papers(
     field: str = None,
