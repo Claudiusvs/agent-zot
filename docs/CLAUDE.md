@@ -1194,11 +1194,12 @@ A: Edit `config.json` → `semantic_search.docling` section. The values from con
 
 Comprehensive audit completed 2025-10-13. See `AUDIT_REPORT.md` for details.
 
-**✅ Critical Issues: RESOLVED** (Commit 84e406a)
-- Fixed 3 critical IndexError/KeyError bugs in MCP tools
+**✅ Critical Issues: RESOLVED**
+- Commit 84e406a: Fixed 3 critical IndexError/KeyError bugs in MCP tools
+- Commit 2dedd9c: Disabled broken `zot_advanced_search`, corrected `zot_find_seminal_papers` description
 - 2 false positives confirmed safe
 
-**⚠️ Warnings: DEFERRED** (12 total)
+**⚠️ Warnings: DEFERRED** (13 total)
 
 Consider addressing if planning multi-user deployment or untrusted input:
 
@@ -1217,7 +1218,14 @@ Consider addressing if planning multi-user deployment or untrusted input:
    - `zot_export_markdown` (line 2792): Enhanced filename sanitization
    - Currently low risk with trusted local Zotero data
 
-**Recommendation**: Address security hardening (#3) before exposing to untrusted users or remote access.
+4. **Code Refactoring** (Medium risk, medium priority)
+   - `zot_search_notes` (lines 1519-1535): Fragile markdown parsing
+   - Parses markdown strings from `get_annotations()` output
+   - Risk: Will break if output format changes
+   - Mitigation: Both tools in same codebase, format controlled internally
+   - **When to fix**: During broader refactoring with test coverage, or if format changes
+
+**Recommendation**: Address security hardening (#3) before exposing to untrusted users or remote access. Address refactoring (#4) when doing broader code quality improvements.
 
 ---
 
