@@ -819,10 +819,10 @@ def get_item_children(
 
 @mcp.tool(
     name="zot_get_item",
-    description="Unified tool to retrieve complete information about a Zotero item. Gets metadata, full text, children (attachments/notes), and related info all in one call. Use this instead of calling multiple separate get_item_* tools.\n\nUse for: Unified retrieval of metadata, fulltext, children, and related info in one call",
+    description="⚪ Get bibliographic metadata for a Zotero item (title, authors, journal, abstract, DOI, etc.). Returns metadata + child items only - does NOT include paper content by default.\n\n⚠️ For paper content analysis, use zot_ask_paper() instead (more efficient, targeted chunk retrieval).\n\nUse for: Bibliographic information, citations, metadata - NOT for reading paper content",
     annotations={
         "readOnlyHint": True,
-        "title": "Get Complete Item Info"
+        "title": "Get Item Metadata"
     }
 )
 def get_item(
@@ -3483,7 +3483,11 @@ def connector_fetch(
         }, separators=(",", ":"))
 @mcp.tool(
     name="zot_ask_paper",
-    description="Ask questions about a specific paper's content. Returns relevant text chunks from the paper's full text using semantic search. This does NOT generate AI answers - it returns source text for you to analyze.\n\nUse for: Finding specific information within a paper's PDF content"
+    description="🔵 PRIMARY tool for accessing paper content. Uses semantic search to retrieve relevant text chunks from a paper's full text. Much more efficient than zot_get_item(include_fulltext=True). This does NOT generate AI answers - it returns source text chunks for you to analyze.\n\n✅ Use this when you need to read, analyze, or extract information from a paper's actual content.\n\nUse for: Reading paper content, extracting findings, analyzing methodology, understanding results",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Ask Paper (Content Retrieval)"
+    }
 )
 def ask_paper(
     item_key: str,
