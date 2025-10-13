@@ -1006,8 +1006,15 @@ def advanced_search(
         # Extract the search key from the result
         if not saved_search.get("success"):
             return f"Error creating saved search: {saved_search.get('failed', 'Unknown error')}"
-        
-        search_key = next(iter(saved_search.get("success", {}).values()), None)
+
+        # Safe dict access - check key exists before calling .values()
+        success_dict = saved_search.get("success")
+        if not success_dict:
+            return f"Error creating saved search: No success data returned"
+
+        search_key = next(iter(success_dict.values()), None)
+        if not search_key:
+            return "Error: No search key returned from saved search"
         
         # Execute the saved search
         try:
@@ -1581,14 +1588,19 @@ def search_notes(
                         start = max(0, pos - 100)
                         end = min(len(note_text), pos + 200)
                         context = note_text[start:end]
-                        
-                        # Highlight the query in the context
-                        highlighted = context.replace(
-                            context[context.lower().find(query_lower):context.lower().find(query_lower)+len(query)], 
-                            f"**{context[context.lower().find(query_lower):context.lower().find(query_lower)+len(query)]}**"
-                        )
-                        
-                        note_text = highlighted + "..."
+
+                        # Highlight the query in the context - cache find() result to prevent -1 index
+                        context_lower = context.lower()
+                        query_pos = context_lower.find(query_lower)
+
+                        if query_pos >= 0:
+                            # Extract matched text (preserve original case)
+                            matched_text = context[query_pos:query_pos+len(query)]
+                            highlighted = context.replace(matched_text, f"**{matched_text}**", 1)
+                            note_text = highlighted + "..."
+                        else:
+                            # Query not in context (shouldn't happen but be safe)
+                            note_text = context + "..."
                 except Exception:
                     # Fallback to first 500 characters if highlighting fails
                     note_text = note_text[:500] + "..."
@@ -2558,8 +2570,13 @@ def find_recent_developments(
         output.append(f"Found {len(results['ids'][0])} recent papers:\n")
 
         for i in range(len(results["ids"][0])):
-            metadata = results["metadatas"][0][i] if results["metadatas"] else {}
-            doc_text = results["documents"][0][i] if results["documents"] else ""
+            # Safe nested list access with bounds checking (see commit 416a12c for similar fix)
+            metadata = (results["metadatas"][0][i]
+                       if results.get("metadatas") and len(results["metadatas"]) > 0 and len(results["metadatas"][0]) > i
+                       else {})
+            doc_text = (results["documents"][0][i]
+                       if results.get("documents") and len(results["documents"]) > 0 and len(results["documents"][0]) > i
+                       else "")
 
             title = metadata.get("title", "Unknown")
             year = metadata.get("year", "N/A")
