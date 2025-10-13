@@ -72,7 +72,7 @@ mcp = FastMCP(
 
 @mcp.tool(
     name="zot_search_items",
-    description="Search for items in your Zotero library, given a query string."
+    description="⚪ FALLBACK - Direct Zotero API metadata search. Use ONLY when semantic/graph search fail or for exact title/author/year lookups. Supports tags and item type filtering. This is keyword-based, not semantic - try zot_semantic_search first."
 )
 def search_items(
     query: str,
@@ -1607,7 +1607,7 @@ def create_note(
 
 @mcp.tool(
     name="zot_semantic_search",
-    description="PRIORITIZED SEARCH TOOL. Use this for research questions, concepts, or topics. Performs AI-powered semantic search over your Zotero library using embeddings. Finds papers by meaning, not just keywords. Searches full PDF content if indexed. Use this when the user asks questions about their research library or wants to find papers on specific topics."
+    description="🔹 PRIMARY SEARCH TOOL - Use this FIRST for any query about finding papers, research topics, or concepts. AI-powered semantic search using BGE-M3 embeddings over full PDF content. Finds papers by meaning and context, not just keyword matching. This should be your default choice for research queries."
 )
 def semantic_search(
     query: str,
@@ -1916,7 +1916,7 @@ def _extract_item_key_from_input(value: str) -> Optional[str]:
 
 @mcp.tool(
     name="zot_graph_search",
-    description="Search the knowledge graph for entities, concepts, and relationships extracted from papers."
+    description="🔸 SECONDARY - Use when you need to explore relationships between authors, institutions, concepts, methods, or other entities. Neo4j knowledge graph search for finding connections and research networks. Use AFTER trying semantic search when relationships matter."
 )
 def graph_search(
     query: str,
@@ -2911,7 +2911,7 @@ def export_graph(
 
 @mcp.tool(
     name="zot_hybrid_vector_graph_search",
-    description="Advanced hybrid search combining vector similarity (semantic) with knowledge graph relationships."
+    description="🔸 SECONDARY - Combines semantic search with relationship discovery. Use when you want both content relevance AND network connections in results. Requires Neo4j. Use AFTER trying semantic search when both meaning and relationships are important."
 )
 def hybrid_vector_graph_search(
     query: str,
