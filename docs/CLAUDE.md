@@ -1186,4 +1186,39 @@ A: Edit `config.json` → `semantic_search.docling` section. The values from con
 
 ---
 
+## Future Code Quality Improvements
+
+**Status: Non-Critical** - Production-ready as-is. These are quality-of-life improvements for future consideration.
+
+### Audit Warnings (Medium Priority)
+
+Comprehensive audit completed 2025-10-13. See `AUDIT_REPORT.md` for details.
+
+**✅ Critical Issues: RESOLVED** (Commit 84e406a)
+- Fixed 3 critical IndexError/KeyError bugs in MCP tools
+- 2 false positives confirmed safe
+
+**⚠️ Warnings: DEFERRED** (12 total)
+
+Consider addressing if planning multi-user deployment or untrusted input:
+
+1. **Edge Case Handling** (Low risk in production)
+   - `zot_get_tags` (line 683): Empty string check `tag[0]` when `tag=""`
+   - Already guarded by `if tag`, only fails on empty string (rare)
+
+2. **Input Validation** (UX improvements)
+   - `zot_get_recent` (line 723): Add user feedback when limit capped
+   - `zot_update_search_database` (line 1861): Range validation after type coercion
+   - Currently silent capping/coercion works but less helpful
+
+3. **Security Hardening** (For production/multi-user)
+   - `zot_get_item_fulltext` (line 358): Path traversal protection for `file_path`
+   - `zot_create_note` (line 1658): HTML sanitization (use `bleach` library)
+   - `zot_export_markdown` (line 2792): Enhanced filename sanitization
+   - Currently low risk with trusted local Zotero data
+
+**Recommendation**: Address security hardening (#3) before exposing to untrusted users or remote access.
+
+---
+
 **For complete configuration details, see [CONFIGURATION.md](./CONFIGURATION.md).**
