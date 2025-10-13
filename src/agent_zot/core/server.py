@@ -72,7 +72,11 @@ mcp = FastMCP(
 
 @mcp.tool(
     name="zot_search_items",
-    description="⚪ FALLBACK - Direct Zotero API metadata search. Use ONLY when semantic/graph search fail or for exact title/author/year lookups. Supports tags and item type filtering. This is keyword-based, not semantic - try zot_semantic_search first.\n\nUse for: Precise metadata queries like 'author:[name]' or 'title:[exact phrase]'"
+    description="⚪ FALLBACK - Direct Zotero API keyword-based metadata search. Use ONLY for exact title/author/year lookups when you don't have item keys yet.\n\n⚠️ DO NOT use after zot_semantic_search - you already have item keys! Use zot_get_item() for metadata or zot_ask_paper() for content instead.\n\n⚠️ This is literal keyword matching, NOT semantic. Always try zot_semantic_search first for research queries.\n\nUse for: Finding papers when you know exact author name/title phrase but don't have item key yet",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Search Items (Keyword Fallback)"
+    }
 )
 def search_items(
     query: str,
