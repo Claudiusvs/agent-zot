@@ -162,14 +162,10 @@ def search_items(
         ctx.error(f"Error searching Zotero: {str(e)}")
         return f"Error searching Zotero: {str(e)}"
 
-# REMOVED: zot_search_by_tag - redundant with zot_search_items(tag=[...])
-# See AUDIT_REPORT.md for details. Use zot_search_items instead.
-#
-# @mcp.tool(
-#     name="zot_search_by_tag",
-#     description="Search for items in your Zotero library by tag. " \
-#     "Conditions are ANDed, each term supports disjunction`||` and exclusion`-`."
-# )
+@mcp.tool(
+    name="zot_search_by_tag",
+    description="Search for items by tag with advanced operators. Supports disjunction (tag1 || tag2), exclusion (-tag), and AND logic across conditions. More powerful than zot_search_items for complex tag-based queries."
+)
 def search_by_tag(
     tag: List[str],
     item_type: str = "-attachment",

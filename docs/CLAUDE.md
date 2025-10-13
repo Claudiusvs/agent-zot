@@ -839,6 +839,45 @@ Use `ZOTERO_NO_CLAUDE=true` to disable Claude Desktop detection.
 
 ## Future Enhancements
 
+### zot_advanced_search - Complex Boolean Search (NOT RECOMMENDED)
+
+**Current Status**: Disabled due to architectural concerns
+
+**Location**: `src/agent_zot/core/server.py:1211` (commented out)
+
+**Known Issues:**
+- Uses Zotero's saved search API as a workaround (creates temp search, executes, deletes)
+- Has unsafe dict access bug: `saved_search.get("success", {}).values()` fails if `success` is `None`
+- Fragile dependency on pyzotero's saved search implementation
+
+**Why NOT Recommended:**
+- Unclear value proposition - when would boolean search beat semantic search?
+- Better alternatives already exist:
+  - `zot_semantic_search` - Far more powerful for research queries
+  - `zot_search_by_tag` - Advanced tag operators (||, -, AND logic)
+  - `zot_search_items` - Simple exact matching
+  - `zot_graph_search` - Relationship-based queries
+- Maintenance burden: Complex code for marginal benefit
+- Architectural smell: Temp object creation/deletion pattern
+
+**If You Really Want It:**
+
+The bug fix is simple:
+```python
+# Old (broken):
+search_key = next(iter(saved_search.get("success", {}).values()), None)
+
+# Fixed:
+success_dict = saved_search.get("success") or {}
+search_key = next(iter(success_dict.values()), None) if success_dict else None
+```
+
+But fixing the bug doesn't address the fundamental issues above.
+
+**Decision**: Left disabled. If you need complex queries, use semantic search or the Zotero UI.
+
+---
+
 ### Granite VLM Fallback (TODO)
 
 **Current Status**: V2-only parsing (fast, born-digital PDFs)
