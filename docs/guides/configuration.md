@@ -65,7 +65,7 @@ Last updated: October 2025 (Subprocess isolation release)
     "merge_peers": true,
     "num_threads": 2,
     "do_formula_enrichment": false,
-    "parse_tables": false,
+    "parse_tables": true,
     "parse_figures": false,
     "subprocess_timeout": 3600,
     "ocr": {
@@ -94,7 +94,7 @@ Last updated: October 2025 (Subprocess isolation release)
 | Feature | Status | Reason |
 |---------|--------|--------|
 | **Formula Enrichment** | ❌ Disabled | LaTeX→text conversion not needed for most papers |
-| **Table Parsing** | ❌ Disabled | Structure extraction adds overhead, limited benefit |
+| **Table Parsing** | ✅ Enabled | Preserves table structure critical for academic papers (Financial Report Chunking 2024: 50% fewer chunks, higher accuracy) |
 | **Figure Parsing** | ❌ Disabled | Image extraction not needed for text search |
 | **OCR Fallback** | ❌ Disabled | Prevents crashes, maintains consistent quality |
 
@@ -254,7 +254,7 @@ Last updated: October 2025 (Subprocess isolation release)
 |------------|---------------|-------|
 | **Neo4j Version** | 5.23.0+ | Required for relationship vector support |
 | **APOC Plugin** | ✅ Required | Enable with `NEO4J_PLUGINS='["apoc"]'` |
-| **LLM Options** | Ollama (free, local) or OpenAI (paid) | Mistral 7B Instruct recommended |
+| **LLM Options** | Ollama (free, local) or OpenAI (paid) | Qwen2.5 7B Instruct recommended |
 | **Embedding Options** | BGE-M3 (free, local) or OpenAI (paid) | BGE-M3 matches Qdrant for consistency |
 
 ### Connection Settings
@@ -266,7 +266,7 @@ Last updated: October 2025 (Subprocess isolation release)
 | **Database** | `neo4j` | Default database |
 | **User** | `neo4j` | Default username |
 | **Password** | `demodemo` | Configure in Docker |
-| **LLM Model** | `ollama/mistral:7b-instruct` | For entity/relationship extraction |
+| **LLM Model** | `ollama/qwen2.5:7b-instruct` | For entity/relationship extraction |
 
 **Docker command** (Neo4j 5.23.0+ with APOC):
 ```bash
@@ -287,7 +287,7 @@ docker run -d -p 7474:7474 -p 7687:7687 \
     "neo4j_user": "neo4j",
     "neo4j_password": "demodemo",
     "neo4j_database": "neo4j",
-    "llm_model": "ollama/mistral:7b-instruct",
+    "llm_model": "ollama/qwen2.5:7b-instruct",
     "entity_types": [
       "Person", "Institution", "Concept", "Method",
       "Dataset", "Theory", "Journal", "Field"
@@ -334,30 +334,31 @@ docker run -d -p 7474:7474 -p 7687:7687 \
 
 ### LLM Options
 
-#### Option 1: Free Local LLM (Ollama + Mistral)
+#### Option 1: Free Local LLM (Ollama + Qwen2.5)
 
 **Benefits**:
 - ✅ Zero API costs (fully local)
 - ✅ No rate limits
 - ✅ Privacy-preserving (data never leaves machine)
-- ✅ Good quality (Mistral 7B competitive with GPT-3.5)
+- ✅ Excellent quality (Qwen2.5 7B competitive with GPT-4o-mini)
+- ✅ Multilingual support (29 languages including English, Chinese, Japanese, Spanish, French, German, Arabic, Russian, Korean, Portuguese, Italian, Dutch)
 
 **Requirements**:
 - 8GB RAM minimum
 - Ollama installed (`brew install ollama`)
-- Model pulled (`ollama pull mistral:7b-instruct`)
+- Model pulled (`ollama pull qwen2.5:7b-instruct`)
 
 **Configuration**:
 ```json
 {
-  "llm_model": "ollama/mistral:7b-instruct"
+  "llm_model": "ollama/qwen2.5:7b-instruct"
 }
 ```
 
 #### Option 2: OpenAI (GPT-4o-mini)
 
 **Benefits**:
-- ✅ Higher accuracy than Mistral 7B
+- ✅ Higher accuracy than Qwen2.5 7B (marginal difference)
 - ✅ No local resource requirements
 - ✅ Faster processing (cloud infrastructure)
 

@@ -1132,7 +1132,10 @@ class ZoteroSemanticSearch:
 
                 # Also add to Neo4j knowledge graph if enabled (using batch processing)
                 if self.neo4j_client:
+                    logger.info(f"Calling Neo4j integration for {len(items)} items...")
                     self._add_items_to_graph(items, documents)
+                else:
+                    logger.warning("Neo4j client is None - skipping graph extraction")
 
             except Exception as e:
                 logger.error(f"Error adding documents to Qdrant: {e}")
@@ -1159,6 +1162,8 @@ class ZoteroSemanticSearch:
         if not self.neo4j_client:
             return
 
+        logger.info(f"[NEO4J DEBUG] _add_items_to_graph: Processing {len(items)} items")
+
         # Prepare papers with chunk-level data
         papers_with_chunks = []
         for item in items:
@@ -1172,13 +1177,16 @@ class ZoteroSemanticSearch:
                 fulltext_data = item_data.get("fulltext", "")
                 docling_chunks = []
 
+                logger.info(f"[NEO4J DEBUG] Item {paper_key}: fulltext_data type = {type(fulltext_data)}")
+
                 if isinstance(fulltext_data, dict):
                     # Docling format: {"text": "...", "chunks": [...]}
                     docling_chunks = fulltext_data.get("chunks", [])
+                    logger.info(f"[NEO4J DEBUG] Item {paper_key}: Found {len(docling_chunks)} Docling chunks")
 
                 # Skip if no chunks (fall back to paper-level only)
                 if not docling_chunks:
-                    logger.debug(f"No Docling chunks for {paper_key}, skipping chunk-level extraction")
+                    logger.info(f"[NEO4J DEBUG] No Docling chunks for {paper_key}, skipping chunk-level extraction")
                     continue
 
                 # Extract authors
@@ -1218,6 +1226,7 @@ class ZoteroSemanticSearch:
                     })
 
                 if chunk_data:
+                    logger.info(f"[NEO4J DEBUG] Item {paper_key}: Prepared {len(chunk_data)} chunks for Neo4j")
                     papers_with_chunks.append({
                         "paper_key": paper_key,
                         "title": title,
@@ -1226,9 +1235,13 @@ class ZoteroSemanticSearch:
                         "year": year,
                         "chunks": chunk_data  # Now contains full chunk objects with metadata
                     })
+                else:
+                    logger.info(f"[NEO4J DEBUG] Item {paper_key}: No valid chunk_data after processing")
 
             except Exception as e:
                 logger.error(f"Error preparing item {item.get('key', 'unknown')} for graph: {e}")
+
+        logger.info(f"[NEO4J DEBUG] Prepared {len(papers_with_chunks)} papers for Neo4j extraction")
 
         # Add papers with chunk-level extraction to Neo4j
         if papers_with_chunks:
@@ -1442,6 +1455,125 @@ class ZoteroSemanticSearch:
                 "error": str(e)
             }
 
+    def enhanced_semantic_search(self,
+                                query: str,
+                                limit: int = 10,
+                                include_chunk_entities: bool = True,
+                                filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Enhanced semantic search using bidirectional Qdrant↔Neo4j linking.
+
+        Implements Figure 3 pattern from Qdrant GraphRAG documentation:
+        1. Query vectorization and semantic search in Qdrant
+        2. Extract Qdrant point IDs from results (e.g., "ABCD1234_chunk_5")
+        3. Use point IDs to directly query Neo4j chunks for entities
+        4. Enrich each result with chunk-specific entities and relationships
+
+        This is more precise than hybrid_vector_graph_search() which uses
+        paper-level relationships. This method retrieves entities from the
+        exact chunks that matched the query.
+
+        Args:
+            query: Search query text
+            limit: Maximum number of results
+            include_chunk_entities: Whether to retrieve Neo4j entities (default: True)
+            filters: Optional Qdrant metadata filters
+
+        Returns:
+            Search results enriched with chunk-level entities from Neo4j
+
+        Example:
+            results = search.enhanced_semantic_search(
+                query="neural networks for image classification",
+                limit=10
+            )
+            # Each result contains:
+            # - item_key, title, abstract (Zotero metadata)
+            # - chunk_text, chunk_id (from Qdrant)
+            # - entities: [{name: "Convolutional Neural Network", type: "Method"}, ...]
+            #   (from Neo4j, specific to this chunk)
+        """
+        try:
+            # Step 1-2: Semantic search in Qdrant
+            logger.debug(f"Step 1-2: Performing semantic search in Qdrant for: '{query}'")
+            qdrant_results = self.qdrant_client.search(
+                query_texts=[query],
+                n_results=limit,
+                where=filters,
+                use_hybrid=True  # Use hybrid search for best results
+            )
+
+            # Enrich with Zotero metadata
+            enriched_results = self._enrich_search_results(qdrant_results, query)
+
+            # Step 3-4: Use point IDs to get chunk entities from Neo4j
+            if include_chunk_entities and self.neo4j_client and enriched_results:
+                logger.debug(f"Step 3-4: Retrieving chunk-level entities from Neo4j")
+
+                # Extract Qdrant point IDs from results
+                # Point IDs are stored in the 'id' field after enrichment
+                point_ids = []
+                point_id_to_result = {}
+
+                for result in enriched_results:
+                    # Extract the Qdrant point ID (string like "ABCD1234_chunk_5")
+                    point_id = result.get("qdrant_point_id")
+                    if point_id:
+                        point_ids.append(str(point_id))
+                        point_id_to_result[str(point_id)] = result
+
+                if point_ids:
+                    # Query Neo4j for entities in these specific chunks
+                    chunk_entities = self.neo4j_client.get_entities_for_chunks(
+                        qdrant_point_ids=point_ids,
+                        limit_per_chunk=10
+                    )
+
+                    # Attach entities to corresponding results
+                    for point_id, entities in chunk_entities.items():
+                        if point_id in point_id_to_result:
+                            result = point_id_to_result[point_id]
+                            result["chunk_entities"] = entities
+                            result["chunk_entity_count"] = len(entities)
+
+                            # Extract unique entity types and names for summary
+                            entity_types = list(set(
+                                t for e in entities
+                                for t in e.get("types", [])
+                                if t not in ["Entity"]  # Skip base Entity type
+                            ))
+                            entity_names = [e.get("name") for e in entities[:5]]  # First 5
+
+                            result["entity_types"] = entity_types
+                            result["sample_entities"] = entity_names
+
+                    logger.info(f"Enhanced {len(chunk_entities)} results with chunk-level entities")
+                else:
+                    logger.debug("No point IDs found in results to query Neo4j")
+
+            return {
+                "query": query,
+                "limit": limit,
+                "filters": filters,
+                "search_type": "enhanced_semantic" if include_chunk_entities else "standard_semantic",
+                "results": enriched_results,
+                "total_found": len(enriched_results),
+                "neo4j_enabled": self.neo4j_client is not None and include_chunk_entities
+            }
+
+        except Exception as e:
+            import traceback
+            logger.error(f"Error performing enhanced semantic search: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return {
+                "query": query,
+                "limit": limit,
+                "filters": filters,
+                "results": [],
+                "total_found": 0,
+                "error": str(e)
+            }
+
     def _enrich_search_results(self, qdrant_results: Dict[str, Any], query: str) -> List[Dict[str, Any]]:
         """Enrich Qdrant results with full Zotero item data."""
         enriched = []
@@ -1492,6 +1624,7 @@ class ZoteroSemanticSearch:
                 enriched_result = {
                     "item_key": zotero_key,  # Use parent key for Claude, not chunk key
                     "original_chunk_key": item_key if "_chunk_" in item_key else None,  # Preserve chunk info
+                    "qdrant_point_id": item_key,  # String ID like "ABCD1234_chunk_5" for Neo4j linking
                     "similarity_score": 1 - distances[i] if i < len(distances) else 0,
                     "matched_text": documents[i] if i < len(documents) else "",
                     "metadata": metadatas[i] if i < len(metadatas) else {},

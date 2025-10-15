@@ -819,6 +819,82 @@ class Neo4jGraphRAGClient:
             logger.error(f"Error searching entities: {e}")
             return []
 
+    def get_entities_for_chunks(self,
+                                qdrant_point_ids: List[str],
+                                limit_per_chunk: int = 10) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Retrieve entities from Neo4j chunks using Qdrant point IDs.
+
+        This implements the bidirectional linking pattern from Qdrant documentation:
+        1. Semantic search in Qdrant returns point IDs (e.g., "ABCD1234_chunk_5")
+        2. Use those IDs to directly query Neo4j chunks (via qdrant_point_id)
+        3. Return entities linked to those specific chunks
+
+        Args:
+            qdrant_point_ids: List of Qdrant point IDs from search results
+            limit_per_chunk: Maximum entities to return per chunk
+
+        Returns:
+            Dict mapping point_id → list of entities from that chunk
+
+        Example:
+            qdrant_results = qdrant.search("machine learning")
+            point_ids = [r.id for r in qdrant_results]
+            entities = neo4j.get_entities_for_chunks(point_ids)
+            # entities = {
+            #   "ABCD1234_chunk_5": [{"name": "Neural Network", "type": "Concept"}, ...],
+            #   "ABCD1234_chunk_6": [{"name": "Backpropagation", "type": "Method"}, ...]
+            # }
+        """
+        if not qdrant_point_ids:
+            return {}
+
+        try:
+            with self.driver.session(database=self.neo4j_database) as session:
+                # Query chunks by Qdrant point IDs and get their entities
+                cypher_query = """
+                UNWIND $point_ids AS point_id
+                MATCH (c:Chunk {qdrant_point_id: point_id})
+                OPTIONAL MATCH (c)-[:CONTAINS_ENTITY]->(e)
+                WHERE e IS NOT NULL
+                RETURN point_id,
+                       collect(DISTINCT {
+                           name: e.name,
+                           description: COALESCE(e.description, ''),
+                           types: labels(e),
+                           id: e.id
+                       }) AS entities
+                LIMIT $limit_per_chunk
+                """
+
+                result = session.run(
+                    cypher_query,
+                    point_ids=qdrant_point_ids,
+                    limit_per_chunk=limit_per_chunk
+                )
+
+                # Build mapping: point_id → entities
+                chunk_entities = {}
+                total_entities = 0
+
+                for record in result:
+                    point_id = record["point_id"]
+                    entities = record["entities"]
+
+                    # Filter out empty entities
+                    valid_entities = [e for e in entities if e.get("name")]
+
+                    if valid_entities:
+                        chunk_entities[point_id] = valid_entities
+                        total_entities += len(valid_entities)
+
+                logger.info(f"Retrieved {total_entities} entities from {len(chunk_entities)} chunks (queried {len(qdrant_point_ids)} point IDs)")
+                return chunk_entities
+
+        except Exception as e:
+            logger.error(f"Error retrieving entities for chunks: {e}")
+            return {}
+
     def find_related_papers(self,
                            paper_key: str,
                            max_depth: int = 2,
