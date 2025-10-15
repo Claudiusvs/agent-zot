@@ -9,11 +9,13 @@ import os
 import sqlite3
 import platform
 import logging
+import hashlib
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 
 from agent_zot.utils.common import is_local_mode
+from agent_zot.database.parse_cache import ParseCache
 
 
 @dataclass
@@ -76,13 +78,18 @@ class LocalZoteroReader:
     def __init__(self, db_path: Optional[str] = None, pdf_max_pages: Optional[int] = None):
         """
         Initialize the local database reader.
-        
+
         Args:
             db_path: Optional path to zotero.sqlite. If None, auto-detect.
         """
         self.db_path = db_path or self._find_zotero_db()
         self._connection: Optional[sqlite3.Connection] = None
         self.pdf_max_pages: Optional[int] = pdf_max_pages
+
+        # Initialize ParseCache for storing extracted/parsed text
+        self.parse_cache = ParseCache()
+        logging.info(f"ParseCache initialized at {self.parse_cache.db_path}")
+
         # Reduce noise from pdfminer warnings
         try:
             logging.getLogger("pdfminer").setLevel(logging.ERROR)
@@ -207,6 +214,15 @@ class LocalZoteroReader:
         # External links not supported in first pass
         return None
 
+    def _compute_pdf_md5(self, file_path: Path) -> str:
+        """Compute MD5 hash of PDF file for cache validation."""
+        md5_hash = hashlib.md5()
+        with open(file_path, 'rb') as f:
+            # Read in chunks to handle large files
+            for chunk in iter(lambda: f.read(8192), b''):
+                md5_hash.update(chunk)
+        return md5_hash.hexdigest()
+
     def _extract_text_from_pdf(self, file_path: Path) -> str:
         """
         Extract text from a PDF using Docling with subprocess isolation.
@@ -220,11 +236,30 @@ class LocalZoteroReader:
 
         Strategy: Docling-only (no fallback) to ensure consistent high-quality output
         with HybridChunker, structural metadata, and proper reading order.
+
+        ParseCache Integration: Before parsing, check if we have cached results.
+        After parsing, cache the results. Cache is invalidated if PDF MD5 changes.
         """
         import json
         import subprocess
         import sys
         import tempfile
+
+        # Extract item_key from file path (Zotero stores PDFs in /storage/ABC123XY/file.pdf)
+        item_key = file_path.parent.name if file_path.parent.name != "storage" else None
+
+        # Check ParseCache before expensive Docling parsing
+        if item_key:
+            pdf_md5 = self._compute_pdf_md5(file_path)
+            if self.parse_cache.has_cached_parse(item_key, pdf_md5):
+                cached = self.parse_cache.get_cached_parse(item_key)
+                if cached:
+                    logging.info(f"✓ Cache hit for {file_path.name} ({item_key})")
+                    result = {
+                        "text": cached["full_text"],
+                        "chunks": cached["chunks"]
+                    }
+                    return (result, "docling")  # Return cached result in same format
 
         # Load config from standard location
         config_path = Path.home() / ".config" / "agent-zot" / "config.json"
@@ -324,6 +359,23 @@ except Exception as e:
                         result = _json.load(f)
                     result_file.unlink()
                     logging.info(f"✓ Docling parsed {file_path.name} ({len(result['chunks'])} chunks)")
+
+                    # Cache the parsed result for future re-chunking without re-parsing
+                    if item_key:
+                        chunk_config = {
+                            "tokenizer": parser_config.get("tokenizer", "BAAI/bge-m3"),
+                            "max_tokens": parser_config.get("max_tokens", 512),
+                            "merge_peers": parser_config.get("merge_peers", True)
+                        }
+                        self.parse_cache.cache_parse(
+                            item_key=item_key,
+                            full_text=result.get("text", ""),
+                            chunks=result.get("chunks", []),
+                            chunk_config=chunk_config,
+                            pdf_md5=pdf_md5
+                        )
+                        logging.info(f"✓ Cached parse for {item_key}")
+
                     return (result, "docling")
                 else:
                     # Check for error file

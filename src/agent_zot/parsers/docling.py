@@ -26,10 +26,10 @@ class DoclingParser:
     """Enhanced document parser using Docling with V2 backend, Granite VLM, and OCR fallback."""
 
     def __init__(self,
-                 tokenizer: str = "sentence-transformers/all-MiniLM-L6-v2",
+                 tokenizer: str = "BAAI/bge-m3",
                  max_tokens: Optional[int] = None,
                  merge_peers: bool = True,
-                 num_threads: int = 10,
+                 num_threads: int = 2,
                  do_formula_enrichment: bool = False,
                  do_table_structure: bool = False,
                  enable_ocr_fallback: bool = False,
