@@ -322,14 +322,204 @@ class ZoteroSemanticSearch:
         else:
             return self._get_items_from_api(limit)
     
+    def _get_item_metadata_list(self, limit: Optional[int] = None) -> List[Any]:
+        """
+        Get lightweight metadata list of items from local database.
+        Fast operation - returns NamedTuple objects without fulltext extraction.
+
+        Args:
+            limit: Optional limit on number of items
+
+        Returns:
+            List of NamedTuple items (without fulltext)
+        """
+        logger.info("Fetching item metadata from local Zotero database...")
+
+        try:
+            pdf_max_pages = None
+            try:
+                if self.config_path and os.path.exists(self.config_path):
+                    with open(self.config_path, 'r') as _f:
+                        _cfg = json.load(_f)
+                        pdf_max_pages = _cfg.get('semantic_search', {}).get('extraction', {}).get('pdf_max_pages')
+            except Exception:
+                pass
+
+            with suppress_stdout(), LocalZoteroReader(pdf_max_pages=pdf_max_pages) as reader:
+                # Fetch metadata only (fast)
+                sys.stderr.write("Scanning local Zotero database for items...\n")
+                local_items = reader.get_items_with_text(limit=limit, include_fulltext=False)
+                candidate_count = len(local_items)
+                sys.stderr.write(f"Found {candidate_count} candidate items.\n")
+
+                # Deduplication logic (prefer journalArticle over preprint)
+                def norm(s: Optional[str]) -> Optional[str]:
+                    if not s:
+                        return None
+                    return "".join(s.lower().split())
+
+                key_to_best = {}
+                for it in local_items:
+                    doi_key = ("doi", norm(getattr(it, "doi", None))) if getattr(it, "doi", None) else None
+                    title_key = ("title", norm(getattr(it, "title", None))) if getattr(it, "title", None) else None
+
+                    def consider(k):
+                        if not k:
+                            return
+                        cur = key_to_best.get(k)
+                        if cur is None:
+                            key_to_best[k] = it
+                        else:
+                            prefer_types = {"journalArticle": 2, "preprint": 1}
+                            cur_score = prefer_types.get(getattr(cur, "item_type", ""), 0)
+                            new_score = prefer_types.get(getattr(it, "item_type", ""), 0)
+                            if new_score > cur_score:
+                                key_to_best[k] = it
+
+                    consider(doi_key)
+                    consider(title_key)
+
+                # Filter out preprints that have journalArticle alternatives
+                filtered_items = []
+                for it in local_items:
+                    if getattr(it, "item_type", None) == "preprint":
+                        k_doi = ("doi", norm(getattr(it, "doi", None))) if getattr(it, "doi", None) else None
+                        k_title = ("title", norm(getattr(it, "title", None))) if getattr(it, "title", None) else None
+                        drop = False
+                        for k in (k_doi, k_title):
+                            if not k:
+                                continue
+                            best = key_to_best.get(k)
+                            if best is not None and best is not it and getattr(best, "item_type", None) == "journalArticle":
+                                drop = True
+                                break
+                        if drop:
+                            continue
+                    filtered_items.append(it)
+
+                total_items = len(filtered_items)
+                if total_items != candidate_count:
+                    sys.stderr.write(f"After filtering/dedup: {total_items} items to process.\n")
+
+                logger.info(f"Retrieved {total_items} item metadata records from local database")
+                return filtered_items
+
+        except Exception as e:
+            logger.error(f"Error reading from local database: {e}")
+            raise
+
+    def _extract_batch_fulltext(self, items: List[Any]) -> List[Dict[str, Any]]:
+        """
+        Extract fulltext for a batch of items and convert to API-compatible format.
+        Uses parallel extraction with 8 workers (optimized for M1 Pro).
+
+        Args:
+            items: List of NamedTuple items (metadata only)
+
+        Returns:
+            List of API-compatible items with fulltext extracted
+        """
+        if not items:
+            return []
+
+        logger.info(f"Extracting fulltext for batch of {len(items)} items...")
+
+        # Parallel fulltext extraction
+        max_workers = 8
+        extraction_data = {}  # item_key -> {"fulltext": ..., "chunks": ..., "source": ..., "metadata": ...}
+
+        def extract_item_fulltext(it):
+            """Extract fulltext for a single item (thread-safe). Returns (item_key, extraction_dict)."""
+            item_key = it.key
+            extraction_result = {"fulltext": "", "chunks": [], "source": "", "metadata": {}}
+
+            try:
+                # Create thread-local reader to avoid SQLite threading issues
+                from agent_zot.database.local_zotero import LocalZoteroReader
+                thread_reader = LocalZoteroReader()
+                result = thread_reader.extract_fulltext_for_item(it.item_id)
+
+                if result:
+                    # Check if tuple format first
+                    if isinstance(result, tuple) and len(result) == 2:
+                        data, source = result
+                        # Tuple can contain (dict, source) or (string, source)
+                        if isinstance(data, dict) and "chunks" in data:
+                            # New Docling format: (dict_with_chunks, "docling")
+                            extraction_result["chunks"] = data["chunks"]
+                            extraction_result["fulltext"] = data.get("text", "")
+                            extraction_result["source"] = source
+                            extraction_result["metadata"] = data.get("metadata", {})
+                        else:
+                            # Legacy format: (text_string, source)
+                            extraction_result["fulltext"] = data if isinstance(data, str) else str(data)
+                            extraction_result["source"] = source
+                    # Plain dict format (without tuple wrapper)
+                    elif isinstance(result, dict) and "chunks" in result:
+                        extraction_result["chunks"] = result["chunks"]
+                        extraction_result["fulltext"] = result.get("text", "")
+                        extraction_result["source"] = "docling"
+                        extraction_result["metadata"] = result.get("metadata", {})
+                    # Plain string format
+                    else:
+                        extraction_result["fulltext"] = result
+                        extraction_result["source"] = "pdfminer"
+            except Exception as e:
+                logger.error(f"Error extracting fulltext for item {it.item_id}: {e}")
+
+            return (item_key, extraction_result)
+
+        # Extract in parallel
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_item = {executor.submit(extract_item_fulltext, it): it for it in items}
+
+            for future in as_completed(future_to_item):
+                try:
+                    item_key, extraction_result = future.result()
+                    extraction_data[item_key] = extraction_result
+                except Exception as e:
+                    logger.error(f"Error extracting fulltext: {e}")
+
+        # Convert to API-compatible format
+        api_items = []
+        for item in items:
+            item_extraction = extraction_data.get(item.key, {"fulltext": "", "chunks": [], "source": "", "metadata": {}})
+
+            api_item = {
+                "key": item.key,
+                "version": 0,
+                "data": {
+                    "key": item.key,
+                    "itemType": getattr(item, 'item_type', None) or "journalArticle",
+                    "title": item.title or "",
+                    "abstractNote": item.abstract or "",
+                    "extra": item.extra or "",
+                    "fulltext": item_extraction["fulltext"],
+                    "fulltextSource": item_extraction["source"],
+                    "chunks": item_extraction["chunks"],
+                    "docling_metadata": item_extraction["metadata"],
+                    "dateAdded": item.date_added,
+                    "dateModified": item.date_modified,
+                    "creators": self._parse_creators_string(item.creators) if item.creators else []
+                }
+            }
+
+            if item.notes:
+                api_item["data"]["notes"] = item.notes
+
+            api_items.append(api_item)
+
+        logger.info(f"Extracted fulltext for {len(api_items)} items")
+        return api_items
+
     def _get_items_from_local_db(self, limit: Optional[int] = None, extract_fulltext: bool = False) -> List[Dict[str, Any]]:
         """
         Get items from local Zotero database.
-        
+
         Args:
             limit: Optional limit on number of items
             extract_fulltext: Whether to extract fulltext content
-            
+
         Returns:
             List of items in API-compatible format
         """
@@ -689,47 +879,97 @@ class ZoteroSemanticSearch:
             if force_full_rebuild:
                 logger.info("Force rebuilding database...")
                 self.qdrant_client.reset_collection()
-            
-            # Get all items from either local DB or API
-            # Get all items from either local DB or API
-            all_items = self._get_items_from_source(limit=limit, extract_fulltext=extract_fulltext)
-            
-            stats["total_items"] = len(all_items)
-            logger.info(f"Found {stats['total_items']} items to process")
-            # Immediate progress line so users see counts up-front
-            try:
-                sys.stderr.write(f"Total items to index: {stats['total_items']}\n")
-            except Exception:
-                pass
-            
-            # Process items in batches
-            batch_size = 50
-            # Track next milestone for progress printing (every 10 items)
-            next_milestone = 10 if stats["total_items"] >= 10 else stats["total_items"]
-            # Count of items seen (including skipped), used for progress milestones
-            seen_items = 0
-            for i in range(0, len(all_items), batch_size):
-                batch = all_items[i:i + batch_size]
-                batch_stats = self._process_item_batch(batch, force_full_rebuild)
-                
-                stats["processed_items"] += batch_stats["processed"]
-                stats["added_items"] += batch_stats["added"]
-                stats["updated_items"] += batch_stats["updated"]
-                stats["skipped_items"] += batch_stats["skipped"]
-                stats["errors"] += batch_stats["errors"]
-                seen_items += len(batch)
-                
-                logger.info(f"Processed {seen_items}/{stats['total_items']} items (added: {stats['added_items']}, skipped: {stats['skipped_items']})")
-                # Print progress every 10 seen items (even if all are skipped)
+
+            # STREAMING BATCH PROCESSING:
+            # Get lightweight metadata list first (fast), then extract/process in streaming batches
+            if extract_fulltext and is_local_mode():
+                # Get metadata-only list (fast - no fulltext extraction yet)
+                metadata_items = self._get_item_metadata_list(limit=limit)
+                stats["total_items"] = len(metadata_items)
+                logger.info(f"Found {stats['total_items']} items to process in streaming batches")
+
                 try:
-                    while seen_items >= next_milestone and next_milestone > 0:
-                        sys.stderr.write(f"Processed: {next_milestone}/{stats['total_items']} added:{stats['added_items']} skipped:{stats['skipped_items']} errors:{stats['errors']}\n")
-                        next_milestone += 10
-                        if next_milestone > stats["total_items"]:
-                            next_milestone = stats["total_items"]
-                            break
+                    sys.stderr.write(f"Total items to index: {stats['total_items']}\n")
+                    sys.stderr.write("Using STREAMING BATCH mode: extract → embed → Qdrant → Neo4j per batch\n")
                 except Exception:
                     pass
+
+                # Process in streaming batches through ENTIRE pipeline
+                batch_size = 50
+                next_milestone = 10 if stats["total_items"] >= 10 else stats["total_items"]
+                seen_items = 0
+
+                for i in range(0, len(metadata_items), batch_size):
+                    batch_metadata = metadata_items[i:i + batch_size]
+                    logger.info(f"Processing streaming batch {i//batch_size + 1}: items {i+1}-{min(i+batch_size, stats['total_items'])}")
+
+                    # Extract fulltext for THIS batch only (not all items)
+                    batch_with_fulltext = self._extract_batch_fulltext(batch_metadata)
+
+                    # Process batch through embedding + Qdrant + Neo4j
+                    batch_stats = self._process_item_batch(batch_with_fulltext, force_full_rebuild)
+
+                    stats["processed_items"] += batch_stats["processed"]
+                    stats["added_items"] += batch_stats["added"]
+                    stats["updated_items"] += batch_stats["updated"]
+                    stats["skipped_items"] += batch_stats["skipped"]
+                    stats["errors"] += batch_stats["errors"]
+                    seen_items += len(batch_metadata)
+
+                    logger.info(f"Batch complete: {seen_items}/{stats['total_items']} items (added: {stats['added_items']}, skipped: {stats['skipped_items']})")
+
+                    # Progress reporting
+                    try:
+                        while seen_items >= next_milestone and next_milestone > 0:
+                            sys.stderr.write(f"Processed: {next_milestone}/{stats['total_items']} added:{stats['added_items']} skipped:{stats['skipped_items']} errors:{stats['errors']}\n")
+                            next_milestone += 10
+                            if next_milestone > stats["total_items"]:
+                                next_milestone = stats["total_items"]
+                                break
+                    except Exception:
+                        pass
+
+                    # Explicit garbage collection after each batch
+                    gc.collect()
+
+            else:
+                # API mode or no fulltext extraction: use old method (load all at once)
+                all_items = self._get_items_from_source(limit=limit, extract_fulltext=extract_fulltext)
+                stats["total_items"] = len(all_items)
+                logger.info(f"Found {stats['total_items']} items to process")
+
+                try:
+                    sys.stderr.write(f"Total items to index: {stats['total_items']}\n")
+                except Exception:
+                    pass
+
+                # Process items in batches
+                batch_size = 50
+                next_milestone = 10 if stats["total_items"] >= 10 else stats["total_items"]
+                seen_items = 0
+
+                for i in range(0, len(all_items), batch_size):
+                    batch = all_items[i:i + batch_size]
+                    batch_stats = self._process_item_batch(batch, force_full_rebuild)
+
+                    stats["processed_items"] += batch_stats["processed"]
+                    stats["added_items"] += batch_stats["added"]
+                    stats["updated_items"] += batch_stats["updated"]
+                    stats["skipped_items"] += batch_stats["skipped"]
+                    stats["errors"] += batch_stats["errors"]
+                    seen_items += len(batch)
+
+                    logger.info(f"Processed {seen_items}/{stats['total_items']} items (added: {stats['added_items']}, skipped: {stats['skipped_items']})")
+
+                    try:
+                        while seen_items >= next_milestone and next_milestone > 0:
+                            sys.stderr.write(f"Processed: {next_milestone}/{stats['total_items']} added:{stats['added_items']} skipped:{stats['skipped_items']} errors:{stats['errors']}\n")
+                            next_milestone += 10
+                            if next_milestone > stats["total_items"]:
+                                next_milestone = stats["total_items"]
+                                break
+                    except Exception:
+                        pass
             
             # Update last update time
             self.update_config["last_update"] = datetime.now().isoformat()
