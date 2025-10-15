@@ -622,6 +622,155 @@ class Neo4jGraphRAGClient:
                 **results
             }
 
+    def add_papers_with_chunks(self,
+                               papers: List[Dict[str, Any]],
+                               batch_size: int = 5) -> Dict[str, Any]:
+        """
+        Add papers with chunk-level entity extraction to Neo4j knowledge graph.
+
+        This implements Qdrant documentation best practices for GraphRAG:
+        - Uses identical Docling chunks as Qdrant (not re-chunked)
+        - Creates Chunk nodes with bidirectional links to Qdrant points
+        - Extracts entities per chunk for granular retrieval
+        - Links chunks to paper nodes for hierarchy
+
+        Args:
+            papers: List of paper dictionaries with keys:
+                   - paper_key, title, abstract, authors, year
+                   - chunks: List of chunk dicts with chunk_id, text, qdrant_point_id, headings
+            batch_size: Number of papers to process concurrently (default: 5, lower than paper-level due to more LLM calls)
+
+        Returns:
+            Dictionary with success/failure counts and chunk statistics
+        """
+        results = {
+            "total": len(papers),
+            "successful": 0,
+            "failed": 0,
+            "total_chunks": 0,
+            "errors": []
+        }
+
+        try:
+            # Process papers in batches
+            for i in range(0, len(papers), batch_size):
+                batch = papers[i:i + batch_size]
+                logger.info(f"Processing chunk-level batch {i//batch_size + 1}/{(len(papers) + batch_size - 1)//batch_size} ({len(batch)} papers)")
+
+                for paper in batch:
+                    paper_key = paper['paper_key']
+                    chunks = paper.get('chunks', [])
+
+                    try:
+                        # Step 1: Create/update Paper node
+                        with self.driver.session(database=self.neo4j_database) as session:
+                            session.run(
+                                """
+                                MERGE (p:Paper {item_key: $item_key})
+                                SET p.title = $title,
+                                    p.abstract = $abstract,
+                                    p.year = $year,
+                                    p.authors = $authors
+                                """,
+                                item_key=paper_key,
+                                title=paper['title'],
+                                abstract=paper.get('abstract', ''),
+                                year=paper.get('year'),
+                                authors=paper.get('authors', [])
+                            )
+
+                        # Step 2: Create Chunk nodes with Qdrant links
+                        with self.driver.session(database=self.neo4j_database) as session:
+                            for chunk in chunks:
+                                chunk_id = chunk['chunk_id']
+                                qdrant_point_id = chunk['qdrant_point_id']
+
+                                session.run(
+                                    """
+                                    MATCH (p:Paper {item_key: $paper_key})
+                                    MERGE (c:Chunk {chunk_id: $chunk_id, paper_key: $paper_key})
+                                    SET c.qdrant_point_id = $qdrant_point_id,
+                                        c.headings = $headings
+                                    MERGE (p)-[:HAS_CHUNK]->(c)
+                                    """,
+                                    paper_key=paper_key,
+                                    chunk_id=f"{paper_key}_chunk_{chunk_id}",
+                                    qdrant_point_id=qdrant_point_id,
+                                    headings=chunk.get('headings', [])
+                                )
+
+                        # Step 3: Extract entities per chunk (not per paper)
+                        for chunk in chunks:
+                            chunk_text = chunk['text']
+
+                            # Create extraction template
+                            extraction_template = ERExtractionTemplate(template=RESEARCH_EXTRACTION_PROMPT)
+                            lexical_config = LexicalGraphConfig({
+                                "id": "__Entity__",
+                                "label": "__Entity__",
+                                "text": "text",
+                                "embedding": "embedding"
+                            })
+
+                            # Create pipeline for this chunk
+                            chunk_pipeline_kwargs = {
+                                "llm": self.llm,
+                                "driver": self.driver,
+                                "entities": self.entity_types,
+                                "relations": self.relation_types,
+                                "from_pdf": False,
+                                "prompt_template": extraction_template,
+                                "perform_entity_resolution": True,
+                                "lexical_graph_config": lexical_config
+                            }
+
+                            # Only add embedder if available
+                            if self.embeddings is not None:
+                                chunk_pipeline_kwargs["embedder"] = self.embeddings
+
+                            kg_builder = SimpleKGPipeline(**chunk_pipeline_kwargs)
+
+                            # Extract entities from this chunk
+                            try:
+                                kg_builder.run_async(text=chunk_text)
+
+                                # Link extracted entities to this specific chunk
+                                with self.driver.session(database=self.neo4j_database) as session:
+                                    session.run(
+                                        """
+                                        MATCH (c:Chunk {chunk_id: $chunk_id, paper_key: $paper_key})
+                                        MATCH (e)
+                                        WHERE e.id IS NOT NULL AND e.id <> $chunk_id
+                                        MERGE (c)-[:CONTAINS_ENTITY]->(e)
+                                        """,
+                                        paper_key=paper_key,
+                                        chunk_id=f"{paper_key}_chunk_{chunk['chunk_id']}"
+                                    )
+
+                            except Exception as e:
+                                logger.warning(f"Error extracting entities for chunk {chunk['chunk_id']} of {paper_key}: {e}")
+                                # Continue with other chunks even if one fails
+
+                        results["successful"] += 1
+                        results["total_chunks"] += len(chunks)
+                        logger.info(f"Successfully added paper {paper['title']} with {len(chunks)} chunks")
+
+                    except Exception as e:
+                        logger.error(f"Error adding paper with chunks {paper_key}: {e}")
+                        results["failed"] += 1
+                        results["errors"].append({"paper_key": paper_key, "error": str(e)})
+
+            logger.info(f"Chunk-level processing complete: {results['successful']}/{results['total']} papers, {results['total_chunks']} total chunks")
+            return results
+
+        except Exception as e:
+            logger.error(f"Fatal error in chunk-level batch processing: {e}")
+            return {
+                "status": "error",
+                "error": str(e),
+                **results
+            }
+
     def search_entities(self,
                        query: str,
                        entity_types: Optional[List[str]] = None,

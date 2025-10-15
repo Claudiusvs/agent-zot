@@ -855,10 +855,11 @@ class ZoteroSemanticSearch:
             force_full_rebuild = self.update_config.get("force_rebuild", False)
             logger.info(f"Using force_rebuild from config: {force_full_rebuild}")
 
-        # Read extract_fulltext from config if not explicitly provided
+        # HARDCODED: Always extract fulltext for local mode (agent-zot's primary use case)
+        # Can be overridden by explicit CLI flag if needed
         if extract_fulltext is None:
-            extract_fulltext = self.update_config.get("extract_fulltext", False)
-            logger.info(f"Using extract_fulltext from config: {extract_fulltext}")
+            extract_fulltext = True  # Always extract fulltext by default
+            logger.info(f"Using extract_fulltext default: {extract_fulltext} (hardcoded for local mode)")
 
         logger.info("Starting database update...")
         start_time = datetime.now()
@@ -1075,6 +1076,10 @@ class ZoteroSemanticSearch:
                         chunk_metadata["chunk_headings"] = chunk_meta.get("headings", [])
                         chunk_metadata["is_chunk"] = True
 
+                        # Add Neo4j references for bidirectional linking (GraphRAG integration)
+                        chunk_metadata["neo4j_paper_id"] = f"paper:{item_key}"
+                        chunk_metadata["neo4j_chunk_id"] = f"chunk:{item_key}_{chunk_id}"
+
                         documents.append(chunk_text)
                         metadatas.append(chunk_metadata)
                         ids.append(chunk_point_id)
@@ -1101,6 +1106,9 @@ class ZoteroSemanticSearch:
 
                     metadata = self._create_metadata(item)
                     metadata["is_chunk"] = False  # Mark as document-level
+
+                    # Add Neo4j references for bidirectional linking (GraphRAG integration)
+                    metadata["neo4j_paper_id"] = f"paper:{item_key}"
 
                     if not doc_text.strip():
                         stats["skipped"] += 1
@@ -1134,20 +1142,25 @@ class ZoteroSemanticSearch:
 
     def _add_items_to_graph(self, items: List[Dict[str, Any]], documents: List[str]):
         """
-        Add items to Neo4j knowledge graph using batch processing.
+        Add items to Neo4j knowledge graph with chunk-level entity extraction.
+
+        Uses the SAME Docling chunks as Qdrant for consistent representation.
+        Creates both Paper nodes and Chunk nodes, with entities linked at chunk level.
 
         Args:
-            items: List of Zotero items
-            documents: Corresponding document texts (unused - kept for compatibility)
+            items: List of Zotero items with Docling chunks
+            documents: Corresponding document texts (for compatibility)
 
-        Note: We extract full document text from item.data.fulltext instead of using
-        the documents parameter, because documents contains chunks not full texts.
+        Note: This implementation follows Qdrant documentation best practices for GraphRAG:
+        - Uses identical Docling chunks for both Qdrant and Neo4j
+        - Creates chunk-level nodes in Neo4j with bidirectional links to Qdrant
+        - Extracts entities per chunk (not per paper) for granular retrieval
         """
         if not self.neo4j_client:
             return
 
-        # Prepare papers for batch processing
-        papers = []
+        # Prepare papers with chunk-level data
+        papers_with_chunks = []
         for item in items:
             try:
                 item_data = item.get("data", {})
@@ -1155,17 +1168,17 @@ class ZoteroSemanticSearch:
                 title = item_data.get("title", "Untitled")
                 abstract = item_data.get("abstractNote", "")
 
-                # Extract full document text from item data (where Docling stored it)
+                # Extract Docling chunks (same as used in Qdrant)
                 fulltext_data = item_data.get("fulltext", "")
-                if isinstance(fulltext_data, dict):
-                    # Docling format: {"text": "...", "chunks": [...], ...}
-                    doc_text = fulltext_data.get("text", "")
-                else:
-                    doc_text = fulltext_data if fulltext_data else ""
+                docling_chunks = []
 
-                # Skip if no meaningful text
-                if not doc_text or len(doc_text.strip()) < 100:
-                    logger.debug(f"Skipping Neo4j extraction for {paper_key}: insufficient text")
+                if isinstance(fulltext_data, dict):
+                    # Docling format: {"text": "...", "chunks": [...]}
+                    docling_chunks = fulltext_data.get("chunks", [])
+
+                # Skip if no chunks (fall back to paper-level only)
+                if not docling_chunks:
+                    logger.debug(f"No Docling chunks for {paper_key}, skipping chunk-level extraction")
                     continue
 
                 # Extract authors
@@ -1179,30 +1192,52 @@ class ZoteroSemanticSearch:
                 except Exception:
                     year = None
 
-                # Split document into chunks for context (first 5000 chars, split into 1000-char chunks)
-                doc_sample = doc_text[:5000]
-                chunks = [doc_sample[i:i+1000] for i in range(0, len(doc_sample), 1000)]
+                # Prepare chunk data with Qdrant point IDs for bidirectional linking
+                chunk_data = []
+                for chunk in docling_chunks[:20]:  # Limit to first 20 chunks for LLM processing
+                    chunk_id = chunk.get("chunk_id", 0)
+                    chunk_text = chunk.get("text", "")
 
-                papers.append({
-                    "paper_key": paper_key,
-                    "title": title,
-                    "abstract": abstract,
-                    "authors": authors,
-                    "year": year,
-                    "chunks": chunks
-                })
+                    if not chunk_text.strip():
+                        continue
+
+                    # Include metadata for context (headings help entity extraction)
+                    chunk_meta = chunk.get("meta", {})
+                    headings = chunk_meta.get("headings", [])
+
+                    # Create context-aware chunk representation
+                    chunk_context = chunk_text
+                    if headings:
+                        chunk_context = f"[Section: {' > '.join(headings)}]\n{chunk_text}"
+
+                    chunk_data.append({
+                        "chunk_id": chunk_id,
+                        "text": chunk_context,
+                        "qdrant_point_id": f"{paper_key}_chunk_{chunk_id}",  # Link to Qdrant
+                        "headings": headings
+                    })
+
+                if chunk_data:
+                    papers_with_chunks.append({
+                        "paper_key": paper_key,
+                        "title": title,
+                        "abstract": abstract,
+                        "authors": authors,
+                        "year": year,
+                        "chunks": chunk_data  # Now contains full chunk objects with metadata
+                    })
 
             except Exception as e:
                 logger.error(f"Error preparing item {item.get('key', 'unknown')} for graph: {e}")
 
-        # Add all papers to graph in batches (batch_size=10 for optimal LLM throughput)
-        if papers:
+        # Add papers with chunk-level extraction to Neo4j
+        if papers_with_chunks:
             try:
-                logger.info(f"Extracting entities/relationships for {len(papers)} papers to Neo4j...")
-                result = self.neo4j_client.add_papers_batch(papers, batch_size=10)
-                logger.info(f"Neo4j GraphRAG: Added {result.get('successful', 0)} papers (failed: {result.get('failed', 0)})")
+                logger.info(f"Extracting chunk-level entities for {len(papers_with_chunks)} papers to Neo4j...")
+                result = self.neo4j_client.add_papers_with_chunks(papers_with_chunks, batch_size=5)
+                logger.info(f"Neo4j GraphRAG: Added {result.get('successful', 0)} papers with {result.get('total_chunks', 0)} chunks (failed: {result.get('failed', 0)})")
             except Exception as e:
-                logger.error(f"Error adding papers batch to Neo4j graph: {e}")
+                logger.error(f"Error adding papers with chunks to Neo4j graph: {e}")
 
     def search(self,
                query: str,
