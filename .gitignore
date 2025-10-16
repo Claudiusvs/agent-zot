@@ -32,3 +32,4 @@ config.json
 # IDE
 .vscode/
 .idea/
+.mcp.json.backup
