@@ -1331,6 +1331,41 @@ A: Edit `config.json` → `semantic_search.docling` section. The values from con
 
 **Status: Non-Critical** - Production-ready as-is. These are quality-of-life improvements for future consideration.
 
+### Git History Cleanup (Security - Medium Priority)
+
+**Issue**: OpenAI API key exposed in commit `376e298` via `.mcp.json.backup` file
+- File has been deleted and added to .gitignore (commits `1953a7f` and `11ea750`)
+- Key still exists in git history (unpushed local commits)
+- GitHub push protection blocking push until resolved
+
+**Recommended Solution (Option B - Clean History):**
+```bash
+# Install BFG Repo-Cleaner
+brew install bfg
+
+# Remove sensitive file from ALL history
+bfg --delete-files .mcp.json.backup
+
+# Clean up
+git reflog expire --expire=now --all && git gc --prune=now --aggressive
+
+# Force push
+git push origin main --force
+```
+
+**Alternative (Option A - Quick Push, Less Secure):**
+1. Visit GitHub URL to allow secret: https://github.com/Claudiusvs/agent-zot/security/secret-scanning/unblock-secret/34AMSfQk7KyUxocVrBorvfqCVe9
+2. `git push origin main --force`
+3. **IMMEDIATELY** revoke OpenAI key at: https://platform.openai.com/api-keys
+4. Generate new key and update config
+
+**Why This Matters:**
+- API keys in git history can be discovered even after deletion
+- Anyone with repo access could extract the key from history
+- Best practice: Never commit secrets, even to private repos
+
+**When to Fix:** Before making repo public or adding collaborators. Not urgent for private solo development.
+
 ### Audit Warnings (Medium Priority)
 
 Comprehensive audit completed 2025-10-13. See `AUDIT_REPORT.md` for details.
