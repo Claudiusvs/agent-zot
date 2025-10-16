@@ -248,7 +248,7 @@ class LocalZoteroReader:
         # Extract item_key from file path (Zotero stores PDFs in /storage/ABC123XY/file.pdf)
         item_key = file_path.parent.name if file_path.parent.name != "storage" else None
 
-        # Check ParseCache before expensive Docling parsing
+        # Check ParseCache before expensive GROBID+PyMuPDF4LLM parsing
         if item_key:
             pdf_md5 = self._compute_pdf_md5(file_path)
             if self.parse_cache.has_cached_parse(item_key, pdf_md5):
@@ -293,21 +293,20 @@ import json
 from pathlib import Path
 
 try:
-    # Import from installed package
-    from agent_zot.parsers.docling import DoclingParser
+    # Import GROBID + PyMuPDF4LLM hybrid parser (fixes reference section issue)
+    from agent_zot.parsers.grobid_pymupdf import HybridScientificParser
 
-    parser = DoclingParser(
+    parser = HybridScientificParser(
         tokenizer="{parser_config.get("tokenizer", "BAAI/bge-m3")}",
         max_tokens={parser_config.get("max_tokens", 512)},
         merge_peers={parser_config.get("merge_peers", True)},
         num_threads={parser_config.get("num_threads", 2)},
-        do_formula_enrichment={parser_config.get("do_formula_enrichment", False)},
-        do_table_structure={parser_config.get("parse_tables", False)},
         enable_ocr_fallback={ocr_config.get("fallback_enabled", False)},
-        ocr_min_text_threshold={ocr_config.get("min_text_threshold", 100)}
+        ocr_min_text_threshold={ocr_config.get("min_text_threshold", 100)},
+        grobid_url="http://localhost:8070"
     )
 
-    result = parser.parse_pdf("{str(file_path)}", force_ocr=False)
+    result = parser.parse_pdf("{str(file_path)}", filter_references=True)
 
     if result and result.get("chunks"):
         # Convert to JSON-serializable format
@@ -338,7 +337,7 @@ except Exception as e:
                 # Run with configurable timeout (default: 3600s = 1 hour)
                 if subprocess_timeout is None:
                     # No timeout - wait forever (for extremely large documents)
-                    logging.info(f"Docling parsing {file_path.name} (no timeout)")
+                    logging.info(f"GROBID+PyMuPDF4LLM parsing {file_path.name} (no timeout)")
                     proc = subprocess.run(
                         [sys.executable, "-c", subprocess_code],
                         capture_output=True
@@ -346,7 +345,7 @@ except Exception as e:
                 else:
                     # With timeout (recommended)
                     timeout_mins = subprocess_timeout / 60
-                    logging.info(f"Docling parsing {file_path.name} (timeout: {timeout_mins:.0f}min)")
+                    logging.info(f"GROBID+PyMuPDF4LLM parsing {file_path.name} (timeout: {timeout_mins:.0f}min)")
                     proc = subprocess.run(
                         [sys.executable, "-c", subprocess_code],
                         timeout=subprocess_timeout,
@@ -358,14 +357,15 @@ except Exception as e:
                     with open(result_file) as f:
                         result = _json.load(f)
                     result_file.unlink()
-                    logging.info(f"✓ Docling parsed {file_path.name} ({len(result['chunks'])} chunks)")
+                    logging.info(f"✓ GROBID+PyMuPDF4LLM parsed {file_path.name} ({len(result['chunks'])} chunks)")
 
                     # Cache the parsed result for future re-chunking without re-parsing
                     if item_key:
                         chunk_config = {
                             "tokenizer": parser_config.get("tokenizer", "BAAI/bge-m3"),
                             "max_tokens": parser_config.get("max_tokens", 512),
-                            "merge_peers": parser_config.get("merge_peers", True)
+                            "merge_peers": parser_config.get("merge_peers", True),
+                            "parser_version": "3.0_sentence_aware_chunking"  # Sentence boundary enforcement working
                         }
                         self.parse_cache.cache_parse(
                             item_key=item_key,

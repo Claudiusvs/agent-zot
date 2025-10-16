@@ -1053,8 +1053,9 @@ class ZoteroSemanticSearch:
                     # Create base metadata for this document
                     base_metadata = self._create_metadata(item)
 
-                    for chunk in chunks:
-                        chunk_id = chunk.get("chunk_id", 0)
+                    for chunk_idx, chunk in enumerate(chunks):
+                        # Parser provides 'chunk_index', fallback to enumerate index
+                        chunk_id = chunk.get("chunk_index", chunk_idx)
                         chunk_text = chunk.get("text", "")
                         chunk_meta = chunk.get("meta", {})
 

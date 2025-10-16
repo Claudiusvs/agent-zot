@@ -215,12 +215,27 @@ class DefaultEmbeddingFunction:
         # OPTIMIZATION: Set batch_size for GPU efficiency
         # 32 chunks/batch balances GPU memory vs throughput on M1 Pro (16GB RAM, ~6GB MPS)
         # BGE-M3 (1024D) embeddings: ~32 chunks uses ~2-3GB GPU memory, leaving room for OS
-        embeddings = self.model.encode(
-            input,
-            batch_size=32,  # GPU batch size for optimal MPS utilization
-            show_progress_bar=False  # Reduce log noise
-        )
-        return embeddings.tolist()
+        try:
+            embeddings = self.model.encode(
+                input,
+                batch_size=32,  # GPU batch size for optimal MPS utilization
+                show_progress_bar=False  # Reduce log noise
+            )
+            return embeddings.tolist()
+        except RuntimeError as e:
+            # MPS out of memory - fallback to CPU
+            if "out of memory" in str(e).lower() or "mps" in str(e).lower():
+                logger.warning(f"MPS OOM detected ({e}), retrying on CPU with smaller batches...")
+                import torch
+                # Move model to CPU
+                self.model = self.model.to('cpu')
+                embeddings = self.model.encode(
+                    input,
+                    batch_size=16,  # Smaller batch for CPU
+                    show_progress_bar=False
+                )
+                return embeddings.tolist()
+            raise
 
     def get_dimension(self) -> int:
         """Get the dimension of embeddings for this model."""
