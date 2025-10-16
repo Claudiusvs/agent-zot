@@ -18,6 +18,7 @@ from docling.datamodel.pipeline_options import PdfPipelineOptions, AcceleratorOp
 from docling.datamodel.base_models import InputFormat
 from docling.backend.docling_parse_v2_backend import DoclingParseV2DocumentBackend
 from docling.backend.docling_parse_backend import DoclingParseDocumentBackend
+from docling_core.types.doc import DocItemLabel
 
 logger = logging.getLogger(__name__)
 
@@ -242,7 +243,19 @@ class DoclingParser:
             chunks = []
             chunk_iter = self.chunker.chunk(doc)
 
+            # Filter chunks that contain references/headers/footers (solves 54% contamination)
+            exclude_labels = {DocItemLabel.REFERENCE, DocItemLabel.PAGE_HEADER, DocItemLabel.PAGE_FOOTER}
+            filtered_chunk_count = 0
+
             for i, chunk in enumerate(chunk_iter):
+                # Skip chunks that are primarily references/headers/footers
+                if chunk.meta.doc_items:
+                    chunk_labels = {item.label for item in chunk.meta.doc_items if hasattr(item, 'label')}
+                    # If chunk is mostly excluded labels, skip it
+                    if chunk_labels and chunk_labels.issubset(exclude_labels):
+                        filtered_chunk_count += 1
+                        continue
+
                 # Extract headings
                 headings = []
                 if chunk.meta.headings:
@@ -255,7 +268,7 @@ class DoclingParser:
                             headings.append(str(h))
 
                 chunk_data = {
-                    "chunk_id": i,
+                    "chunk_id": len(chunks),  # Sequential ID after filtering
                     "text": self.chunker.serialize(chunk),
                     "meta": {
                         "doc_items": [item.self_ref for item in chunk.meta.doc_items] if chunk.meta.doc_items else [],
@@ -263,6 +276,9 @@ class DoclingParser:
                     }
                 }
                 chunks.append(chunk_data)
+
+            if filtered_chunk_count > 0:
+                logger.info(f"Filtered {filtered_chunk_count} reference/header/footer chunks from {Path(pdf_path).name}")
 
             # Extract tables
             tables = []

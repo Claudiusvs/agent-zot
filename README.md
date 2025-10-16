@@ -83,17 +83,22 @@ Agent-Zot transforms your Zotero research library into an intelligent, searchabl
 
 ```bash
 # Qdrant (vector database) - Required
+docker volume create agent-zot-qdrant-data
 docker run -d -p 6333:6333 -p 6334:6334 \
-  -v $(pwd)/qdrant_storage:/qdrant/storage:z \
+  -v agent-zot-qdrant-data:/qdrant/storage \
   --name agent-zot-qdrant \
+  --restart unless-stopped \
   qdrant/qdrant
 
 # Neo4j (knowledge graph) - Optional
 # Requires Neo4j 5.23.0+ with APOC plugin for relationship vector support
+docker volume create agent-zot-neo4j-data
 docker run -d -p 7474:7474 -p 7687:7687 \
   -e NEO4J_AUTH=neo4j/demodemo \
   -e NEO4J_PLUGINS='["apoc"]' \
+  -v agent-zot-neo4j-data:/data \
   --name agent-zot-neo4j \
+  --restart unless-stopped \
   neo4j:5.23.0
 ```
 
@@ -117,6 +122,22 @@ nano ~/.config/agent-zot/config.json
 
 #### 3️⃣ Index Your Library
 
+**For large libraries (1,000+ papers)**, use the background helper to survive laptop closure:
+
+```bash
+# Full rebuild in persistent tmux session (10-40 hours)
+./scripts/index-background.sh --full
+
+# Test with first 10 items
+./scripts/index-background.sh --limit 10
+
+# Session survives: terminal closure, laptop sleep, shell exit
+# Monitor: tail -f /tmp/agent-zot-index-*.log
+# Detach: Ctrl+B then D
+```
+
+**For quick updates or small libraries:**
+
 ```bash
 # Full-text indexing (recommended)
 agent-zot update-db --fulltext
@@ -127,6 +148,8 @@ agent-zot update-db
 # Force complete rebuild (use sparingly)
 agent-zot update-db --force-rebuild --fulltext
 ```
+
+**💡 See [Long-Running Indexing Jobs](docs/guides/configuration.md#long-running-indexing-jobs) for details.**
 
 **🎉 That's it!** Your library is now searchable. Ask Claude questions like:
 
@@ -167,10 +190,14 @@ Agent-Zot uses a single JSON config at `~/.config/agent-zot/config.json`. Here a
 ### 📚 Advanced Configuration
 
 **For complete details**, see:
-- **[CONFIGURATION.md](docs/guides/configuration.md)** - Full reference guide with active pipeline overview
+- **[configuration.md](docs/guides/configuration.md)** - Comprehensive guide with explanations and rationale
+- **[SETTINGS_REFERENCE.md](docs/guides/SETTINGS_REFERENCE.md)** - Quick reference inventory (100+ settings)
 - **[CLAUDE.md](docs/CLAUDE.md)** - Complete technical documentation with detailed execution flow
 
-**💡 New to Agent-Zot?** Check out the [Active Pipeline Reference](docs/CLAUDE.md#active-pipeline-reference) to understand exactly which files and code paths are used during indexing. This helps prevent confusion and ensures you're configuring the right settings.
+**💡 New to Agent-Zot?**
+- **Understanding settings?** → Start with [configuration.md](docs/guides/configuration.md) for WHY each setting exists
+- **Quick lookup?** → Use [SETTINGS_REFERENCE.md](docs/guides/SETTINGS_REFERENCE.md) to verify WHAT values are active
+- **Deep dive?** → Check [Active Pipeline Reference](docs/CLAUDE.md#active-pipeline-reference) for exact execution flow
 
 ### 🎨 Performance Tuning
 

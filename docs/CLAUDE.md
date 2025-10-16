@@ -2,40 +2,23 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## 🚨 CRITICAL ISSUES TO FIX - Docling Configuration (2025-10-15)
+## 📖 Configuration Documentation
 
-**Context**: Database audit revealed only 1% of chunks contain main paper content (Introduction/Methods/Results), while 42% contain only References. Root cause identified as tokenizer mismatch.
+Agent-Zot has two complementary configuration references:
 
-### Issue 1: CRITICAL - Hardcoded Tokenizer Mismatch (Priority 1)
-**File**: `src/agent_zot/parsers/docling.py:29`
-**Current**: `tokenizer: str = "sentence-transformers/all-MiniLM-L6-v2"` (256 token limit)
-**Should be**: `tokenizer: str = "BAAI/bge-m3"` (8192 token limit)
-**Impact**: Creates 256-token chunks instead of 512-token chunks, causing severe fragmentation and extracting primarily References sections
-**Fix**: Change line 29 default to match embedding model
+- **[configuration.md](guides/configuration.md)** - Comprehensive guide with explanations, rationale, and setup instructions
+- **[SETTINGS_REFERENCE.md](guides/SETTINGS_REFERENCE.md)** - Exhaustive inventory of all 100+ settings ([CONFIG] vs [CODE] labels) for quick lookups and auditing
 
-### Issue 2: IMPORTANT - Suboptimal Thread Count (Priority 2)
-**File**: `~/.config/agent-zot/config.json`
-**Current**: `"num_threads": 2`
-**Should be**: `"num_threads": 10`
-**Impact**: Using only 25% of available CPU cores (M1 Pro has 8 performance cores), extraction 4-5x slower than necessary
-**Fix**: Update config to use 8-10 threads
+**When to use which:**
+- Need to understand WHY a setting exists? → configuration.md
+- Need to verify WHAT value a setting has RIGHT NOW? → SETTINGS_REFERENCE.md
+- Making changes? → Read configuration.md first, verify with SETTINGS_REFERENCE.md after
 
-### Issue 3: IMPORTANT - Tables Not Parsed (Priority 2)
-**File**: `~/.config/agent-zot/config.json`
-**Current**: `"parse_tables": false`
-**Should be**: `"parse_tables": true`
-**Impact**: Tables extracted as garbled plain text, losing structure critical for academic papers
-**Research**: Financial Report Chunking (2024) showed 50% fewer chunks with higher accuracy when preserving tables
-**Fix**: Enable table structure parsing
-
-### Issue 4: IMPORTANT - OCR Fallback Disabled (Priority 2)
-**File**: `~/.config/agent-zot/config.json`
-**Current**: `"fallback_enabled": false`
-**Should be**: `"fallback_enabled": true`
-**Impact**: Scanned PDFs (estimated 10-20% of academic papers, especially pre-2010) get minimal/no text extraction
-**Fix**: Enable OCR fallback as safety net
-
-**After fixes**: Configuration will be 95%+ aligned with 2024-2025 state-of-the-art best practices for academic paper chunking.
+**Current Configuration Status (2025-10-16):**
+✅ All settings verified and documented
+✅ Tokenizer alignment fixed (BGE-M3 throughout)
+✅ Hybrid search pipeline matches Qdrant best practices
+✅ Neo4j GraphRAG integration follows recommended patterns
 
 ---
 
@@ -246,7 +229,7 @@ TOTAL:                [ASCII progress bar] XX% complete
 - **Collection:** zotero_library_qdrant
 - **Points stored:** [from Qdrant API]
 - **URL:** http://localhost:6333
-- **Storage:** ~/toolboxes/agent-zot/qdrant_storage/
+- **Storage:** Docker volume `agent-zot-qdrant-data`
 
 ---
 
@@ -386,7 +369,9 @@ python test_pymupdf.py
 
 ## Standard Default Production Pipeline
 
-**📋 IMPORTANT: See [CONFIGURATION.md](./CONFIGURATION.md) for the complete, authoritative configuration reference.**
+**📋 IMPORTANT: See configuration documentation for complete settings:**
+- [configuration.md](guides/configuration.md) - Full guide with explanations and rationale
+- [SETTINGS_REFERENCE.md](guides/SETTINGS_REFERENCE.md) - Quick reference inventory (100+ settings)
 
 This document describes the standard default production pipeline configuration including:
 - All Docling parser settings (HybridChunker, subprocess isolation, timeouts)
@@ -395,7 +380,10 @@ This document describes the standard default production pipeline configuration i
 - Performance optimizations for M1 Pro (8 workers, 16 threads, batch sizes)
 - Critical fixes (subprocess isolation, removed pdfminer fallback)
 
-**When making changes to the pipeline, always update CONFIGURATION.md to reflect the new standard defaults.**
+**When making changes to the pipeline:**
+1. Update configuration.md with full explanation and rationale
+2. Update SETTINGS_REFERENCE.md to reflect new values with [CONFIG] or [CODE] labels
+3. Verify changes with comprehensive audit (see configuration.md for audit process)
 
 ## Architecture
 
@@ -585,7 +573,7 @@ See `config_examples/config_qdrant.json` for template.
 
 ### Database Locations
 
-- **Qdrant storage:** `~/agent-zot/qdrant_storage/` (managed by Docker)
+- **Qdrant storage:** Docker volume `agent-zot-qdrant-data` (managed by Docker)
 - **Zotero SQLite:** Auto-detected in `~/Zotero/zotero.sqlite` (macOS)
 - **Old ChromaDB:** `~/.config/agent-zot/chroma_db/` (deprecated, can be removed)
 
@@ -1036,7 +1024,12 @@ When you run `agent-zot update-db --force-rebuild --fulltext`, here's exactly wh
 **Files**:
 1. `~/.config/agent-zot/config.json` - User overrides (ACTIVE, required)
 2. `src/agent_zot/search/semantic.py` - Code with fallback defaults (ACTIVE)
-3. `docs/guides/configuration.md` - Documentation only (NOT executed)
+3. `docs/guides/configuration.md` - Comprehensive documentation (NOT executed)
+4. `docs/guides/SETTINGS_REFERENCE.md` - Complete settings inventory (NOT executed)
+
+**For complete configuration details, see:**
+- [configuration.md](guides/configuration.md) - Full guide with rationale and setup instructions
+- [SETTINGS_REFERENCE.md](guides/SETTINGS_REFERENCE.md) - Quick reference inventory (100+ settings with [CONFIG] vs [CODE] labels)
 
 **Critical settings in config.json** (these override code defaults):
 ```json
@@ -1137,7 +1130,7 @@ device = "mps"  # GPU-accelerated (sequential, no contention)
 - **Purpose**: Batch insert vectors into Qdrant
 - **Batch size**: `500` points (5x faster than default)
 
-**Physical storage**: `~/toolboxes/agent-zot/qdrant_storage/`
+**Physical storage**: Docker volume `agent-zot-qdrant-data` at `/var/lib/docker/volumes/agent-zot-qdrant-data/_data`
 - Managed by Docker container `agent-zot-qdrant`
 - Collection: `zotero_library_qdrant`
 - Structure: HNSW index with INT8 quantization
@@ -1213,7 +1206,7 @@ These files exist in the codebase but are NOT used for fulltext indexing with lo
     ↓
 11. `qdrant.py:upsert()` stores vectors in Qdrant (batch_size=500)
     ↓
-12. Physical storage: `~/toolboxes/agent-zot/qdrant_storage/collections/zotero_library_qdrant/`
+12. Physical storage: Docker volume `agent-zot-qdrant-data` → `/qdrant/storage/collections/zotero_library_qdrant/`
 
 ### Verification Points
 
@@ -1255,7 +1248,7 @@ These files exist in the codebase but are NOT used for fulltext indexing with lo
 
 7. **Physical storage**:
    ```bash
-   du -sh ~/toolboxes/agent-zot/qdrant_storage/collections/zotero_library_qdrant/
+   docker volume inspect agent-zot-qdrant-data | jq '.[0].Mountpoint'
    ```
 
 ### Quick Reference: What Needs Configuration
@@ -1302,7 +1295,8 @@ These files exist in the codebase but are NOT used for fulltext indexing with lo
 └── config.json                       # ✅ User overrides (required!)
 
 ~/toolboxes/agent-zot/
-└── qdrant_storage/                   # ✅ Vector data storage
+Docker Volumes:
+└── agent-zot-qdrant-data/            # ✅ Vector data storage
     └── collections/
         └── zotero_library_qdrant/    # ✅ Active collection
             └── 0/segments/           # ✅ HNSW segments

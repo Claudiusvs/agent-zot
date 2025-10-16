@@ -2,6 +2,8 @@
 
 **This document describes the standard default production pipeline configuration for Agent-Zot.**
 
+> 📋 **Quick Reference**: For a complete inventory of all settings with **[CONFIG]** vs **[CODE]** labels, see [SETTINGS_REFERENCE.md](SETTINGS_REFERENCE.md)
+
 Last updated: October 2025 (Subprocess isolation release)
 
 ---
@@ -65,8 +67,7 @@ Last updated: October 2025 (Subprocess isolation release)
     "merge_peers": true,
     "num_threads": 2,
     "do_formula_enrichment": false,
-    "parse_tables": true,
-    "parse_figures": false,
+    "do_table_structure": true,
     "subprocess_timeout": 3600,
     "ocr": {
       "fallback_enabled": false,
@@ -94,8 +95,7 @@ Last updated: October 2025 (Subprocess isolation release)
 | Feature | Status | Reason |
 |---------|--------|--------|
 | **Formula Enrichment** | ❌ Disabled | LaTeX→text conversion not needed for most papers |
-| **Table Parsing** | ✅ Enabled | Preserves table structure critical for academic papers (Financial Report Chunking 2024: 50% fewer chunks, higher accuracy) |
-| **Figure Parsing** | ❌ Disabled | Image extraction not needed for text search |
+| **Table Structure Parsing** | ✅ Enabled | Preserves table structure critical for academic papers (Financial Report Chunking 2024: 50% fewer chunks, higher accuracy) |
 | **OCR Fallback** | ❌ Disabled | Prevents crashes, maintains consistent quality |
 
 ### Metadata Extraction
@@ -174,7 +174,7 @@ Last updated: October 2025 (Subprocess isolation release)
 | **Sparse Model** | BM25 with TF-IDF | Keyword-based retrieval |
 | **Max Features** | `10,000` terms | Vocabulary size |
 | **Lowercase** | ✅ Yes | Case-insensitive matching |
-| **Stop Words** | English | Filters common words |
+| **Stop Words** | English + German (138 total) | Multilingual stop word filtering |
 | **IDF** | ✅ Enabled | Inverse document frequency weighting |
 | **Normalization** | None | BM25-style scoring |
 
@@ -755,6 +755,166 @@ agent-zot db-inspect --key ITEM_KEY
 
 ---
 
+## Long-Running Indexing Jobs
+
+### Why Persistence Matters
+
+Full-text indexing can take **10-40 hours** for large libraries. Without persistence, your indexing job will die if:
+- ❌ Terminal closes
+- ❌ Shell exits
+- ❌ Laptop sleeps (process suspended)
+- ❌ SSH session disconnects
+- ❌ Network interruption
+
+**Solution:** Use tmux for persistent background sessions.
+
+### Quick Start: Background Indexing
+
+**Use the helper script** (recommended):
+
+```bash
+# Full rebuild (auto-creates tmux session)
+./scripts/index-background.sh --full
+
+# Test with first 10 items
+./scripts/index-background.sh --limit 10
+
+# Metadata-only (no PDF parsing, fast)
+./scripts/index-background.sh --metadata
+
+# Custom session name + auto-attach
+./scripts/index-background.sh --full --session my-index --attach
+```
+
+**Manual tmux approach:**
+
+```bash
+# Create detached session
+tmux new-session -d -s agent-zot-index \
+  ".venv/bin/agent-zot update-db --force-rebuild --fulltext 2>&1 | \
+   tee /tmp/agent-zot-index-$(date +%Y%m%d_%H%M%S).log"
+
+# Attach to monitor
+tmux attach -t agent-zot-index
+
+# Detach (keeps running): Ctrl+B then D
+```
+
+### Managing tmux Sessions
+
+**List active sessions:**
+```bash
+tmux ls
+# Output: agent-zot-index: 1 windows (created Tue Oct 16 14:05:30 2024)
+```
+
+**Attach to existing session:**
+```bash
+tmux attach -t agent-zot-index
+```
+
+**Kill session (stops indexing):**
+```bash
+tmux kill-session -t agent-zot-index
+```
+
+**Detach from session:**
+- Press `Ctrl+B`, then press `D`
+- Session continues running in background
+
+### Monitoring Background Jobs
+
+**While detached, monitor progress:**
+
+```bash
+# Watch latest log file
+tail -f /tmp/agent-zot-index-*.log
+
+# Check Qdrant point count (live data)
+curl -s http://localhost:6333/collections/zotero_library_qdrant | \
+  python3 -c "import sys, json; print(f'Points: {json.load(sys.stdin)[\"result\"][\"points_count\"]:,}')"
+
+# Check process CPU/memory
+ps aux | grep agent-zot
+```
+
+### What Survives vs What Doesn't
+
+**✅ Survives Everything:**
+- Docker containers (Qdrant, Neo4j) - have `--restart unless-stopped`
+- Data in Docker volumes
+- tmux sessions (indexing jobs)
+
+**❌ Does NOT Survive:**
+- Indexing jobs in regular terminal (dies with terminal)
+- Background jobs without nohup/tmux (dies with shell)
+- MCP server (managed by Claude Desktop, intentionally)
+
+### Helper Script Features
+
+The `scripts/index-background.sh` helper provides:
+
+- ✅ **Automatic tmux session creation** with unique names
+- ✅ **Pre-flight checks** (Qdrant running, venv exists)
+- ✅ **Automatic logging** to `/tmp/agent-zot-index-TIMESTAMP.log`
+- ✅ **Completion notification** when indexing finishes
+- ✅ **Usage help** with examples
+
+**View full help:**
+```bash
+./scripts/index-background.sh --help
+```
+
+### Best Practices
+
+**For production indexing (3,000+ papers):**
+1. Use `scripts/index-background.sh --full` (creates persistent session)
+2. Detach with `Ctrl+B D` after verifying it started
+3. Monitor progress: `tail -f /tmp/agent-zot-index-*.log`
+4. Check Qdrant periodically: `curl http://localhost:6333/collections/zotero_library_qdrant`
+5. Laptop can sleep/wake without interrupting
+
+**For testing/debugging:**
+1. Use `--limit 10` to test pipeline quickly
+2. Keep session attached to see real-time output
+3. Cancel with `Ctrl+C` if needed
+
+**For incremental updates:**
+```bash
+# Quick metadata-only update (no tmux needed, finishes fast)
+agent-zot update-db --fulltext
+```
+
+### Troubleshooting tmux
+
+**Session won't detach:**
+- Make sure you press `Ctrl+B` **first**, then `D` separately
+- Not `Ctrl+B+D` simultaneously
+
+**Can't find session:**
+```bash
+tmux ls  # List all sessions
+ps aux | grep tmux  # Check if tmux server is running
+```
+
+**Session died unexpectedly:**
+```bash
+# Check logs for errors
+cat /tmp/agent-zot-index-*.log | grep -i error
+
+# Check system logs
+tail -f /var/log/system.log | grep agent-zot
+```
+
+**Want to run multiple indexing jobs:**
+```bash
+# Use different session names
+./scripts/index-background.sh --limit 100 --session test-100
+./scripts/index-background.sh --metadata --session metadata-update
+```
+
+---
+
 ## Configuration Files
 
 ### Main Configuration
@@ -776,8 +936,9 @@ services:
       - "6333:6333"
       - "6334:6334"
     volumes:
-      - ./qdrant_storage:/qdrant/storage
+      - agent-zot-qdrant-data:/qdrant/storage
     container_name: agent-zot-qdrant
+    restart: unless-stopped
 
   neo4j:
     image: neo4j:5.23.0
@@ -787,7 +948,14 @@ services:
     environment:
       - NEO4J_AUTH=neo4j/demodemo
       - NEO4J_PLUGINS=["apoc"]
+    volumes:
+      - agent-zot-neo4j-data:/data
     container_name: agent-zot-neo4j
+    restart: unless-stopped
+
+volumes:
+  agent-zot-qdrant-data:
+  agent-zot-neo4j-data:
 ```
 
 ---
@@ -889,7 +1057,8 @@ agent-zot update-db --force-rebuild --fulltext
 |----------|---------|----------|
 | `~/.config/agent-zot/config.json` | User configuration overrides | ✅ Yes |
 | `~/Zotero/zotero.sqlite` | Zotero source database | ✅ Yes |
-| `~/toolboxes/agent-zot/qdrant_storage/` | Vector data storage | ✅ Yes |
+| Docker volume `agent-zot-qdrant-data` | Vector data storage | ✅ Yes |
+| Docker volume `agent-zot-neo4j-data` | Graph data storage (optional) | ⚪ Optional |
 | `/tmp/agent-zot-bge-m3-reindex.log` | Live indexing log | ✅ Yes |
 
 ### Minimal Required Configuration
@@ -942,8 +1111,8 @@ tail -f /tmp/agent-zot-bge-m3-reindex.log | grep "Load pretrained"
 tail -f /tmp/agent-zot-bge-m3-reindex.log | grep "dimension"
 # Should show: "dimension: 1024"
 
-# Check physical storage
-du -sh ~/toolboxes/agent-zot/qdrant_storage/collections/zotero_library_qdrant/
+# Check physical storage (Docker volume)
+docker volume inspect agent-zot-qdrant-data | jq '.[0].Mountpoint'
 ```
 
 **For complete details on the execution flow, verification points, and troubleshooting, see [CLAUDE.md - Active Pipeline Reference](../CLAUDE.md#active-pipeline-reference).**
