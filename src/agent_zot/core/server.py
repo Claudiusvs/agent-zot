@@ -147,7 +147,7 @@ Agent-Zot fully implements the Qdrant GraphRAG patterns:
     description="⚪ FALLBACK - Direct Zotero API keyword-based metadata search. Use ONLY for exact title/author/year lookups when you don't have item keys yet.\n\n⚠️ DO NOT use after zot_semantic_search - you already have item keys! Use zot_get_item() for metadata or zot_ask_paper() for content instead.\n\n⚠️ This is literal keyword matching, NOT semantic. Always try zot_semantic_search first for research queries.\n\nUse for: Finding papers when you know exact author name/title phrase but don't have item key yet",
     annotations={
         "readOnlyHint": True,
-        "title": "Search Items (Keyword Fallback)"
+        "title": "Search Items (Zotero)"
     }
 )
 def search_items(
@@ -243,7 +243,7 @@ def search_items(
     description="⚪ FALLBACK - Search for items by tag with advanced operators. Use when filtering by tags/metadata, not for semantic content search.\n\nSupports disjunction (tag1 || tag2), exclusion (-tag), and AND logic across conditions.\n\n⚠️ For semantic research queries, use zot_semantic_search first.\n\nUse for: Complex tag-based filtering like ['important || urgent', '-draft'] for (important OR urgent) AND NOT draft",
     annotations={
         "readOnlyHint": True,
-        "title": "Search by Tag (Metadata Filter)"
+        "title": "Search by Tag (Zotero)"
     }
 )
 def search_by_tag(
@@ -1175,7 +1175,7 @@ def get_tags(
     description="⚪ FALLBACK - Get recently added/modified items from Zotero API by timestamp.\n\n⚠️ For semantic queries about recent research on a topic, use zot_find_recent_developments instead.\n\nUse for: Chronologically listing items you recently added to your library (not topic-specific)",
     annotations={
         "readOnlyHint": True,
-        "title": "Get Recent Items (Chronological)"
+        "title": "Get Recent Items (Zotero)"
     }
 )
 def get_recent(
@@ -2086,7 +2086,7 @@ def create_note(
     description="🔵 PRIMARY for content/topic discovery. Use when query involves meaning, concepts, or \"papers about X\".\n\n📊 Search Levels (choose based on your needs):\n- Use THIS (Level 1) when: Basic paper discovery, titles/abstracts sufficient\n- Upgrade to Level 3 (zot_enhanced_semantic_search) when: Need entities/concepts from matched passages\n- Use Level 2 (zot_hybrid_vector_graph_search) when: Need paper-level relationship exploration\n\n💡 Often combines with:\n- zot_ask_paper() to read content of found papers\n- Neo4j tools to explore relationships\n\nExample queries:\n✓ \"papers about [concept/topic]\"\n✓ \"research on [method/approach]\"\n✓ \"studies using [technique]\"\n\nNOT for:\n✗ \"who collaborated with [author]?\" → use zot_graph_search\n✗ \"papers citing [specific paper]\" → use zot_find_citation_chain\n\nUse for: Semantic discovery like \"papers about [concept]\" or \"research on [method]\"",
     annotations={
         "readOnlyHint": True,
-        "title": "Semantic Search (Content Discovery)"
+        "title": "Semantic Search (Query)"
     }
 )
 def semantic_search(
@@ -2226,7 +2226,7 @@ def semantic_search(
     description="Index or re-index the Zotero library for semantic search. Extracts full PDF text using AI-powered parsing (Docling with OCR). Use this when the user asks to 'index my library', 'update the search database', or 'enable semantic search'. Automatically handles full-text extraction from PDFs.\n\nUse for: Rebuilding semantic search database after adding new papers",
     annotations={
         "readOnlyHint": False,
-        "title": "Update Search Index"
+        "title": "Update Search Index (Query)"
     }
 )
 def update_search_database(
@@ -2403,7 +2403,7 @@ def _extract_item_key_from_input(value: str) -> Optional[str]:
     description="🟢 PRIMARY for relationship/network queries. Use when query involves connections, collaborations, or \"who/what is related to X\". Neo4j knowledge graph search for finding relationships between authors, institutions, concepts, methods, or other entities.\n\n💡 Often combines with zot_semantic_search to first discover papers by content, then explore their relationships.\n\nExample queries:\n✓ \"who collaborated with [author]?\"\n✓ \"institutions working on [topic]\"\n✓ \"authors researching [concept]\"\n\nNOT for:\n✗ \"papers about [topic]\" → use zot_semantic_search\n✗ \"what is [concept]\" → use zot_ask_paper\n\nUse for: Exploring relationships like \"who collaborated with [author]?\" or \"institutions working on [topic]\"",
     annotations={
         "readOnlyHint": True,
-        "title": "Graph Search (Relationships)"
+        "title": "Graph Search (Graph)"
     }
 )
 def graph_search(
@@ -3096,7 +3096,7 @@ def analyze_venues(
     description="Export Zotero items to Markdown files with YAML frontmatter (Obsidian-compatible). Exports items matching a query or from a collection to a specified directory.\n\nUse for: Converting bibliographic data to markdown format for documentation",
     annotations={
         "readOnlyHint": True,
-        "title": "Export to Markdown"
+        "title": "Export to Markdown (Export)"
     }
 )
 def export_markdown(
@@ -3667,7 +3667,7 @@ def connector_fetch(
     description="🔵 PRIMARY tool for accessing paper content. Uses semantic search to retrieve relevant text chunks from a paper's full text. Much more efficient than zot_get_item(include_fulltext=True). This does NOT generate AI answers - it returns source text chunks for you to analyze.\n\n✅ Use this when you need to read, analyze, or extract information from a paper's actual content.\n💡 For comprehensive paper summarization, call this multiple times with different questions (e.g., methods, results, conclusions) or use high top_k value.\n\nExample questions:\n✓ \"What methodology did the authors use?\"\n✓ \"What were the main findings?\"\n✓ \"How did they measure [variable]?\"\n\nNOT for:\n✗ \"find papers about [topic]\" → use zot_semantic_search\n✗ \"who are the authors\" → use zot_get_item\n\nUse for: Reading paper content, extracting findings, analyzing methodology, understanding results, comprehensive summarization",
     annotations={
         "readOnlyHint": True,
-        "title": "Ask Paper (Content Retrieval)"
+        "title": "Ask Paper (Query)"
     }
 )
 def ask_paper(
@@ -3873,7 +3873,7 @@ def find_similar_papers(
     description="🔵 ADVANCED - Implements Figure 3 pattern from Qdrant GraphRAG documentation.\n\nHow it works (4 steps):\n1. Semantic search in Qdrant finds relevant chunks\n2. Extracts chunk IDs (e.g., 'ABCD1234_chunk_5')\n3. Queries Neo4j for entities in those EXACT chunks\n4. Returns papers + matched text + entities from that text\n\n💡 Most precise search available. Use when you need to know:\n- 'Which concepts appear in papers about [topic]?'\n- 'What methods are used for [purpose] in the literature?'\n- 'Which theories are discussed alongside [concept]?'\n\nExample queries:\n✓ \"which methods appear in papers about [topic]?\"\n✓ \"what theories are discussed in [field] research?\"\n✓ \"which techniques are used for [purpose]?\"\n\nNOT for:\n✗ \"just find papers about [topic]\" → use zot_semantic_search (faster)\n✗ \"who worked with [author]\" → use zot_graph_search\n\n⚠️ Requires Neo4j population. If unpopulated (currently 0.5%), uses standard semantic search instead.\n\nUse for: Entity-aware semantic search, discovering what concepts/methods/theories appear in relevant passages",
     annotations={
         "readOnlyHint": True,
-        "title": "Enhanced Semantic Search (Figure 3)"
+        "title": "Enhanced Semantic Search (Query)"
     }
 )
 def enhanced_semantic_search(
