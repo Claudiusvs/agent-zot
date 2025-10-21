@@ -142,6 +142,1651 @@ Agent-Zot fully implements the Qdrant GraphRAG patterns:
 )
 
 
+
+# ============================================================================
+# QUERY TOOLS - Semantic/Vector Search (Qdrant)
+# ============================================================================
+@mcp.tool(
+    name="zot_semantic_search",
+    description="🔵 PRIMARY for content/topic discovery. Use when query involves meaning, concepts, or \"papers about X\".\n\n📊 Search Levels (choose based on your needs):\n- Use THIS (Level 1) when: Basic paper discovery, titles/abstracts sufficient\n- Upgrade to Level 3 (zot_enhanced_semantic_search) when: Need entities/concepts from matched passages\n- Use Level 2 (zot_hybrid_vector_graph_search) when: Need paper-level relationship exploration\n\n💡 Often combines with:\n- zot_ask_paper() to read content of found papers\n- Neo4j tools to explore relationships\n\nExample queries:\n✓ \"papers about [concept/topic]\"\n✓ \"research on [method/approach]\"\n✓ \"studies using [technique]\"\n\nNOT for:\n✗ \"who collaborated with [author]?\" → use zot_graph_search\n✗ \"papers citing [specific paper]\" → use zot_find_citation_chain\n\nUse for: Semantic discovery like \"papers about [concept]\" or \"research on [method]\"",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Semantic Search (Query)"
+    }
+)
+def semantic_search(
+    query: str,
+    limit: int = 10,
+    filters: Optional[str] = None,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Perform semantic search over your Zotero library.
+    
+    Args:
+        query: Search query text - can be concepts, topics, or natural language descriptions
+        limit: Maximum number of results to return (default: 10)
+        filters: Optional metadata filters as dict or JSON string. Example: {"item_type": "note"}
+        ctx: MCP context
+    
+    Returns:
+        Markdown-formatted search results with similarity scores
+    """
+    try:
+        if not query.strip():
+            return "Error: Search query cannot be empty"
+        
+        # Parse and validate filters parameter
+        if filters is not None:
+            # Handle JSON string input
+            if isinstance(filters, str):
+                try:
+                    filters = json.loads(filters)
+                    ctx.info(f"Parsed JSON string filters: {filters}")
+                except json.JSONDecodeError as e:
+                    return f"Error: Invalid JSON in filters parameter: {str(e)}"
+            
+            # Validate it's a dictionary
+            if not isinstance(filters, dict):
+                return "Error: filters parameter must be a dictionary or JSON string. Example: {\"item_type\": \"note\"}"
+            
+            # Automatically translate common field names
+            if "itemType" in filters:
+                filters["item_type"] = filters.pop("itemType")
+                ctx.info(f"Automatically translated 'itemType' to 'item_type': {filters}")
+            
+            # Additional field name translations can be added here
+            # Example: if "creatorType" in filters:
+            #     filters["creator_type"] = filters.pop("creatorType")
+        
+        ctx.info(f"Performing semantic search for: '{query}'")
+        
+        # Import semantic search module
+        from agent_zot.search.semantic import create_semantic_search
+        from pathlib import Path
+        
+        # Determine config path
+        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
+        
+        # Create semantic search instance
+        search = create_semantic_search(str(config_path))
+        
+        # Perform search
+        results = search.search(query=query, limit=limit, filters=filters)
+        
+        if results.get("error"):
+            return f"Semantic search error: {results['error']}"
+        
+        search_results = results.get("results", [])
+        
+        if not search_results:
+            return f"No semantically similar items found for query: '{query}'"
+        
+        # Format results as markdown
+        output = [f"# Semantic Search Results for '{query}'", ""]
+        output.append(f"Found {len(search_results)} similar items:")
+        output.append("")
+        
+        for i, result in enumerate(search_results, 1):
+            similarity_score = result.get("similarity_score", 0)
+            _ = result.get("metadata", {})
+            zotero_item = result.get("zotero_item", {})
+            
+            if zotero_item:
+                data = zotero_item.get("data", {})
+                title = data.get("title", "Untitled")
+                item_type = data.get("itemType", "unknown")
+                key = result.get("item_key", "")
+                
+                # Format creators
+                creators = data.get("creators", [])
+                creators_str = format_creators(creators)
+                
+                output.append(f"## {i}. {title}")
+                output.append(f"**Similarity Score:** {similarity_score:.3f}")
+                output.append(f"**Type:** {item_type}")
+                output.append(f"**Item Key:** {key}")
+                output.append(f"**Authors:** {creators_str}")
+                
+                # Add date if available
+                if date := data.get("date"):
+                    output.append(f"**Date:** {date}")
+                
+                # Add abstract snippet if present
+                if abstract := data.get("abstractNote"):
+                    abstract_snippet = abstract[:200] + "..." if len(abstract) > 200 else abstract
+                    output.append(f"**Abstract:** {abstract_snippet}")
+                
+                # Add tags if present
+                if tags := data.get("tags"):
+                    tag_list = [f"`{tag['tag']}`" for tag in tags]
+                    if tag_list:
+                        output.append(f"**Tags:** {' '.join(tag_list)}")
+                
+                # Show matched text snippet
+                matched_text = result.get("matched_text", "")
+                if matched_text:
+                    snippet = matched_text[:300] + "..." if len(matched_text) > 300 else matched_text
+                    output.append(f"**Matched Content:** {snippet}")
+                
+                output.append("")  # Empty line between items
+            else:
+                # Fallback if full Zotero item not available
+                output.append(f"## {i}. Item {result.get('item_key', 'Unknown')}")
+                output.append(f"**Similarity Score:** {similarity_score:.3f}")
+                if error := result.get("error"):
+                    output.append(f"**Error:** {error}")
+                output.append("")
+        
+        return "\n".join(output)
+    
+    except Exception as e:
+        ctx.error(f"Error in semantic search: {str(e)}")
+        return f"Error in semantic search: {str(e)}"
+
+
+@mcp.tool(
+    name="zot_update_search_database",
+    description="Index or re-index the Zotero library for semantic search. Extracts full PDF text using AI-powered parsing (Docling with OCR). Use this when the user asks to 'index my library', 'update the search database', or 'enable semantic search'. Automatically handles full-text extraction from PDFs.\n\nUse for: Rebuilding semantic search database after adding new papers",
+    annotations={
+        "readOnlyHint": False,
+        "title": "Update Search Index (Query)"
+    }
+)
+def update_search_database(
+    force_rebuild: bool = False,
+    extract_fulltext: bool = True,
+    limit: Optional[int] = None,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Index or re-index the Zotero library for AI-powered semantic search.
+
+    This tool extracts content from your Zotero library and creates searchable embeddings.
+    By default, it extracts full PDF text for comprehensive semantic search.
+
+    Args:
+        force_rebuild: Set to True to rebuild entire database from scratch. False = incremental update (default: False)
+        extract_fulltext: Set to True for full PDF text extraction, False for metadata-only (default: True)
+        limit: Optional limit for testing (e.g., 10 for quick test). None = process all items (default: None)
+        ctx: MCP context
+
+    Returns:
+        Detailed statistics about the indexing process
+    """
+    try:
+        # Handle string-to-int conversion for limit parameter (Claude sometimes sends strings)
+        if limit is not None and isinstance(limit, str):
+            try:
+                limit = int(limit)
+            except ValueError:
+                return f"Error: limit must be a number, got '{limit}'"
+
+        mode = "full-text PDF extraction" if extract_fulltext else "metadata-only"
+        ctx.info(f"Starting semantic search database update ({mode})...")
+
+        # Import semantic search module
+        from agent_zot.search.semantic import create_semantic_search
+        from pathlib import Path
+
+        # Determine config path
+        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
+
+        # Create semantic search instance
+        search = create_semantic_search(str(config_path))
+
+        # Perform update
+        stats = search.update_database(
+            force_full_rebuild=force_rebuild,
+            limit=limit,
+            extract_fulltext=extract_fulltext
+        )
+        
+        # Format results
+        output = ["# Database Update Results", ""]
+        
+        if stats.get("error"):
+            output.append(f"**Error:** {stats['error']}")
+        else:
+            output.append(f"**Total items:** {stats.get('total_items', 0)}")
+            output.append(f"**Processed:** {stats.get('processed_items', 0)}")
+            output.append(f"**Added:** {stats.get('added_items', 0)}")
+            output.append(f"**Updated:** {stats.get('updated_items', 0)}")
+            output.append(f"**Skipped:** {stats.get('skipped_items', 0)}")
+            output.append(f"**Errors:** {stats.get('errors', 0)}")
+            output.append(f"**Duration:** {stats.get('duration', 'Unknown')}")
+            
+            if stats.get('start_time'):
+                output.append(f"**Started:** {stats['start_time']}")
+            if stats.get('end_time'):
+                output.append(f"**Completed:** {stats['end_time']}")
+        
+        return "\n".join(output)
+    
+    except Exception as e:
+        ctx.error(f"Error updating search database: {str(e)}")
+        return f"Error updating search database: {str(e)}"
+
+
+@mcp.tool(
+    name="zot_get_search_database_status",
+    description="Get status information about the semantic search database.\n\nUse for: Verifying semantic search database health and statistics"
+)
+def get_search_database_status(*, ctx: Context) -> str:
+    """
+    Get semantic search database status.
+    
+    Args:
+        ctx: MCP context
+    
+    Returns:
+        Database status information
+    """
+    try:
+        ctx.info("Getting semantic search database status...")
+        
+        # Import semantic search module
+        from agent_zot.search.semantic import create_semantic_search
+        from pathlib import Path
+        
+        # Determine config path
+        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
+        
+        # Create semantic search instance
+        search = create_semantic_search(str(config_path))
+        
+        # Get status
+        status = search.get_database_status()
+        
+        # Format results
+        output = ["# Semantic Search Database Status", ""]
+        
+        collection_info = status.get("collection_info", {})
+        output.append("## Collection Information")
+        output.append(f"**Name:** {collection_info.get('name', 'Unknown')}")
+        output.append(f"**Document Count:** {collection_info.get('count', 0)}")
+        output.append(f"**Embedding Model:** {collection_info.get('embedding_model', 'Unknown')}")
+        output.append(f"**Database Path:** {collection_info.get('persist_directory', 'Unknown')}")
+        
+        if collection_info.get('error'):
+            output.append(f"**Error:** {collection_info['error']}")
+        
+        output.append("")
+        
+        update_config = status.get("update_config", {})
+        output.append("## Update Configuration")
+        output.append(f"**Auto Update:** {update_config.get('auto_update', False)}")
+        output.append(f"**Frequency:** {update_config.get('update_frequency', 'manual')}")
+        output.append(f"**Last Update:** {update_config.get('last_update', 'Never')}")
+        output.append(f"**Should Update Now:** {status.get('should_update', False)}")
+        
+        if update_config.get('update_days'):
+            output.append(f"**Update Interval:** Every {update_config['update_days']} days")
+        
+        return "\n".join(output)
+    
+    except Exception as e:
+        ctx.error(f"Error getting database status: {str(e)}")
+        return f"Error getting database status: {str(e)}"
+
+
+# --- Minimal wrappers for ChatGPT connectors ---
+# These are required for ChatGPT custom MCP servers via web "connectors"
+# specific tools required are "search" and "fetch"
+# See: https://platform.openai.com/docs/mcp
+
+def _extract_item_key_from_input(value: str) -> Optional[str]:
+    """Extract a Zotero item key from a Zotero URL, web URL, or bare key.
+    Returns None if no plausible key is found.
+    """
+    if not value:
+        return None
+    text = value.strip()
+
+    # Common patterns:
+    # - zotero://select/items/<KEY>
+    # - zotero://select/library/items/<KEY>
+    # - https://www.zotero.org/.../items/<KEY>
+    # - bare <KEY>
+    patterns = [
+        r"zotero://select/(?:library/)?items/([A-Za-z0-9]{8})",
+        r"/items/([A-Za-z0-9]{8})(?:[^A-Za-z0-9]|$)",
+        r"\b([A-Za-z0-9]{8})\b",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            return match.group(1)
+    return None
+
+
+@mcp.tool(
+    name="zot_hybrid_vector_graph_search",
+    description="🔸 SECONDARY - Combines semantic search with relationship discovery. Use when you want both content relevance AND network connections in results. Requires Neo4j.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ For content-only queries, use zot_semantic_search instead (faster).\n\nUse for: Combined semantic+relationship queries when both content and connections matter"
+)
+def hybrid_vector_graph_search(
+    query: str,
+    limit: int = 10,
+    vector_weight: float = 0.7,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Perform hybrid search combining Qdrant vector search with Neo4j graph relationships.
+
+    Args:
+        query: Search query
+        limit: Maximum number of results (default: 10)
+        vector_weight: Weight for vector results 0-1, graph weight is (1 - vector_weight) (default: 0.7)
+        ctx: MCP context
+
+    Returns:
+        Markdown-formatted hybrid search results with combined scoring
+    """
+    try:
+        from agent_zot.search.semantic import create_semantic_search
+        from pathlib import Path
+
+        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
+        search = create_semantic_search(str(config_path))
+
+        # Perform hybrid search
+        results = search.hybrid_vector_graph_search(
+            query=query,
+            limit=limit,
+            vector_weight=vector_weight
+        )
+
+        if results.get("error"):
+            return f"Hybrid search error: {results['error']}"
+
+        search_type = results.get("search_type", "unknown")
+        papers = results.get("results", [])
+        graph_enabled = results.get("graph_enabled", False)
+
+        if not papers:
+            return f"No results found for query: '{query}'"
+
+        # Format results
+        output = [f"# Hybrid Search Results for '{query}'", ""]
+        output.append(f"**Search Type:** {search_type}")
+        output.append(f"**Graph Enhancement:** {'Enabled' if graph_enabled else 'Disabled'}")
+        output.append(f"Found {len(papers)} papers:")
+        output.append("")
+
+        for i, paper in enumerate(papers, 1):
+            zotero_item = paper.get("zotero_item", {})
+            item_data = zotero_item.get("data", {})
+
+            title = item_data.get("title", "Untitled")
+            item_key = paper.get("item_key", "N/A")
+            vector_score = paper.get("similarity_score", 0)
+            combined_score = paper.get("combined_score", vector_score)
+            related_count = paper.get("related_papers_count", 0)
+            sample_related = paper.get("sample_related", [])
+
+            output.append(f"## {i}. {title}")
+            output.append(f"**Item Key:** {item_key}")
+            output.append(f"**Combined Score:** {combined_score:.3f}")
+            output.append(f"**Vector Score:** {vector_score:.3f}")
+
+            if graph_enabled:
+                output.append(f"**Related Papers (Graph):** {related_count}")
+                if sample_related:
+                    output.append(f"**Sample Connections:** {', '.join(sample_related)}")
+
+            # Add authors and year
+            creators = item_data.get("creators", [])
+            if creators:
+                authors = [f"{c.get('lastName', '')}" for c in creators[:3]]
+                output.append(f"**Authors:** {', '.join(authors)}")
+
+            year = item_data.get("date", "")[:4] if item_data.get("date") else "N/A"
+            output.append(f"**Year:** {year}")
+
+            output.append("")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        ctx.error(f"Error in hybrid search: {str(e)}")
+        return f"Error in hybrid search: {str(e)}"
+
+
+@mcp.tool(
+    name="zot_ask_paper",
+    description="🔵 PRIMARY tool for accessing paper content. Uses semantic search to retrieve relevant text chunks from a paper's full text. Much more efficient than zot_get_item(include_fulltext=True). This does NOT generate AI answers - it returns source text chunks for you to analyze.\n\n✅ Use this when you need to read, analyze, or extract information from a paper's actual content.\n💡 For comprehensive paper summarization, call this multiple times with different questions (e.g., methods, results, conclusions) or use high top_k value.\n\nExample questions:\n✓ \"What methodology did the authors use?\"\n✓ \"What were the main findings?\"\n✓ \"How did they measure [variable]?\"\n\nNOT for:\n✗ \"find papers about [topic]\" → use zot_semantic_search\n✗ \"who are the authors\" → use zot_get_item\n\nUse for: Reading paper content, extracting findings, analyzing methodology, understanding results, comprehensive summarization",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Ask Paper (Query)"
+    }
+)
+def ask_paper(
+    item_key: str,
+    question: str,
+    top_k: int = 5,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Ask questions about a specific paper's content using semantic search over its chunks.
+
+    This tool returns relevant text chunks from the paper - it does NOT generate AI-written answers.
+    Use the returned context chunks to formulate your own answer or pass to an LLM.
+
+    Args:
+        item_key: Zotero item key of the paper to query
+        question: Your question about the paper's content
+        top_k: Number of relevant chunks to return (default: 5)
+        ctx: MCP context
+
+    Returns:
+        Markdown-formatted relevant text chunks from the paper
+    """
+    try:
+        from agent_zot.search.semantic import create_semantic_search
+        from pathlib import Path
+
+        ctx.info(f"Searching paper {item_key} for: {question}")
+
+        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
+        search = create_semantic_search(str(config_path))
+
+        # Search with item_key filter to only get chunks from this specific paper
+        results = search.search(
+            query=question,
+            limit=top_k,
+            filters={"item_key": item_key}
+        )
+
+        if results.get("error"):
+            return f"Error searching paper: {results['error']}"
+
+        # Get paper metadata for context
+        zot = get_zotero_client()
+        try:
+            item = zot.item(item_key)
+            paper_data = item.get("data", {}) if item else {}
+            paper_title = paper_data.get("title", "Unknown")
+        except Exception:
+            paper_title = item_key
+
+        # Check if we got results
+        if not results.get("ids") or not results["ids"][0]:
+            return f"No relevant content found in paper '{paper_title}' for question: '{question}'\n\nThis may mean:\n- The paper's full text hasn't been indexed yet (run zot_update_search_database)\n- The question topic isn't discussed in this paper\n- Try rephrasing your question"
+
+        # Format results
+        output = [f"# Relevant Content from '{paper_title}'"]
+        output.append(f"\n**Question:** {question}")
+        output.append(f"**Item Key:** {item_key}")
+        output.append(f"\n**Found {len(results['ids'][0])} relevant chunks:**\n")
+
+        for i in range(len(results["ids"][0])):
+            # Safe nested list access
+            chunk_text = (results["documents"][0][i]
+                         if results.get("documents") and len(results["documents"]) > 0 and len(results["documents"][0]) > i
+                         else "")
+            distance = (results["distances"][0][i]
+                       if results.get("distances") and len(results["distances"]) > 0 and len(results["distances"][0]) > i
+                       else 0.0)
+
+            similarity = 1.0 - distance  # Convert distance to similarity score
+
+            output.append(f"## Chunk {i+1} (Relevance: {similarity:.3f})")
+            output.append(f"{chunk_text}")
+            output.append("")
+
+        output.append("\n---")
+        output.append("*Note: These are extracted text chunks from the paper. Use them as context to formulate your answer.*")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        ctx.error(f"Error in ask_paper: {str(e)}")
+        return f"Error querying paper: {str(e)}"
+
+
+@mcp.tool(
+    name="zot_find_similar_papers",
+    description="""Find papers similar to a given paper using content-based vector similarity (More Like This query).
+
+Uses the paper's actual document embedding to find semantically similar papers. More accurate than semantic_search(abstract) because it uses the full document vector.
+
+💡 Different from zot_find_related_papers:
+- THIS TOOL: Content similarity via Qdrant vectors (what the paper discusses)
+- find_related_papers: Graph relationships via Neo4j (who/what it cites, shared authors)
+
+Use when:
+✓ 'Find papers similar to this one'
+✓ 'More papers like ABC123'
+✓ 'Papers with similar methodology/approach'
+
+NOT for:
+✗ 'Papers citing this' → use zot_find_citation_chain
+✗ 'Papers by same author' → use zot_find_collaborator_network
+
+Use for: Content-based 'More Like This' discovery using document vectors""",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Find Similar Papers (Query)"
+    }
+)
+def find_similar_papers(
+    item_key: str,
+    limit: int = 10,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Find papers similar to the given paper using vector similarity.
+
+    Args:
+        item_key: Zotero item key of the reference paper
+        limit: Maximum number of similar papers to return (default: 10)
+        ctx: MCP context
+
+    Returns:
+        Markdown-formatted list of similar papers with similarity scores
+    """
+    try:
+        from pathlib import Path
+        from agent_zot.search.semantic import create_semantic_search
+
+        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
+        search = create_semantic_search(str(config_path))
+
+        if not search or not search.qdrant_client:
+            return "Semantic search is not initialized. Please run 'agent-zot update-db' first."
+
+        ctx.info(f"Finding papers similar to {item_key}")
+
+        # Fallback approach: Get the item and use its abstract for search
+        ctx.info("Using abstract-based semantic search for similarity")
+        zot = get_zotero_client()
+        item = zot.item(item_key)
+
+        if not item:
+            return f"No item found with key: {item_key}"
+
+        abstract = item.get("data", {}).get("abstractNote", "")
+        if not abstract:
+            return f"Item {item_key} has no abstract for similarity search.\n\n💡 Suggestion: Use zot_find_related_papers for graph-based relationships instead."
+
+        # Use semantic search with the abstract
+        results = search.search(query=abstract, limit=limit + 1)  # +1 to exclude the source paper
+
+        # Format results
+        output = [f"# Papers Similar to: {item_key}", ""]
+
+        if "results" in results and results["results"]:
+            # Filter out the source paper if it appears in results
+            filtered_results = [p for p in results["results"] if p.get("item_key") != item_key][:limit]
+
+            for i, paper in enumerate(filtered_results, 1):
+                title = paper.get("title", "Untitled")
+                authors = paper.get("creators_str", "Unknown authors")
+                year = paper.get("year", "N/A")
+                key = paper.get("item_key", "")
+                score = paper.get("similarity_score", 0.0)
+
+                output.append(f"## {i}. {title}")
+                output.append(f"**Authors:** {authors}")
+                output.append(f"**Year:** {year}")
+                output.append(f"**Item Key:** `{key}`")
+                output.append(f"**Similarity:** {score:.3f}")
+
+                # Include abstract preview if available
+                abs_text = paper.get("abstract", "")
+                if abs_text:
+                    preview = abs_text[:200] + "..." if len(abs_text) > 200 else abs_text
+                    output.append(f"**Abstract:** {preview}")
+
+                output.append("")
+
+            output.append(f"\n**Total found:** {len(filtered_results)}")
+        else:
+            output.append("No similar papers found.")
+            output.append("\n💡 Try:")
+            output.append("- zot_semantic_search for topic-based discovery")
+            output.append("- zot_find_related_papers for graph-based relationships")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        import traceback
+        ctx.error(f"Error finding similar papers: {str(e)}")
+        ctx.error(f"Traceback: {traceback.format_exc()}")
+        return f"Error finding similar papers: {str(e)}"
+
+
+@mcp.tool(
+    name="zot_enhanced_semantic_search",
+    description="🔵 ADVANCED - Implements Figure 3 pattern from Qdrant GraphRAG documentation.\n\nHow it works (4 steps):\n1. Semantic search in Qdrant finds relevant chunks\n2. Extracts chunk IDs (e.g., 'ABCD1234_chunk_5')\n3. Queries Neo4j for entities in those EXACT chunks\n4. Returns papers + matched text + entities from that text\n\n💡 Most precise search available. Use when you need to know:\n- 'Which concepts appear in papers about [topic]?'\n- 'What methods are used for [purpose] in the literature?'\n- 'Which theories are discussed alongside [concept]?'\n\nExample queries:\n✓ \"which methods appear in papers about [topic]?\"\n✓ \"what theories are discussed in [field] research?\"\n✓ \"which techniques are used for [purpose]?\"\n\nNOT for:\n✗ \"just find papers about [topic]\" → use zot_semantic_search (faster)\n✗ \"who worked with [author]\" → use zot_graph_search\n\n⚠️ Requires Neo4j population. If unpopulated (currently 0.5%), uses standard semantic search instead.\n\nUse for: Entity-aware semantic search, discovering what concepts/methods/theories appear in relevant passages",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Enhanced Semantic Search (Query)"
+    }
+)
+def enhanced_semantic_search(
+    query: str,
+    limit: int = 10,
+    include_chunk_entities: bool = True,
+    filters: Optional[str] = None,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Enhanced semantic search with chunk-level entity enrichment (Figure 3 pattern).
+
+    This implements the full Qdrant GraphRAG architecture:
+    1. Semantic search in Qdrant for relevant chunks
+    2. Extract Qdrant point IDs from results
+    3. Use those IDs to query Neo4j for chunk-specific entities
+    4. Enrich each result with entities, types, and relationships
+
+    Args:
+        query: Search query text
+        limit: Maximum number of results (default: 10)
+        include_chunk_entities: Whether to enrich with Neo4j entities (default: True)
+        filters: Optional metadata filters as JSON string
+        ctx: MCP context
+
+    Returns:
+        Markdown-formatted results with chunk-level entities and entity types
+    """
+    try:
+        from agent_zot.search.semantic import create_semantic_search
+        from pathlib import Path
+
+        if not query.strip():
+            return "Error: Search query cannot be empty"
+
+        ctx.info(f"Performing enhanced semantic search for: {query}")
+
+        # Parse filters if provided
+        parsed_filters = None
+        if filters:
+            if isinstance(filters, str):
+                try:
+                    parsed_filters = json.loads(filters)
+                except json.JSONDecodeError as e:
+                    return f"Error: Invalid JSON in filters parameter: {str(e)}"
+            else:
+                parsed_filters = filters
+
+        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
+        search = create_semantic_search(str(config_path))
+
+        # Call the enhanced_semantic_search method
+        results = search.enhanced_semantic_search(
+            query=query,
+            limit=limit,
+            include_chunk_entities=include_chunk_entities,
+            filters=parsed_filters
+        )
+
+        if results.get("error"):
+            return f"Error during enhanced search: {results['error']}"
+
+        if not results.get("results"):
+            return f"No results found for query: '{query}'\n\nTry:\n- Broadening your search terms\n- Running zot_update_search_database if you haven't indexed recently\n- Checking if Neo4j is populated (run with include_chunk_entities=False to test Qdrant only)"
+
+        # Format results
+        output = [f"# Enhanced Semantic Search Results"]
+        output.append(f"\n**Query:** {query}")
+        output.append(f"**Search Type:** {results.get('search_type', 'enhanced_semantic')}")
+        output.append(f"**Neo4j Enabled:** {results.get('neo4j_enabled', False)}")
+        output.append(f"**Results:** {results['total_found']}\n")
+
+        for i, result in enumerate(results["results"], 1):
+            # Extract result data
+            item_key = result.get("item_key", "unknown")
+            similarity = result.get("similarity_score", 0)
+            matched_text = result.get("matched_text", "")[:300]  # First 300 chars
+
+            # Get paper title from zotero_item
+            title = "Unknown"
+            if result.get("zotero_item"):
+                zotero_data = result["zotero_item"].get("data", {})
+                title = zotero_data.get("title", "Unknown")
+
+            output.append(f"## {i}. {title}")
+            output.append(f"**Item Key:** {item_key}")
+            output.append(f"**Relevance:** {similarity:.3f}")
+
+            # Show chunk entities if available
+            if result.get("chunk_entities"):
+                entities = result["chunk_entities"]
+                entity_types = result.get("entity_types", [])
+                sample_entities = result.get("sample_entities", [])
+
+                output.append(f"\n**Entities Found in This Chunk:** {len(entities)}")
+                if entity_types:
+                    output.append(f"**Entity Types:** {', '.join(entity_types)}")
+                if sample_entities:
+                    output.append(f"**Key Entities:** {', '.join(sample_entities[:5])}")
+
+                # Show detailed entities
+                output.append(f"\n**Detailed Entities:**")
+                for entity in entities[:10]:  # Show first 10
+                    entity_name = entity.get("name", "Unknown")
+                    entity_types_list = entity.get("types", [])
+                    entity_desc = entity.get("description", "")
+
+                    # Filter out base "Entity" type
+                    types_str = ", ".join([t for t in entity_types_list if t != "Entity"])
+
+                    output.append(f"- **{entity_name}** ({types_str})")
+                    if entity_desc:
+                        output.append(f"  └─ {entity_desc[:100]}")
+
+                if len(entities) > 10:
+                    output.append(f"  ... and {len(entities) - 10} more entities")
+
+            elif include_chunk_entities and results.get("neo4j_enabled"):
+                output.append(f"\n*No entities found for this chunk (Neo4j may not have data for this paper yet)*")
+
+            # Show matched text snippet
+            output.append(f"\n**Matched Text Snippet:**")
+            output.append(f"> {matched_text}...")
+            output.append("")
+
+        output.append("\n---")
+        output.append("**💡 Tips:**")
+        output.append("- Use `zot_ask_paper(item_key, question)` to read more content from specific papers")
+        output.append("- Use `zot_graph_search(entity_name)` to explore entity relationships")
+        output.append("- Entities are extracted from the exact chunks that matched your query")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        import traceback
+        ctx.error(f"Error in enhanced_semantic_search: {str(e)}")
+        ctx.error(f"Traceback: {traceback.format_exc()}")
+        return f"Error performing enhanced semantic search: {str(e)}"
+
+
+# DEPRECATED - Removed for pure agentic approach
+# Workflow orchestration tools are "training wheels" in agentic systems
+# Agents should learn to chain primitives: semantic_search → graph operations → synthesis
+# @mcp.tool(
+#     name="zot_literature_review",
+#     description="🔵 WORKFLOW - Automated literature review workflow: search papers → analyze themes → identify gaps → generate structured summary. Coordinates multiple tools (semantic search, graph analysis, temporal trends) for comprehensive research synthesis.\n\n💡 This orchestrates Qdrant, Neo4j, and Zotero API tools automatically for comprehensive reviews.\n\nUse for: Generating structured literature reviews on research topics (end-to-end workflow)",
+#     annotations={
+#         "readOnlyHint": True,
+#         "title": "Literature Review (Workflow)"
+#     }
+# )
+def literature_review_DEPRECATED(
+    topic: str,
+    max_papers: int = 20,
+    include_temporal_analysis: bool = True,
+    include_network_analysis: bool = False,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Automated literature review workflow combining multiple analysis tools.
+
+    This orchestrates a multi-step process:
+    1. Semantic search to find relevant papers
+    2. Temporal analysis to track topic evolution
+    3. Network analysis to identify key authors/institutions (optional)
+    4. Structured summary generation
+
+    Args:
+        topic: Research topic to review
+        max_papers: Maximum papers to include in review (default: 20)
+        include_temporal_analysis: Include topic evolution over time (default: True)
+        include_network_analysis: Include author/institution network analysis (default: False, requires Neo4j)
+        ctx: MCP context
+
+    Returns:
+        Comprehensive literature review in markdown format
+    """
+    try:
+        from agent_zot.search.semantic import create_semantic_search
+        from pathlib import Path
+        from datetime import datetime
+
+        ctx.info(f"Starting literature review for topic: {topic}")
+
+        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
+        search = create_semantic_search(str(config_path))
+
+        output = [f"# Literature Review: {topic}"]
+        output.append(f"\n*Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}*")
+        output.append(f"*Max Papers: {max_papers}*\n")
+
+        # Step 1: Semantic search for relevant papers
+        ctx.info("Step 1: Finding relevant papers...")
+        output.append("## 1. Relevant Papers\n")
+
+        results = search.search(query=topic, limit=max_papers, filters=None)
+
+        if results.get("error"):
+            return f"Error during literature review: {results['error']}"
+
+        if not results.get("ids") or not results["ids"][0]:
+            return f"No papers found for topic: '{topic}'\n\nTry:\n- Broadening your search terms\n- Running zot_update_search_database if you haven't indexed recently"
+
+        papers = []
+        for i in range(len(results["ids"][0])):
+            item_key = (results["ids"][0][i] if results.get("ids") and len(results["ids"]) > 0 and len(results["ids"][0]) > i else "")
+            zotero_item = None
+            if results.get("metadatas") and len(results["metadatas"]) > 0 and len(results["metadatas"][0]) > i:
+                metadata = results["metadatas"][0][i]
+                # Reconstruct minimal zotero_item structure
+                zotero_item = {"data": metadata}
+
+            if zotero_item:
+                data = zotero_item["data"]
+                title = data.get("title", "Untitled")
+                year = data.get("year", "N/A")
+                authors = data.get("authors", "Unknown authors")
+
+                papers.append({
+                    "item_key": item_key,
+                    "title": title,
+                    "year": year,
+                    "authors": authors
+                })
+
+                output.append(f"### {i+1}. {title} ({year})")
+                output.append(f"- **Authors:** {authors}")
+                output.append(f"- **Key:** {item_key}")
+                output.append("")
+
+        output.append(f"\n**Total papers found:** {len(papers)}\n")
+
+        # Step 2: Temporal analysis (if requested)
+        if include_temporal_analysis and papers:
+            ctx.info("Step 2: Analyzing temporal trends...")
+            output.append("## 2. Temporal Analysis\n")
+
+            # Group papers by year
+            year_counts = {}
+            for paper in papers:
+                year = paper["year"]
+                if year != "N/A" and year:
+                    try:
+                        year_int = int(str(year)[:4])  # Handle various year formats
+                        year_counts[year_int] = year_counts.get(year_int, 0) + 1
+                    except (ValueError, TypeError):
+                        pass
+
+            if year_counts:
+                sorted_years = sorted(year_counts.items())
+                output.append("**Publication trend:**\n")
+                for year, count in sorted_years:
+                    bar = "█" * count
+                    output.append(f"- {year}: {bar} ({count} papers)")
+                output.append("")
+
+                # Identify trend
+                if len(sorted_years) >= 3:
+                    recent_avg = sum(c for y, c in sorted_years[-3:]) / 3
+                    early_avg = sum(c for y, c in sorted_years[:3]) / 3
+                    if recent_avg > early_avg * 1.5:
+                        trend = "**INCREASING** - Growing research interest"
+                    elif recent_avg < early_avg * 0.67:
+                        trend = "**DECREASING** - Declining research activity"
+                    else:
+                        trend = "**STABLE** - Consistent research output"
+                    output.append(f"**Trend:** {trend}\n")
+
+        # Step 3: Network analysis (if requested and Neo4j available)
+        if include_network_analysis:
+            ctx.info("Step 3: Analyzing research networks...")
+            output.append("## 3. Network Analysis\n")
+
+            try:
+                from agent_zot.clients.neo4j_graphrag import create_neo4j_graphrag_client
+                graph_client = create_neo4j_graphrag_client(str(config_path))
+
+                if graph_client:
+                    # Find key authors in this topic area
+                    # This is a simplified version - full implementation would query the graph
+                    output.append("*Network analysis requires Neo4j GraphRAG configuration*\n")
+                else:
+                    output.append("*Neo4j GraphRAG not configured - skipping network analysis*\n")
+            except Exception as e:
+                output.append(f"*Network analysis unavailable: {str(e)}*\n")
+
+        # Step 4: Summary and recommendations
+        ctx.info("Step 4: Generating summary...")
+        output.append("## 4. Summary\n")
+        output.append(f"This literature review identified **{len(papers)} papers** relevant to '{topic}'.\n")
+
+        if papers:
+            # Extract earliest and latest years
+            years = [p["year"] for p in papers if p["year"] != "N/A"]
+            if years:
+                try:
+                    year_ints = [int(str(y)[:4]) for y in years]
+                    output.append(f"**Time span:** {min(year_ints)} to {max(year_ints)}\n")
+                except (ValueError, TypeError):
+                    pass
+
+        output.append("### Recommended Next Steps\n")
+        output.append("1. Use `zot_get_item()` to read abstracts and full details of key papers")
+        output.append("2. Use `zot_ask_paper()` to ask specific questions about individual papers")
+        output.append("3. Use `zot_find_related_papers()` to discover citation networks")
+        if not include_network_analysis:
+            output.append("4. Re-run with `include_network_analysis=true` to identify key researchers (requires Neo4j)")
+
+        output.append("\n---")
+        output.append("*This automated review provides an overview. Manual analysis is recommended for comprehensive research.*")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        ctx.error(f"Error in literature_review: {str(e)}")
+        return f"Error generating literature review: {str(e)}"
+
+# ============================================================================
+# GRAPH TOOLS - Knowledge Graph Operations (Neo4j)
+# ============================================================================
+@mcp.tool(
+    name="zot_graph_search",
+    description="🟢 PRIMARY for relationship/network queries. Use when query involves connections, collaborations, or \"who/what is related to X\". Neo4j knowledge graph search for finding relationships between authors, institutions, concepts, methods, or other entities.\n\n💡 Often combines with zot_semantic_search to first discover papers by content, then explore their relationships.\n\nExample queries:\n✓ \"who collaborated with [author]?\"\n✓ \"institutions working on [topic]\"\n✓ \"authors researching [concept]\"\n\nNOT for:\n✗ \"papers about [topic]\" → use zot_semantic_search\n✗ \"what is [concept]\" → use zot_ask_paper\n\nUse for: Exploring relationships like \"who collaborated with [author]?\" or \"institutions working on [topic]\"",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Graph Search (Graph)"
+    }
+)
+def graph_search(
+    query: str,
+    entity_types: Optional[str] = None,
+    limit: int = 10,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Search the Neo4j knowledge graph for entities and concepts.
+
+    Args:
+        query: Search query for entities (e.g., "transformer architecture", "attention mechanism")
+        entity_types: Comma-separated entity types to filter (e.g., "Concept,Method")
+        limit: Maximum number of results (default: 10)
+        ctx: MCP context
+
+    Returns:
+        Markdown-formatted graph search results
+    """
+    try:
+        from agent_zot.search.semantic import create_semantic_search
+        from pathlib import Path
+
+        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
+        search = create_semantic_search(str(config_path))
+
+        # Parse entity types
+        entity_types_list = None
+        if entity_types:
+            entity_types_list = [t.strip() for t in entity_types.split(",")]
+
+        # Perform graph search
+        results = search.graph_search(
+            query=query,
+            entity_types=entity_types_list,
+            limit=limit
+        )
+
+        if results.get("error"):
+            return f"Graph search error: {results['error']}"
+
+        entities = results.get("results", [])
+
+        if not entities:
+            return f"No entities found in knowledge graph for query: '{query}'"
+
+        # Format results
+        output = [f"# Knowledge Graph Search Results for '{query}'", ""]
+        output.append(f"Found {len(entities)} entities:")
+        output.append("")
+
+        for i, entity in enumerate(entities, 1):
+            entity_name = entity.get("name", "Unknown")
+            entity_types = ", ".join(entity.get("types", []))
+            description = entity.get("description", "No description")
+
+            output.append(f"## {i}. {entity_name}")
+            output.append(f"**Type:** {entity_types}")
+            output.append(f"**Description:** {description}")
+            output.append("")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        ctx.error(f"Error in graph search: {str(e)}")
+        return f"Error in graph search: {str(e)}"
+
+
+@mcp.tool(
+    name="zot_find_related_papers",
+    description="🟢 SECONDARY - Find papers related to a given paper via shared entities in the knowledge graph. Use when you want to discover connections through citations, authors, or concepts.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ For content-based similarity, use zot_semantic_search instead.\n\nExample use cases:\n✓ After finding key paper: \"What else cites this?\"\n✓ \"Papers by same authors or on related concepts\"\n✓ \"Follow citation trail from this paper\"\n\nNOT for:\n✗ \"papers similar to [broad concept]\" → use zot_semantic_search\n✗ \"broad topic discovery\" → use zot_semantic_search first\n\nUse for: Discovering papers connected through citations, authors, or shared concepts (relationship-based, not content-based)",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Find Related Papers (Graph)"
+    }
+)
+def find_related_papers(
+    item_key: str,
+    limit: int = 10,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Find papers related to a given paper using the knowledge graph.
+
+    Args:
+        item_key: Zotero item key of the source paper
+        limit: Maximum number of related papers to return (default: 10)
+        ctx: MCP context
+
+    Returns:
+        Markdown-formatted related papers with shared entities
+    """
+    try:
+        from agent_zot.search.semantic import create_semantic_search
+        from pathlib import Path
+
+        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
+        search = create_semantic_search(str(config_path))
+
+        # Find related papers
+        results = search.find_related_papers(paper_key=item_key, limit=limit)
+
+        if results.get("error"):
+            return f"Error finding related papers: {results['error']}"
+
+        related_papers = results.get("results", [])
+
+        if not related_papers:
+            return f"No related papers found for item: {item_key}"
+
+        # Format results
+        output = [f"# Papers Related to {item_key}", ""]
+        output.append(f"Found {len(related_papers)} related papers via knowledge graph:")
+        output.append("")
+
+        for i, paper in enumerate(related_papers, 1):
+            title = paper.get("title", "Untitled")
+            year = paper.get("year", "N/A")
+            authors = paper.get("authors", [])
+            shared_count = paper.get("shared_entities", 0)
+            sample_entities = paper.get("sample_entities", [])
+
+            output.append(f"## {i}. {title}")
+            output.append(f"**Year:** {year}")
+            if authors:
+                output.append(f"**Authors:** {', '.join(authors[:3])}")
+            output.append(f"**Shared Entities:** {shared_count}")
+            if sample_entities:
+                output.append(f"**Sample Connections:** {', '.join(sample_entities)}")
+            output.append(f"**Item Key:** {paper.get('item_key', 'N/A')}")
+            output.append("")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        ctx.error(f"Error finding related papers: {str(e)}")
+        return f"Error finding related papers: {str(e)}"
+
+
+@mcp.tool(
+    name="zot_find_citation_chain",
+    description="🟢 SECONDARY - Find papers citing papers that cite a given paper (multi-hop citation analysis). Use for discovering extended citation networks.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ Requires Neo4j knowledge graph. For content-based discovery, use zot_semantic_search instead.\n\nUse for: Tracing how ideas propagate through citation networks (relationship analysis, not content analysis)",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Find Citation Chain (Graph)"
+    }
+)
+def find_citation_chain(
+    paper_key: str,
+    max_hops: int = 2,
+    limit: int = 10,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Find citation chains showing how papers cite papers that cite the given paper.
+
+    Args:
+        paper_key: Zotero item key of the starting paper
+        max_hops: Maximum citation hops (1-3, default: 2)
+        limit: Maximum papers to return (default: 10)
+        ctx: MCP context
+
+    Returns:
+        Markdown-formatted citation chain with hop distances
+    """
+    try:
+        from pathlib import Path
+        from agent_zot.clients.neo4j_graphrag import create_neo4j_graphrag_client
+
+        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
+        graph_client = create_neo4j_graphrag_client(str(config_path))
+
+        if not graph_client:
+            return "Neo4j GraphRAG is not enabled. Please configure it in config.json."
+
+        ctx.info(f"Finding citation chain for paper: {paper_key} (max hops: {max_hops})")
+
+        results = graph_client.find_citation_chain(
+            paper_key=paper_key,
+            max_hops=max_hops,
+            limit=limit
+        )
+
+        if not results:
+            return f"No citation chain found for paper: {paper_key}"
+
+        # Format results as markdown
+        output = [f"# Citation Chain for {paper_key}\n"]
+        output.append(f"Found {len(results)} papers in citation network (max {max_hops} hops):\n")
+
+        for paper in results:
+            hops = paper.get("citation_hops", 0)
+            title = paper.get("title", "Unknown")
+            year = paper.get("year", "N/A")
+            key = paper.get("item_key", "")
+            path = paper.get("citation_path", [])
+
+            output.append(f"## {title} ({year})")
+            output.append(f"- **Key**: {key}")
+            output.append(f"- **Citation Distance**: {hops} hop{'s' if hops != 1 else ''}")
+            if path:
+                output.append(f"- **Citation Path**: {' → '.join(path[:3])}{'...' if len(path) > 3 else ''}")
+            output.append("")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        ctx.error(f"Error finding citation chain: {str(e)}")
+        return f"Error finding citation chain: {str(e)}"
+
+
+@mcp.tool(
+    name="zot_explore_concept_network",
+    description="🟢 SECONDARY - Find concepts related through intermediate concepts (concept propagation). Discovers conceptual relationships by traversing the knowledge graph.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ Requires Neo4j knowledge graph. For content-based concept discovery, use zot_semantic_search instead.\n\nUse for: Mapping how concepts connect through shared papers (network analysis, not content analysis)",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Explore Concept Network (Graph)"
+    }
+)
+def explore_concept_network(
+    concept: str,
+    max_hops: int = 2,
+    limit: int = 15,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Explore related concepts through multi-hop graph traversal.
+
+    Args:
+        concept: Starting concept name
+        max_hops: Maximum relationship hops (1-3, default: 2)
+        limit: Maximum concepts to return (default: 15)
+        ctx: MCP context
+
+    Returns:
+        Markdown-formatted related concepts with relationship paths
+    """
+    try:
+        from pathlib import Path
+        from agent_zot.clients.neo4j_graphrag import create_neo4j_graphrag_client
+
+        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
+        graph_client = create_neo4j_graphrag_client(str(config_path))
+
+        if not graph_client:
+            return "Neo4j GraphRAG is not enabled. Please configure it in config.json."
+
+        ctx.info(f"Exploring concept network for: {concept} (max hops: {max_hops})")
+
+        results = graph_client.find_related_concepts(
+            concept=concept,
+            max_hops=max_hops,
+            limit=limit
+        )
+
+        if not results:
+            return f"No related concepts found for: {concept}"
+
+        # Format results as markdown
+        output = [f"# Related Concepts for '{concept}'\n"]
+        output.append(f"Found {len(results)} related concepts (max {max_hops} hops):\n")
+
+        for item in results:
+            concept_name = item.get("concept", "Unknown")
+            hops = item.get("relationship_hops", 0)
+            paper_count = item.get("paper_count", 0)
+            sample_papers = item.get("sample_papers", [])
+
+            output.append(f"## {concept_name}")
+            output.append(f"- **Relationship Distance**: {hops} hop{'s' if hops != 1 else ''}")
+            output.append(f"- **Papers Discussing Both**: {paper_count}")
+            if sample_papers:
+                output.append(f"- **Sample Papers**:")
+                for paper in sample_papers[:3]:
+                    output.append(f"  - {paper}")
+            output.append("")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        ctx.error(f"Error exploring concept network: {str(e)}")
+        return f"Error exploring concept network: {str(e)}"
+
+
+@mcp.tool(
+    name="zot_find_collaborator_network",
+    description="🟢 SECONDARY - Find collaborators of collaborators (co-authorship network). Discovers extended collaboration networks by traversing author relationships.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ Requires Neo4j knowledge graph. For simpler author queries, use zot_semantic_search with author filters instead.\n\nUse for: Analyzing multi-hop author collaboration patterns and networks (network analysis)",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Find Collaborator Network (Graph)"
+    }
+)
+def find_collaborator_network(
+    author: str,
+    max_hops: int = 2,
+    limit: int = 20,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Find extended collaboration network for an author.
+
+    Args:
+        author: Author name to start from
+        max_hops: Maximum collaboration hops (1-3, default: 2)
+        limit: Maximum collaborators to return (default: 20)
+        ctx: MCP context
+
+    Returns:
+        Markdown-formatted collaborator network with distances
+    """
+    try:
+        from pathlib import Path
+        from agent_zot.clients.neo4j_graphrag import create_neo4j_graphrag_client
+
+        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
+        graph_client = create_neo4j_graphrag_client(str(config_path))
+
+        if not graph_client:
+            return "Neo4j GraphRAG is not enabled. Please configure it in config.json."
+
+        ctx.info(f"Finding collaborator network for: {author} (max hops: {max_hops})")
+
+        results = graph_client.find_collaborator_network(
+            author=author,
+            max_hops=max_hops,
+            limit=limit
+        )
+
+        if not results:
+            return f"No collaborators found for: {author}"
+
+        # Format results as markdown
+        output = [f"# Collaborator Network for '{author}'\n"]
+        output.append(f"Found {len(results)} collaborators (max {max_hops} hops):\n")
+
+        for item in results:
+            collab_name = item.get("author", "Unknown")
+            hops = item.get("collaboration_hops", 0)
+            collab_count = item.get("collaboration_count", 0)
+            sample_papers = item.get("sample_papers", [])
+
+            output.append(f"## {collab_name}")
+            output.append(f"- **Collaboration Distance**: {hops} hop{'s' if hops != 1 else ''}")
+            output.append(f"- **Shared Papers**: {collab_count}")
+            if sample_papers:
+                output.append(f"- **Sample Collaborations**:")
+                for paper in sample_papers[:3]:
+                    output.append(f"  - {paper}")
+            output.append("")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        ctx.error(f"Error finding collaborator network: {str(e)}")
+        return f"Error finding collaborator network: {str(e)}"
+
+
+@mcp.tool(
+    name="zot_find_seminal_papers",
+    description="🟢 SECONDARY - Find most influential papers using citation-based analysis. Identifies highly-cited foundational papers using graph metrics.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ Requires Neo4j knowledge graph. For content-based importance, use zot_semantic_search with relevance ranking instead.\n\nUse for: Identifying papers by citation impact (citation-based ranking, not content-based relevance)",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Find Seminal Papers (Graph)"
+    }
+)
+def find_seminal_papers(
+    field: str = None,
+    top_n: int = 10,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Find seminal/influential papers based on citation network analysis.
+
+    Args:
+        field: Optional field name to filter papers (default: None, all fields)
+        top_n: Number of top papers to return (default: 10)
+        ctx: MCP context
+
+    Returns:
+        Markdown-formatted list of influential papers with influence scores
+    """
+    try:
+        from pathlib import Path
+        from agent_zot.clients.neo4j_graphrag import create_neo4j_graphrag_client
+
+        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
+        graph_client = create_neo4j_graphrag_client(str(config_path))
+
+        if not graph_client:
+            return "Neo4j GraphRAG is not enabled. Please configure it in config.json."
+
+        field_info = f" in field: {field}" if field else " across all fields"
+        ctx.info(f"Finding seminal papers{field_info} (top {top_n})")
+
+        results = graph_client.find_seminal_papers(
+            field=field,
+            top_n=top_n
+        )
+
+        if not results:
+            return f"No seminal papers found{field_info}"
+
+        # Format results as markdown
+        output = [f"# Seminal Papers{field_info.title()}\n"]
+        output.append(f"Top {len(results)} most influential papers by citation analysis:\n")
+
+        for i, paper in enumerate(results, 1):
+            title = paper.get("title", "Unknown")
+            year = paper.get("year", "N/A")
+            key = paper.get("item_key", "")
+            influence = paper.get("influence_score", 0)
+
+            output.append(f"## {i}. {title} ({year})")
+            output.append(f"- **Key**: {key}")
+            output.append(f"- **Influence Score**: {influence:.2f} citations")
+            output.append("")
+
+        output.append("\n*Note: Influence score based on citation count (proxy for PageRank)*")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        ctx.error(f"Error finding seminal papers: {str(e)}")
+        return f"Error finding seminal papers: {str(e)}"
+
+
+@mcp.tool(
+    name="zot_track_topic_evolution",
+    description="🟢 SECONDARY - Track how a research topic/concept has evolved over time using graph analysis. Shows yearly paper counts, related concepts, and trends.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ Requires Neo4j knowledge graph. For simpler temporal queries, use zot_find_recent_developments instead.\n\nUse for: Analyzing research trajectory and concept emergence over time (temporal network analysis)",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Track Topic Evolution (Graph)"
+    }
+)
+def track_topic_evolution(
+    concept: str,
+    start_year: int,
+    end_year: int,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Track temporal evolution of a research topic with yearly breakdown.
+
+    Args:
+        concept: Concept name to track (must exist in knowledge graph)
+        start_year: Start year for analysis
+        end_year: End year for analysis
+        ctx: MCP context
+
+    Returns:
+        Markdown-formatted evolution analysis with yearly data and trends
+    """
+    try:
+        from pathlib import Path
+        from agent_zot.clients.neo4j_graphrag import create_neo4j_graphrag_client
+
+        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
+        graph_client = create_neo4j_graphrag_client(str(config_path))
+
+        if not graph_client:
+            return "Neo4j GraphRAG is not enabled. Please configure it in config.json."
+
+        ctx.info(f"Tracking evolution of '{concept}' from {start_year}-{end_year}")
+
+        result = graph_client.track_topic_evolution(
+            concept=concept,
+            start_year=start_year,
+            end_year=end_year
+        )
+
+        if result.get("error"):
+            return f"Error tracking topic evolution: {result['error']}"
+
+        if result.get("total_papers", 0) == 0:
+            return f"No papers found discussing '{concept}' from {start_year}-{end_year}"
+
+        # Format results as markdown
+        output = [f"# Topic Evolution: '{concept}' ({start_year}-{end_year})\n"]
+        output.append(f"**Total Papers**: {result['total_papers']}")
+        output.append(f"**Trend**: {result['trend'].upper()}\n")
+
+        # Yearly breakdown
+        yearly_data = result.get("yearly_breakdown", [])
+        if yearly_data:
+            output.append("## Yearly Breakdown\n")
+            for year_info in yearly_data:
+                year = year_info.get("year", "Unknown")
+                count = year_info.get("paper_count", 0)
+                samples = year_info.get("sample_papers", [])
+
+                output.append(f"### {year}: {count} paper{'s' if count != 1 else ''}")
+                if samples:
+                    output.append("Sample papers:")
+                    for paper in samples[:2]:
+                        output.append(f"- {paper}")
+                output.append("")
+
+        # Related concepts
+        related = result.get("related_concepts", [])
+        if related:
+            output.append("## Related Concepts (Co-occurring)\n")
+            for item in related[:5]:
+                concept_name = item.get("concept", "Unknown")
+                count = item.get("co_occurrence_count", 0)
+                first_year = item.get("first_appeared", "Unknown")
+
+                output.append(f"- **{concept_name}**: {count} papers (first appeared: {first_year})")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        ctx.error(f"Error tracking topic evolution: {str(e)}")
+        return f"Error tracking topic evolution: {str(e)}"
+
+
+# DEPRECATED - Use zot_semantic_search with date filters instead
+# Redundant tool - just calls semantic_search with year filter
+# Agents should use: semantic_search(query="topic", filters={"year": {"$gte": 2023}})
+# @mcp.tool(
+#     name="zot_find_recent_developments",
+#     description="🟢 SECONDARY - Find recent papers on a topic (default: last 2 years). Uses hybrid semantic search with temporal filtering.\n\n💡 This combines Qdrant semantic search with temporal filtering - good for \"recent papers about X\" queries.\n\nUse for: Discovering latest research developments on established topics (time-filtered semantic search)",
+#     annotations={
+#         "readOnlyHint": True,
+#         "title": "Find Recent Developments (Temporal)"
+#     }
+# )
+def find_recent_developments_DEPRECATED(
+    topic: str,
+    years_back: int = 2,
+    limit: int = 10,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Search for recent papers on a topic with year filtering.
+
+    Args:
+        topic: Research topic or query
+        years_back: How many years back to search (default: 2)
+        limit: Maximum results (default: 10)
+        ctx: MCP context
+
+    Returns:
+        Markdown-formatted recent papers on the topic
+    """
+    try:
+        from pathlib import Path
+        from agent_zot.search.semantic import create_semantic_search
+
+        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
+        search = create_semantic_search(str(config_path))
+
+        if not search or not search.vector_db:
+            return "Semantic search is not initialized. Please run 'agent-zot update-db' first."
+
+        ctx.info(f"Finding recent developments on '{topic}' (last {years_back} years, limit: {limit})")
+
+        # Use Qdrant's temporal search
+        results = search.vector_db.search_recent_on_topic(
+            query=topic,
+            years_back=years_back,
+            limit=limit
+        )
+
+        if not results or not results.get("ids") or not results["ids"][0]:
+            return f"No recent papers found on '{topic}' in the last {years_back} years"
+
+        # Extract search params
+        search_params = results.get("search_params", {})
+        year_range = search_params.get("year_range", f"last {years_back} years")
+
+        # Format results
+        output = [f"# Recent Developments: '{topic}' ({year_range})\n"]
+        output.append(f"Found {len(results['ids'][0])} recent papers:\n")
+
+        for i in range(len(results["ids"][0])):
+            # Safe nested list access with bounds checking (see commit 416a12c for similar fix)
+            metadata = (results["metadatas"][0][i]
+                       if results.get("metadatas") and len(results["metadatas"]) > 0 and len(results["metadatas"][0]) > i
+                       else {})
+            doc_text = (results["documents"][0][i]
+                       if results.get("documents") and len(results["documents"]) > 0 and len(results["documents"][0]) > i
+                       else "")
+
+            title = metadata.get("title", "Unknown")
+            year = metadata.get("year", "N/A")
+            authors = metadata.get("authors", "Unknown authors")
+            item_key = metadata.get("item_key", "")
+
+            output.append(f"## {i+1}. {title} ({year})")
+            output.append(f"- **Authors**: {authors}")
+            output.append(f"- **Key**: {item_key}")
+
+            # Show preview of relevant content
+            if doc_text and len(doc_text) > 200:
+                preview = doc_text[:200] + "..."
+                output.append(f"- **Preview**: {preview}")
+
+            output.append("")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        ctx.error(f"Error finding recent developments: {str(e)}")
+        return f"Error finding recent developments: {str(e)}"
+
+
+@mcp.tool(
+    name="zot_analyze_venues",
+    description="🟢 SECONDARY - Analyze publication venues (journals/conferences) to identify top outlets using graph analysis. Shows paper counts and sample publications.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ Requires Neo4j knowledge graph. For content queries, use zot_semantic_search instead.\n\nUse for: Examining publication venue patterns and outlet rankings (venue analysis, not content analysis)",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Analyze Venues (Graph)"
+    }
+)
+def analyze_venues(
+    field: str = None,
+    top_n: int = 10,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Analyze most common publication venues.
+
+    Args:
+        field: Optional field name to filter by (default: None, all fields)
+        top_n: Number of top venues to return (default: 10)
+        ctx: MCP context
+
+    Returns:
+        Markdown-formatted venue analysis with paper counts
+    """
+    try:
+        from pathlib import Path
+        from agent_zot.clients.neo4j_graphrag import create_neo4j_graphrag_client
+
+        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
+        graph_client = create_neo4j_graphrag_client(str(config_path))
+
+        if not graph_client:
+            return "Neo4j GraphRAG is not enabled. Please configure it in config.json."
+
+        field_info = f" in field: {field}" if field else " across all fields"
+        ctx.info(f"Analyzing publication venues{field_info} (top {top_n})")
+
+        results = graph_client.analyze_publication_venues(
+            field=field,
+            top_n=top_n
+        )
+
+        if not results:
+            return f"No publication venues found{field_info}"
+
+        # Format results as markdown
+        output = [f"# Top Publication Venues{field_info.title()}\n"]
+        output.append(f"Found {len(results)} top venues by publication count:\n")
+
+        for i, venue_data in enumerate(results, 1):
+            venue = venue_data.get("venue", "Unknown")
+            count = venue_data.get("paper_count", 0)
+            samples = venue_data.get("sample_papers", [])
+
+            output.append(f"## {i}. {venue}")
+            output.append(f"- **Papers Published**: {count}")
+
+            if samples:
+                output.append(f"- **Sample Publications**:")
+                for paper in samples[:3]:
+                    output.append(f"  - {paper}")
+
+            output.append("")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        ctx.error(f"Error analyzing venues: {str(e)}")
+        return f"Error analyzing venues: {str(e)}"
+
+
+
+# ============================================================================
+# ZOTERO TOOLS - Metadata & CRUD Operations
+# ============================================================================
 @mcp.tool(
     name="zot_search_items",
     description="⚪ FALLBACK - Direct Zotero API keyword-based metadata search. Use ONLY for exact title/author/year lookups when you don't have item keys yet.\n\n⚠️ DO NOT use after zot_semantic_search - you already have item keys! Use zot_get_item() for metadata or zot_ask_paper() for content instead.\n\n⚠️ This is literal keyword matching, NOT semantic. Always try zot_semantic_search first for research queries.\n\nUse for: Finding papers when you know exact author name/title phrase but don't have item key yet",
@@ -2081,1016 +3726,10 @@ def create_note(
         return f"Error creating note: {str(e)}"
 
 
-@mcp.tool(
-    name="zot_semantic_search",
-    description="🔵 PRIMARY for content/topic discovery. Use when query involves meaning, concepts, or \"papers about X\".\n\n📊 Search Levels (choose based on your needs):\n- Use THIS (Level 1) when: Basic paper discovery, titles/abstracts sufficient\n- Upgrade to Level 3 (zot_enhanced_semantic_search) when: Need entities/concepts from matched passages\n- Use Level 2 (zot_hybrid_vector_graph_search) when: Need paper-level relationship exploration\n\n💡 Often combines with:\n- zot_ask_paper() to read content of found papers\n- Neo4j tools to explore relationships\n\nExample queries:\n✓ \"papers about [concept/topic]\"\n✓ \"research on [method/approach]\"\n✓ \"studies using [technique]\"\n\nNOT for:\n✗ \"who collaborated with [author]?\" → use zot_graph_search\n✗ \"papers citing [specific paper]\" → use zot_find_citation_chain\n\nUse for: Semantic discovery like \"papers about [concept]\" or \"research on [method]\"",
-    annotations={
-        "readOnlyHint": True,
-        "title": "Semantic Search (Query)"
-    }
-)
-def semantic_search(
-    query: str,
-    limit: int = 10,
-    filters: Optional[str] = None,
-    *,
-    ctx: Context
-) -> str:
-    """
-    Perform semantic search over your Zotero library.
-    
-    Args:
-        query: Search query text - can be concepts, topics, or natural language descriptions
-        limit: Maximum number of results to return (default: 10)
-        filters: Optional metadata filters as dict or JSON string. Example: {"item_type": "note"}
-        ctx: MCP context
-    
-    Returns:
-        Markdown-formatted search results with similarity scores
-    """
-    try:
-        if not query.strip():
-            return "Error: Search query cannot be empty"
-        
-        # Parse and validate filters parameter
-        if filters is not None:
-            # Handle JSON string input
-            if isinstance(filters, str):
-                try:
-                    filters = json.loads(filters)
-                    ctx.info(f"Parsed JSON string filters: {filters}")
-                except json.JSONDecodeError as e:
-                    return f"Error: Invalid JSON in filters parameter: {str(e)}"
-            
-            # Validate it's a dictionary
-            if not isinstance(filters, dict):
-                return "Error: filters parameter must be a dictionary or JSON string. Example: {\"item_type\": \"note\"}"
-            
-            # Automatically translate common field names
-            if "itemType" in filters:
-                filters["item_type"] = filters.pop("itemType")
-                ctx.info(f"Automatically translated 'itemType' to 'item_type': {filters}")
-            
-            # Additional field name translations can be added here
-            # Example: if "creatorType" in filters:
-            #     filters["creator_type"] = filters.pop("creatorType")
-        
-        ctx.info(f"Performing semantic search for: '{query}'")
-        
-        # Import semantic search module
-        from agent_zot.search.semantic import create_semantic_search
-        from pathlib import Path
-        
-        # Determine config path
-        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
-        
-        # Create semantic search instance
-        search = create_semantic_search(str(config_path))
-        
-        # Perform search
-        results = search.search(query=query, limit=limit, filters=filters)
-        
-        if results.get("error"):
-            return f"Semantic search error: {results['error']}"
-        
-        search_results = results.get("results", [])
-        
-        if not search_results:
-            return f"No semantically similar items found for query: '{query}'"
-        
-        # Format results as markdown
-        output = [f"# Semantic Search Results for '{query}'", ""]
-        output.append(f"Found {len(search_results)} similar items:")
-        output.append("")
-        
-        for i, result in enumerate(search_results, 1):
-            similarity_score = result.get("similarity_score", 0)
-            _ = result.get("metadata", {})
-            zotero_item = result.get("zotero_item", {})
-            
-            if zotero_item:
-                data = zotero_item.get("data", {})
-                title = data.get("title", "Untitled")
-                item_type = data.get("itemType", "unknown")
-                key = result.get("item_key", "")
-                
-                # Format creators
-                creators = data.get("creators", [])
-                creators_str = format_creators(creators)
-                
-                output.append(f"## {i}. {title}")
-                output.append(f"**Similarity Score:** {similarity_score:.3f}")
-                output.append(f"**Type:** {item_type}")
-                output.append(f"**Item Key:** {key}")
-                output.append(f"**Authors:** {creators_str}")
-                
-                # Add date if available
-                if date := data.get("date"):
-                    output.append(f"**Date:** {date}")
-                
-                # Add abstract snippet if present
-                if abstract := data.get("abstractNote"):
-                    abstract_snippet = abstract[:200] + "..." if len(abstract) > 200 else abstract
-                    output.append(f"**Abstract:** {abstract_snippet}")
-                
-                # Add tags if present
-                if tags := data.get("tags"):
-                    tag_list = [f"`{tag['tag']}`" for tag in tags]
-                    if tag_list:
-                        output.append(f"**Tags:** {' '.join(tag_list)}")
-                
-                # Show matched text snippet
-                matched_text = result.get("matched_text", "")
-                if matched_text:
-                    snippet = matched_text[:300] + "..." if len(matched_text) > 300 else matched_text
-                    output.append(f"**Matched Content:** {snippet}")
-                
-                output.append("")  # Empty line between items
-            else:
-                # Fallback if full Zotero item not available
-                output.append(f"## {i}. Item {result.get('item_key', 'Unknown')}")
-                output.append(f"**Similarity Score:** {similarity_score:.3f}")
-                if error := result.get("error"):
-                    output.append(f"**Error:** {error}")
-                output.append("")
-        
-        return "\n".join(output)
-    
-    except Exception as e:
-        ctx.error(f"Error in semantic search: {str(e)}")
-        return f"Error in semantic search: {str(e)}"
 
-
-@mcp.tool(
-    name="zot_update_search_database",
-    description="Index or re-index the Zotero library for semantic search. Extracts full PDF text using AI-powered parsing (Docling with OCR). Use this when the user asks to 'index my library', 'update the search database', or 'enable semantic search'. Automatically handles full-text extraction from PDFs.\n\nUse for: Rebuilding semantic search database after adding new papers",
-    annotations={
-        "readOnlyHint": False,
-        "title": "Update Search Index (Query)"
-    }
-)
-def update_search_database(
-    force_rebuild: bool = False,
-    extract_fulltext: bool = True,
-    limit: Optional[int] = None,
-    *,
-    ctx: Context
-) -> str:
-    """
-    Index or re-index the Zotero library for AI-powered semantic search.
-
-    This tool extracts content from your Zotero library and creates searchable embeddings.
-    By default, it extracts full PDF text for comprehensive semantic search.
-
-    Args:
-        force_rebuild: Set to True to rebuild entire database from scratch. False = incremental update (default: False)
-        extract_fulltext: Set to True for full PDF text extraction, False for metadata-only (default: True)
-        limit: Optional limit for testing (e.g., 10 for quick test). None = process all items (default: None)
-        ctx: MCP context
-
-    Returns:
-        Detailed statistics about the indexing process
-    """
-    try:
-        # Handle string-to-int conversion for limit parameter (Claude sometimes sends strings)
-        if limit is not None and isinstance(limit, str):
-            try:
-                limit = int(limit)
-            except ValueError:
-                return f"Error: limit must be a number, got '{limit}'"
-
-        mode = "full-text PDF extraction" if extract_fulltext else "metadata-only"
-        ctx.info(f"Starting semantic search database update ({mode})...")
-
-        # Import semantic search module
-        from agent_zot.search.semantic import create_semantic_search
-        from pathlib import Path
-
-        # Determine config path
-        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
-
-        # Create semantic search instance
-        search = create_semantic_search(str(config_path))
-
-        # Perform update
-        stats = search.update_database(
-            force_full_rebuild=force_rebuild,
-            limit=limit,
-            extract_fulltext=extract_fulltext
-        )
-        
-        # Format results
-        output = ["# Database Update Results", ""]
-        
-        if stats.get("error"):
-            output.append(f"**Error:** {stats['error']}")
-        else:
-            output.append(f"**Total items:** {stats.get('total_items', 0)}")
-            output.append(f"**Processed:** {stats.get('processed_items', 0)}")
-            output.append(f"**Added:** {stats.get('added_items', 0)}")
-            output.append(f"**Updated:** {stats.get('updated_items', 0)}")
-            output.append(f"**Skipped:** {stats.get('skipped_items', 0)}")
-            output.append(f"**Errors:** {stats.get('errors', 0)}")
-            output.append(f"**Duration:** {stats.get('duration', 'Unknown')}")
-            
-            if stats.get('start_time'):
-                output.append(f"**Started:** {stats['start_time']}")
-            if stats.get('end_time'):
-                output.append(f"**Completed:** {stats['end_time']}")
-        
-        return "\n".join(output)
-    
-    except Exception as e:
-        ctx.error(f"Error updating search database: {str(e)}")
-        return f"Error updating search database: {str(e)}"
-
-
-@mcp.tool(
-    name="zot_get_search_database_status",
-    description="Get status information about the semantic search database.\n\nUse for: Verifying semantic search database health and statistics"
-)
-def get_search_database_status(*, ctx: Context) -> str:
-    """
-    Get semantic search database status.
-    
-    Args:
-        ctx: MCP context
-    
-    Returns:
-        Database status information
-    """
-    try:
-        ctx.info("Getting semantic search database status...")
-        
-        # Import semantic search module
-        from agent_zot.search.semantic import create_semantic_search
-        from pathlib import Path
-        
-        # Determine config path
-        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
-        
-        # Create semantic search instance
-        search = create_semantic_search(str(config_path))
-        
-        # Get status
-        status = search.get_database_status()
-        
-        # Format results
-        output = ["# Semantic Search Database Status", ""]
-        
-        collection_info = status.get("collection_info", {})
-        output.append("## Collection Information")
-        output.append(f"**Name:** {collection_info.get('name', 'Unknown')}")
-        output.append(f"**Document Count:** {collection_info.get('count', 0)}")
-        output.append(f"**Embedding Model:** {collection_info.get('embedding_model', 'Unknown')}")
-        output.append(f"**Database Path:** {collection_info.get('persist_directory', 'Unknown')}")
-        
-        if collection_info.get('error'):
-            output.append(f"**Error:** {collection_info['error']}")
-        
-        output.append("")
-        
-        update_config = status.get("update_config", {})
-        output.append("## Update Configuration")
-        output.append(f"**Auto Update:** {update_config.get('auto_update', False)}")
-        output.append(f"**Frequency:** {update_config.get('update_frequency', 'manual')}")
-        output.append(f"**Last Update:** {update_config.get('last_update', 'Never')}")
-        output.append(f"**Should Update Now:** {status.get('should_update', False)}")
-        
-        if update_config.get('update_days'):
-            output.append(f"**Update Interval:** Every {update_config['update_days']} days")
-        
-        return "\n".join(output)
-    
-    except Exception as e:
-        ctx.error(f"Error getting database status: {str(e)}")
-        return f"Error getting database status: {str(e)}"
-
-
-# --- Minimal wrappers for ChatGPT connectors ---
-# These are required for ChatGPT custom MCP servers via web "connectors"
-# specific tools required are "search" and "fetch"
-# See: https://platform.openai.com/docs/mcp
-
-def _extract_item_key_from_input(value: str) -> Optional[str]:
-    """Extract a Zotero item key from a Zotero URL, web URL, or bare key.
-    Returns None if no plausible key is found.
-    """
-    if not value:
-        return None
-    text = value.strip()
-
-    # Common patterns:
-    # - zotero://select/items/<KEY>
-    # - zotero://select/library/items/<KEY>
-    # - https://www.zotero.org/.../items/<KEY>
-    # - bare <KEY>
-    patterns = [
-        r"zotero://select/(?:library/)?items/([A-Za-z0-9]{8})",
-        r"/items/([A-Za-z0-9]{8})(?:[^A-Za-z0-9]|$)",
-        r"\b([A-Za-z0-9]{8})\b",
-    ]
-
-    for pattern in patterns:
-        match = re.search(pattern, text)
-        if match:
-            return match.group(1)
-    return None
-
-
-@mcp.tool(
-    name="zot_graph_search",
-    description="🟢 PRIMARY for relationship/network queries. Use when query involves connections, collaborations, or \"who/what is related to X\". Neo4j knowledge graph search for finding relationships between authors, institutions, concepts, methods, or other entities.\n\n💡 Often combines with zot_semantic_search to first discover papers by content, then explore their relationships.\n\nExample queries:\n✓ \"who collaborated with [author]?\"\n✓ \"institutions working on [topic]\"\n✓ \"authors researching [concept]\"\n\nNOT for:\n✗ \"papers about [topic]\" → use zot_semantic_search\n✗ \"what is [concept]\" → use zot_ask_paper\n\nUse for: Exploring relationships like \"who collaborated with [author]?\" or \"institutions working on [topic]\"",
-    annotations={
-        "readOnlyHint": True,
-        "title": "Graph Search (Graph)"
-    }
-)
-def graph_search(
-    query: str,
-    entity_types: Optional[str] = None,
-    limit: int = 10,
-    *,
-    ctx: Context
-) -> str:
-    """
-    Search the Neo4j knowledge graph for entities and concepts.
-
-    Args:
-        query: Search query for entities (e.g., "transformer architecture", "attention mechanism")
-        entity_types: Comma-separated entity types to filter (e.g., "Concept,Method")
-        limit: Maximum number of results (default: 10)
-        ctx: MCP context
-
-    Returns:
-        Markdown-formatted graph search results
-    """
-    try:
-        from agent_zot.search.semantic import create_semantic_search
-        from pathlib import Path
-
-        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
-        search = create_semantic_search(str(config_path))
-
-        # Parse entity types
-        entity_types_list = None
-        if entity_types:
-            entity_types_list = [t.strip() for t in entity_types.split(",")]
-
-        # Perform graph search
-        results = search.graph_search(
-            query=query,
-            entity_types=entity_types_list,
-            limit=limit
-        )
-
-        if results.get("error"):
-            return f"Graph search error: {results['error']}"
-
-        entities = results.get("results", [])
-
-        if not entities:
-            return f"No entities found in knowledge graph for query: '{query}'"
-
-        # Format results
-        output = [f"# Knowledge Graph Search Results for '{query}'", ""]
-        output.append(f"Found {len(entities)} entities:")
-        output.append("")
-
-        for i, entity in enumerate(entities, 1):
-            entity_name = entity.get("name", "Unknown")
-            entity_types = ", ".join(entity.get("types", []))
-            description = entity.get("description", "No description")
-
-            output.append(f"## {i}. {entity_name}")
-            output.append(f"**Type:** {entity_types}")
-            output.append(f"**Description:** {description}")
-            output.append("")
-
-        return "\n".join(output)
-
-    except Exception as e:
-        ctx.error(f"Error in graph search: {str(e)}")
-        return f"Error in graph search: {str(e)}"
-
-
-@mcp.tool(
-    name="zot_find_related_papers",
-    description="🟢 SECONDARY - Find papers related to a given paper via shared entities in the knowledge graph. Use when you want to discover connections through citations, authors, or concepts.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ For content-based similarity, use zot_semantic_search instead.\n\nExample use cases:\n✓ After finding key paper: \"What else cites this?\"\n✓ \"Papers by same authors or on related concepts\"\n✓ \"Follow citation trail from this paper\"\n\nNOT for:\n✗ \"papers similar to [broad concept]\" → use zot_semantic_search\n✗ \"broad topic discovery\" → use zot_semantic_search first\n\nUse for: Discovering papers connected through citations, authors, or shared concepts (relationship-based, not content-based)",
-    annotations={
-        "readOnlyHint": True,
-        "title": "Find Related Papers (Graph)"
-    }
-)
-def find_related_papers(
-    item_key: str,
-    limit: int = 10,
-    *,
-    ctx: Context
-) -> str:
-    """
-    Find papers related to a given paper using the knowledge graph.
-
-    Args:
-        item_key: Zotero item key of the source paper
-        limit: Maximum number of related papers to return (default: 10)
-        ctx: MCP context
-
-    Returns:
-        Markdown-formatted related papers with shared entities
-    """
-    try:
-        from agent_zot.search.semantic import create_semantic_search
-        from pathlib import Path
-
-        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
-        search = create_semantic_search(str(config_path))
-
-        # Find related papers
-        results = search.find_related_papers(paper_key=item_key, limit=limit)
-
-        if results.get("error"):
-            return f"Error finding related papers: {results['error']}"
-
-        related_papers = results.get("results", [])
-
-        if not related_papers:
-            return f"No related papers found for item: {item_key}"
-
-        # Format results
-        output = [f"# Papers Related to {item_key}", ""]
-        output.append(f"Found {len(related_papers)} related papers via knowledge graph:")
-        output.append("")
-
-        for i, paper in enumerate(related_papers, 1):
-            title = paper.get("title", "Untitled")
-            year = paper.get("year", "N/A")
-            authors = paper.get("authors", [])
-            shared_count = paper.get("shared_entities", 0)
-            sample_entities = paper.get("sample_entities", [])
-
-            output.append(f"## {i}. {title}")
-            output.append(f"**Year:** {year}")
-            if authors:
-                output.append(f"**Authors:** {', '.join(authors[:3])}")
-            output.append(f"**Shared Entities:** {shared_count}")
-            if sample_entities:
-                output.append(f"**Sample Connections:** {', '.join(sample_entities)}")
-            output.append(f"**Item Key:** {paper.get('item_key', 'N/A')}")
-            output.append("")
-
-        return "\n".join(output)
-
-    except Exception as e:
-        ctx.error(f"Error finding related papers: {str(e)}")
-        return f"Error finding related papers: {str(e)}"
-
-
-@mcp.tool(
-    name="zot_find_citation_chain",
-    description="🟢 SECONDARY - Find papers citing papers that cite a given paper (multi-hop citation analysis). Use for discovering extended citation networks.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ Requires Neo4j knowledge graph. For content-based discovery, use zot_semantic_search instead.\n\nUse for: Tracing how ideas propagate through citation networks (relationship analysis, not content analysis)",
-    annotations={
-        "readOnlyHint": True,
-        "title": "Find Citation Chain (Graph)"
-    }
-)
-def find_citation_chain(
-    paper_key: str,
-    max_hops: int = 2,
-    limit: int = 10,
-    *,
-    ctx: Context
-) -> str:
-    """
-    Find citation chains showing how papers cite papers that cite the given paper.
-
-    Args:
-        paper_key: Zotero item key of the starting paper
-        max_hops: Maximum citation hops (1-3, default: 2)
-        limit: Maximum papers to return (default: 10)
-        ctx: MCP context
-
-    Returns:
-        Markdown-formatted citation chain with hop distances
-    """
-    try:
-        from pathlib import Path
-        from agent_zot.clients.neo4j_graphrag import create_neo4j_graphrag_client
-
-        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
-        graph_client = create_neo4j_graphrag_client(str(config_path))
-
-        if not graph_client:
-            return "Neo4j GraphRAG is not enabled. Please configure it in config.json."
-
-        ctx.info(f"Finding citation chain for paper: {paper_key} (max hops: {max_hops})")
-
-        results = graph_client.find_citation_chain(
-            paper_key=paper_key,
-            max_hops=max_hops,
-            limit=limit
-        )
-
-        if not results:
-            return f"No citation chain found for paper: {paper_key}"
-
-        # Format results as markdown
-        output = [f"# Citation Chain for {paper_key}\n"]
-        output.append(f"Found {len(results)} papers in citation network (max {max_hops} hops):\n")
-
-        for paper in results:
-            hops = paper.get("citation_hops", 0)
-            title = paper.get("title", "Unknown")
-            year = paper.get("year", "N/A")
-            key = paper.get("item_key", "")
-            path = paper.get("citation_path", [])
-
-            output.append(f"## {title} ({year})")
-            output.append(f"- **Key**: {key}")
-            output.append(f"- **Citation Distance**: {hops} hop{'s' if hops != 1 else ''}")
-            if path:
-                output.append(f"- **Citation Path**: {' → '.join(path[:3])}{'...' if len(path) > 3 else ''}")
-            output.append("")
-
-        return "\n".join(output)
-
-    except Exception as e:
-        ctx.error(f"Error finding citation chain: {str(e)}")
-        return f"Error finding citation chain: {str(e)}"
-
-
-@mcp.tool(
-    name="zot_explore_concept_network",
-    description="🟢 SECONDARY - Find concepts related through intermediate concepts (concept propagation). Discovers conceptual relationships by traversing the knowledge graph.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ Requires Neo4j knowledge graph. For content-based concept discovery, use zot_semantic_search instead.\n\nUse for: Mapping how concepts connect through shared papers (network analysis, not content analysis)",
-    annotations={
-        "readOnlyHint": True,
-        "title": "Explore Concept Network (Graph)"
-    }
-)
-def explore_concept_network(
-    concept: str,
-    max_hops: int = 2,
-    limit: int = 15,
-    *,
-    ctx: Context
-) -> str:
-    """
-    Explore related concepts through multi-hop graph traversal.
-
-    Args:
-        concept: Starting concept name
-        max_hops: Maximum relationship hops (1-3, default: 2)
-        limit: Maximum concepts to return (default: 15)
-        ctx: MCP context
-
-    Returns:
-        Markdown-formatted related concepts with relationship paths
-    """
-    try:
-        from pathlib import Path
-        from agent_zot.clients.neo4j_graphrag import create_neo4j_graphrag_client
-
-        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
-        graph_client = create_neo4j_graphrag_client(str(config_path))
-
-        if not graph_client:
-            return "Neo4j GraphRAG is not enabled. Please configure it in config.json."
-
-        ctx.info(f"Exploring concept network for: {concept} (max hops: {max_hops})")
-
-        results = graph_client.find_related_concepts(
-            concept=concept,
-            max_hops=max_hops,
-            limit=limit
-        )
-
-        if not results:
-            return f"No related concepts found for: {concept}"
-
-        # Format results as markdown
-        output = [f"# Related Concepts for '{concept}'\n"]
-        output.append(f"Found {len(results)} related concepts (max {max_hops} hops):\n")
-
-        for item in results:
-            concept_name = item.get("concept", "Unknown")
-            hops = item.get("relationship_hops", 0)
-            paper_count = item.get("paper_count", 0)
-            sample_papers = item.get("sample_papers", [])
-
-            output.append(f"## {concept_name}")
-            output.append(f"- **Relationship Distance**: {hops} hop{'s' if hops != 1 else ''}")
-            output.append(f"- **Papers Discussing Both**: {paper_count}")
-            if sample_papers:
-                output.append(f"- **Sample Papers**:")
-                for paper in sample_papers[:3]:
-                    output.append(f"  - {paper}")
-            output.append("")
-
-        return "\n".join(output)
-
-    except Exception as e:
-        ctx.error(f"Error exploring concept network: {str(e)}")
-        return f"Error exploring concept network: {str(e)}"
-
-
-@mcp.tool(
-    name="zot_find_collaborator_network",
-    description="🟢 SECONDARY - Find collaborators of collaborators (co-authorship network). Discovers extended collaboration networks by traversing author relationships.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ Requires Neo4j knowledge graph. For simpler author queries, use zot_semantic_search with author filters instead.\n\nUse for: Analyzing multi-hop author collaboration patterns and networks (network analysis)",
-    annotations={
-        "readOnlyHint": True,
-        "title": "Find Collaborator Network (Graph)"
-    }
-)
-def find_collaborator_network(
-    author: str,
-    max_hops: int = 2,
-    limit: int = 20,
-    *,
-    ctx: Context
-) -> str:
-    """
-    Find extended collaboration network for an author.
-
-    Args:
-        author: Author name to start from
-        max_hops: Maximum collaboration hops (1-3, default: 2)
-        limit: Maximum collaborators to return (default: 20)
-        ctx: MCP context
-
-    Returns:
-        Markdown-formatted collaborator network with distances
-    """
-    try:
-        from pathlib import Path
-        from agent_zot.clients.neo4j_graphrag import create_neo4j_graphrag_client
-
-        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
-        graph_client = create_neo4j_graphrag_client(str(config_path))
-
-        if not graph_client:
-            return "Neo4j GraphRAG is not enabled. Please configure it in config.json."
-
-        ctx.info(f"Finding collaborator network for: {author} (max hops: {max_hops})")
-
-        results = graph_client.find_collaborator_network(
-            author=author,
-            max_hops=max_hops,
-            limit=limit
-        )
-
-        if not results:
-            return f"No collaborators found for: {author}"
-
-        # Format results as markdown
-        output = [f"# Collaborator Network for '{author}'\n"]
-        output.append(f"Found {len(results)} collaborators (max {max_hops} hops):\n")
-
-        for item in results:
-            collab_name = item.get("author", "Unknown")
-            hops = item.get("collaboration_hops", 0)
-            collab_count = item.get("collaboration_count", 0)
-            sample_papers = item.get("sample_papers", [])
-
-            output.append(f"## {collab_name}")
-            output.append(f"- **Collaboration Distance**: {hops} hop{'s' if hops != 1 else ''}")
-            output.append(f"- **Shared Papers**: {collab_count}")
-            if sample_papers:
-                output.append(f"- **Sample Collaborations**:")
-                for paper in sample_papers[:3]:
-                    output.append(f"  - {paper}")
-            output.append("")
-
-        return "\n".join(output)
-
-    except Exception as e:
-        ctx.error(f"Error finding collaborator network: {str(e)}")
-        return f"Error finding collaborator network: {str(e)}"
-
-
-@mcp.tool(
-    name="zot_find_seminal_papers",
-    description="🟢 SECONDARY - Find most influential papers using citation-based analysis. Identifies highly-cited foundational papers using graph metrics.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ Requires Neo4j knowledge graph. For content-based importance, use zot_semantic_search with relevance ranking instead.\n\nUse for: Identifying papers by citation impact (citation-based ranking, not content-based relevance)",
-    annotations={
-        "readOnlyHint": True,
-        "title": "Find Seminal Papers (Graph)"
-    }
-)
-def find_seminal_papers(
-    field: str = None,
-    top_n: int = 10,
-    *,
-    ctx: Context
-) -> str:
-    """
-    Find seminal/influential papers based on citation network analysis.
-
-    Args:
-        field: Optional field name to filter papers (default: None, all fields)
-        top_n: Number of top papers to return (default: 10)
-        ctx: MCP context
-
-    Returns:
-        Markdown-formatted list of influential papers with influence scores
-    """
-    try:
-        from pathlib import Path
-        from agent_zot.clients.neo4j_graphrag import create_neo4j_graphrag_client
-
-        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
-        graph_client = create_neo4j_graphrag_client(str(config_path))
-
-        if not graph_client:
-            return "Neo4j GraphRAG is not enabled. Please configure it in config.json."
-
-        field_info = f" in field: {field}" if field else " across all fields"
-        ctx.info(f"Finding seminal papers{field_info} (top {top_n})")
-
-        results = graph_client.find_seminal_papers(
-            field=field,
-            top_n=top_n
-        )
-
-        if not results:
-            return f"No seminal papers found{field_info}"
-
-        # Format results as markdown
-        output = [f"# Seminal Papers{field_info.title()}\n"]
-        output.append(f"Top {len(results)} most influential papers by citation analysis:\n")
-
-        for i, paper in enumerate(results, 1):
-            title = paper.get("title", "Unknown")
-            year = paper.get("year", "N/A")
-            key = paper.get("item_key", "")
-            influence = paper.get("influence_score", 0)
-
-            output.append(f"## {i}. {title} ({year})")
-            output.append(f"- **Key**: {key}")
-            output.append(f"- **Influence Score**: {influence:.2f} citations")
-            output.append("")
-
-        output.append("\n*Note: Influence score based on citation count (proxy for PageRank)*")
-
-        return "\n".join(output)
-
-    except Exception as e:
-        ctx.error(f"Error finding seminal papers: {str(e)}")
-        return f"Error finding seminal papers: {str(e)}"
-
-
-@mcp.tool(
-    name="zot_track_topic_evolution",
-    description="🟢 SECONDARY - Track how a research topic/concept has evolved over time using graph analysis. Shows yearly paper counts, related concepts, and trends.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ Requires Neo4j knowledge graph. For simpler temporal queries, use zot_find_recent_developments instead.\n\nUse for: Analyzing research trajectory and concept emergence over time (temporal network analysis)",
-    annotations={
-        "readOnlyHint": True,
-        "title": "Track Topic Evolution (Graph)"
-    }
-)
-def track_topic_evolution(
-    concept: str,
-    start_year: int,
-    end_year: int,
-    *,
-    ctx: Context
-) -> str:
-    """
-    Track temporal evolution of a research topic with yearly breakdown.
-
-    Args:
-        concept: Concept name to track (must exist in knowledge graph)
-        start_year: Start year for analysis
-        end_year: End year for analysis
-        ctx: MCP context
-
-    Returns:
-        Markdown-formatted evolution analysis with yearly data and trends
-    """
-    try:
-        from pathlib import Path
-        from agent_zot.clients.neo4j_graphrag import create_neo4j_graphrag_client
-
-        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
-        graph_client = create_neo4j_graphrag_client(str(config_path))
-
-        if not graph_client:
-            return "Neo4j GraphRAG is not enabled. Please configure it in config.json."
-
-        ctx.info(f"Tracking evolution of '{concept}' from {start_year}-{end_year}")
-
-        result = graph_client.track_topic_evolution(
-            concept=concept,
-            start_year=start_year,
-            end_year=end_year
-        )
-
-        if result.get("error"):
-            return f"Error tracking topic evolution: {result['error']}"
-
-        if result.get("total_papers", 0) == 0:
-            return f"No papers found discussing '{concept}' from {start_year}-{end_year}"
-
-        # Format results as markdown
-        output = [f"# Topic Evolution: '{concept}' ({start_year}-{end_year})\n"]
-        output.append(f"**Total Papers**: {result['total_papers']}")
-        output.append(f"**Trend**: {result['trend'].upper()}\n")
-
-        # Yearly breakdown
-        yearly_data = result.get("yearly_breakdown", [])
-        if yearly_data:
-            output.append("## Yearly Breakdown\n")
-            for year_info in yearly_data:
-                year = year_info.get("year", "Unknown")
-                count = year_info.get("paper_count", 0)
-                samples = year_info.get("sample_papers", [])
-
-                output.append(f"### {year}: {count} paper{'s' if count != 1 else ''}")
-                if samples:
-                    output.append("Sample papers:")
-                    for paper in samples[:2]:
-                        output.append(f"- {paper}")
-                output.append("")
-
-        # Related concepts
-        related = result.get("related_concepts", [])
-        if related:
-            output.append("## Related Concepts (Co-occurring)\n")
-            for item in related[:5]:
-                concept_name = item.get("concept", "Unknown")
-                count = item.get("co_occurrence_count", 0)
-                first_year = item.get("first_appeared", "Unknown")
-
-                output.append(f"- **{concept_name}**: {count} papers (first appeared: {first_year})")
-
-        return "\n".join(output)
-
-    except Exception as e:
-        ctx.error(f"Error tracking topic evolution: {str(e)}")
-        return f"Error tracking topic evolution: {str(e)}"
-
-
-# DEPRECATED - Use zot_semantic_search with date filters instead
-# Redundant tool - just calls semantic_search with year filter
-# Agents should use: semantic_search(query="topic", filters={"year": {"$gte": 2023}})
-# @mcp.tool(
-#     name="zot_find_recent_developments",
-#     description="🟢 SECONDARY - Find recent papers on a topic (default: last 2 years). Uses hybrid semantic search with temporal filtering.\n\n💡 This combines Qdrant semantic search with temporal filtering - good for \"recent papers about X\" queries.\n\nUse for: Discovering latest research developments on established topics (time-filtered semantic search)",
-#     annotations={
-#         "readOnlyHint": True,
-#         "title": "Find Recent Developments (Temporal)"
-#     }
-# )
-def find_recent_developments_DEPRECATED(
-    topic: str,
-    years_back: int = 2,
-    limit: int = 10,
-    *,
-    ctx: Context
-) -> str:
-    """
-    Search for recent papers on a topic with year filtering.
-
-    Args:
-        topic: Research topic or query
-        years_back: How many years back to search (default: 2)
-        limit: Maximum results (default: 10)
-        ctx: MCP context
-
-    Returns:
-        Markdown-formatted recent papers on the topic
-    """
-    try:
-        from pathlib import Path
-        from agent_zot.search.semantic import create_semantic_search
-
-        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
-        search = create_semantic_search(str(config_path))
-
-        if not search or not search.vector_db:
-            return "Semantic search is not initialized. Please run 'agent-zot update-db' first."
-
-        ctx.info(f"Finding recent developments on '{topic}' (last {years_back} years, limit: {limit})")
-
-        # Use Qdrant's temporal search
-        results = search.vector_db.search_recent_on_topic(
-            query=topic,
-            years_back=years_back,
-            limit=limit
-        )
-
-        if not results or not results.get("ids") or not results["ids"][0]:
-            return f"No recent papers found on '{topic}' in the last {years_back} years"
-
-        # Extract search params
-        search_params = results.get("search_params", {})
-        year_range = search_params.get("year_range", f"last {years_back} years")
-
-        # Format results
-        output = [f"# Recent Developments: '{topic}' ({year_range})\n"]
-        output.append(f"Found {len(results['ids'][0])} recent papers:\n")
-
-        for i in range(len(results["ids"][0])):
-            # Safe nested list access with bounds checking (see commit 416a12c for similar fix)
-            metadata = (results["metadatas"][0][i]
-                       if results.get("metadatas") and len(results["metadatas"]) > 0 and len(results["metadatas"][0]) > i
-                       else {})
-            doc_text = (results["documents"][0][i]
-                       if results.get("documents") and len(results["documents"]) > 0 and len(results["documents"][0]) > i
-                       else "")
-
-            title = metadata.get("title", "Unknown")
-            year = metadata.get("year", "N/A")
-            authors = metadata.get("authors", "Unknown authors")
-            item_key = metadata.get("item_key", "")
-
-            output.append(f"## {i+1}. {title} ({year})")
-            output.append(f"- **Authors**: {authors}")
-            output.append(f"- **Key**: {item_key}")
-
-            # Show preview of relevant content
-            if doc_text and len(doc_text) > 200:
-                preview = doc_text[:200] + "..."
-                output.append(f"- **Preview**: {preview}")
-
-            output.append("")
-
-        return "\n".join(output)
-
-    except Exception as e:
-        ctx.error(f"Error finding recent developments: {str(e)}")
-        return f"Error finding recent developments: {str(e)}"
-
-
-@mcp.tool(
-    name="zot_analyze_venues",
-    description="🟢 SECONDARY - Analyze publication venues (journals/conferences) to identify top outlets using graph analysis. Shows paper counts and sample publications.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ Requires Neo4j knowledge graph. For content queries, use zot_semantic_search instead.\n\nUse for: Examining publication venue patterns and outlet rankings (venue analysis, not content analysis)",
-    annotations={
-        "readOnlyHint": True,
-        "title": "Analyze Venues (Graph)"
-    }
-)
-def analyze_venues(
-    field: str = None,
-    top_n: int = 10,
-    *,
-    ctx: Context
-) -> str:
-    """
-    Analyze most common publication venues.
-
-    Args:
-        field: Optional field name to filter by (default: None, all fields)
-        top_n: Number of top venues to return (default: 10)
-        ctx: MCP context
-
-    Returns:
-        Markdown-formatted venue analysis with paper counts
-    """
-    try:
-        from pathlib import Path
-        from agent_zot.clients.neo4j_graphrag import create_neo4j_graphrag_client
-
-        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
-        graph_client = create_neo4j_graphrag_client(str(config_path))
-
-        if not graph_client:
-            return "Neo4j GraphRAG is not enabled. Please configure it in config.json."
-
-        field_info = f" in field: {field}" if field else " across all fields"
-        ctx.info(f"Analyzing publication venues{field_info} (top {top_n})")
-
-        results = graph_client.analyze_publication_venues(
-            field=field,
-            top_n=top_n
-        )
-
-        if not results:
-            return f"No publication venues found{field_info}"
-
-        # Format results as markdown
-        output = [f"# Top Publication Venues{field_info.title()}\n"]
-        output.append(f"Found {len(results)} top venues by publication count:\n")
-
-        for i, venue_data in enumerate(results, 1):
-            venue = venue_data.get("venue", "Unknown")
-            count = venue_data.get("paper_count", 0)
-            samples = venue_data.get("sample_papers", [])
-
-            output.append(f"## {i}. {venue}")
-            output.append(f"- **Papers Published**: {count}")
-
-            if samples:
-                output.append(f"- **Sample Publications**:")
-                for paper in samples[:3]:
-                    output.append(f"  - {paper}")
-
-            output.append("")
-
-        return "\n".join(output)
-
-    except Exception as e:
-        ctx.error(f"Error analyzing venues: {str(e)}")
-        return f"Error analyzing venues: {str(e)}"
-
-
+# ============================================================================
+# EXPORT TOOLS - Data Export
+# ============================================================================
 @mcp.tool(
     name="zot_export_markdown",
     description="Export Zotero items to Markdown files with YAML frontmatter (Obsidian-compatible). Exports items matching a query or from a collection to a specified directory.\n\nUse for: Converting bibliographic data to markdown format for documentation",
@@ -3436,99 +4075,10 @@ def export_graph(
         return f"Error exporting graph: {str(e)}"
 
 
-@mcp.tool(
-    name="zot_hybrid_vector_graph_search",
-    description="🔸 SECONDARY - Combines semantic search with relationship discovery. Use when you want both content relevance AND network connections in results. Requires Neo4j.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ For content-only queries, use zot_semantic_search instead (faster).\n\nUse for: Combined semantic+relationship queries when both content and connections matter"
-)
-def hybrid_vector_graph_search(
-    query: str,
-    limit: int = 10,
-    vector_weight: float = 0.7,
-    *,
-    ctx: Context
-) -> str:
-    """
-    Perform hybrid search combining Qdrant vector search with Neo4j graph relationships.
 
-    Args:
-        query: Search query
-        limit: Maximum number of results (default: 10)
-        vector_weight: Weight for vector results 0-1, graph weight is (1 - vector_weight) (default: 0.7)
-        ctx: MCP context
-
-    Returns:
-        Markdown-formatted hybrid search results with combined scoring
-    """
-    try:
-        from agent_zot.search.semantic import create_semantic_search
-        from pathlib import Path
-
-        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
-        search = create_semantic_search(str(config_path))
-
-        # Perform hybrid search
-        results = search.hybrid_vector_graph_search(
-            query=query,
-            limit=limit,
-            vector_weight=vector_weight
-        )
-
-        if results.get("error"):
-            return f"Hybrid search error: {results['error']}"
-
-        search_type = results.get("search_type", "unknown")
-        papers = results.get("results", [])
-        graph_enabled = results.get("graph_enabled", False)
-
-        if not papers:
-            return f"No results found for query: '{query}'"
-
-        # Format results
-        output = [f"# Hybrid Search Results for '{query}'", ""]
-        output.append(f"**Search Type:** {search_type}")
-        output.append(f"**Graph Enhancement:** {'Enabled' if graph_enabled else 'Disabled'}")
-        output.append(f"Found {len(papers)} papers:")
-        output.append("")
-
-        for i, paper in enumerate(papers, 1):
-            zotero_item = paper.get("zotero_item", {})
-            item_data = zotero_item.get("data", {})
-
-            title = item_data.get("title", "Untitled")
-            item_key = paper.get("item_key", "N/A")
-            vector_score = paper.get("similarity_score", 0)
-            combined_score = paper.get("combined_score", vector_score)
-            related_count = paper.get("related_papers_count", 0)
-            sample_related = paper.get("sample_related", [])
-
-            output.append(f"## {i}. {title}")
-            output.append(f"**Item Key:** {item_key}")
-            output.append(f"**Combined Score:** {combined_score:.3f}")
-            output.append(f"**Vector Score:** {vector_score:.3f}")
-
-            if graph_enabled:
-                output.append(f"**Related Papers (Graph):** {related_count}")
-                if sample_related:
-                    output.append(f"**Sample Connections:** {', '.join(sample_related)}")
-
-            # Add authors and year
-            creators = item_data.get("creators", [])
-            if creators:
-                authors = [f"{c.get('lastName', '')}" for c in creators[:3]]
-                output.append(f"**Authors:** {', '.join(authors)}")
-
-            year = item_data.get("date", "")[:4] if item_data.get("date") else "N/A"
-            output.append(f"**Year:** {year}")
-
-            output.append("")
-
-        return "\n".join(output)
-
-    except Exception as e:
-        ctx.error(f"Error in hybrid search: {str(e)}")
-        return f"Error in hybrid search: {str(e)}"
-
-
+# ============================================================================
+# CHATGPT COMPATIBILITY TOOLS
+# ============================================================================
 @mcp.tool(
     name="search",
     description="ChatGPT-compatible search wrapper. Performs semantic search and returns JSON results.\n\nFor Claude users: Use zot_semantic_search, zot_enhanced_semantic_search, or zot_ask_paper directly for better results.\n\nUse for: ChatGPT integrations only"
@@ -3662,533 +4212,3 @@ def connector_fetch(
             "url": "",
             "metadata": {"error": str(e)}
         }, separators=(",", ":"))
-@mcp.tool(
-    name="zot_ask_paper",
-    description="🔵 PRIMARY tool for accessing paper content. Uses semantic search to retrieve relevant text chunks from a paper's full text. Much more efficient than zot_get_item(include_fulltext=True). This does NOT generate AI answers - it returns source text chunks for you to analyze.\n\n✅ Use this when you need to read, analyze, or extract information from a paper's actual content.\n💡 For comprehensive paper summarization, call this multiple times with different questions (e.g., methods, results, conclusions) or use high top_k value.\n\nExample questions:\n✓ \"What methodology did the authors use?\"\n✓ \"What were the main findings?\"\n✓ \"How did they measure [variable]?\"\n\nNOT for:\n✗ \"find papers about [topic]\" → use zot_semantic_search\n✗ \"who are the authors\" → use zot_get_item\n\nUse for: Reading paper content, extracting findings, analyzing methodology, understanding results, comprehensive summarization",
-    annotations={
-        "readOnlyHint": True,
-        "title": "Ask Paper (Query)"
-    }
-)
-def ask_paper(
-    item_key: str,
-    question: str,
-    top_k: int = 5,
-    *,
-    ctx: Context
-) -> str:
-    """
-    Ask questions about a specific paper's content using semantic search over its chunks.
-
-    This tool returns relevant text chunks from the paper - it does NOT generate AI-written answers.
-    Use the returned context chunks to formulate your own answer or pass to an LLM.
-
-    Args:
-        item_key: Zotero item key of the paper to query
-        question: Your question about the paper's content
-        top_k: Number of relevant chunks to return (default: 5)
-        ctx: MCP context
-
-    Returns:
-        Markdown-formatted relevant text chunks from the paper
-    """
-    try:
-        from agent_zot.search.semantic import create_semantic_search
-        from pathlib import Path
-
-        ctx.info(f"Searching paper {item_key} for: {question}")
-
-        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
-        search = create_semantic_search(str(config_path))
-
-        # Search with item_key filter to only get chunks from this specific paper
-        results = search.search(
-            query=question,
-            limit=top_k,
-            filters={"item_key": item_key}
-        )
-
-        if results.get("error"):
-            return f"Error searching paper: {results['error']}"
-
-        # Get paper metadata for context
-        zot = get_zotero_client()
-        try:
-            item = zot.item(item_key)
-            paper_data = item.get("data", {}) if item else {}
-            paper_title = paper_data.get("title", "Unknown")
-        except Exception:
-            paper_title = item_key
-
-        # Check if we got results
-        if not results.get("ids") or not results["ids"][0]:
-            return f"No relevant content found in paper '{paper_title}' for question: '{question}'\n\nThis may mean:\n- The paper's full text hasn't been indexed yet (run zot_update_search_database)\n- The question topic isn't discussed in this paper\n- Try rephrasing your question"
-
-        # Format results
-        output = [f"# Relevant Content from '{paper_title}'"]
-        output.append(f"\n**Question:** {question}")
-        output.append(f"**Item Key:** {item_key}")
-        output.append(f"\n**Found {len(results['ids'][0])} relevant chunks:**\n")
-
-        for i in range(len(results["ids"][0])):
-            # Safe nested list access
-            chunk_text = (results["documents"][0][i]
-                         if results.get("documents") and len(results["documents"]) > 0 and len(results["documents"][0]) > i
-                         else "")
-            distance = (results["distances"][0][i]
-                       if results.get("distances") and len(results["distances"]) > 0 and len(results["distances"][0]) > i
-                       else 0.0)
-
-            similarity = 1.0 - distance  # Convert distance to similarity score
-
-            output.append(f"## Chunk {i+1} (Relevance: {similarity:.3f})")
-            output.append(f"{chunk_text}")
-            output.append("")
-
-        output.append("\n---")
-        output.append("*Note: These are extracted text chunks from the paper. Use them as context to formulate your answer.*")
-
-        return "\n".join(output)
-
-    except Exception as e:
-        ctx.error(f"Error in ask_paper: {str(e)}")
-        return f"Error querying paper: {str(e)}"
-
-
-@mcp.tool(
-    name="zot_find_similar_papers",
-    description="""Find papers similar to a given paper using content-based vector similarity (More Like This query).
-
-Uses the paper's actual document embedding to find semantically similar papers. More accurate than semantic_search(abstract) because it uses the full document vector.
-
-💡 Different from zot_find_related_papers:
-- THIS TOOL: Content similarity via Qdrant vectors (what the paper discusses)
-- find_related_papers: Graph relationships via Neo4j (who/what it cites, shared authors)
-
-Use when:
-✓ 'Find papers similar to this one'
-✓ 'More papers like ABC123'
-✓ 'Papers with similar methodology/approach'
-
-NOT for:
-✗ 'Papers citing this' → use zot_find_citation_chain
-✗ 'Papers by same author' → use zot_find_collaborator_network
-
-Use for: Content-based 'More Like This' discovery using document vectors""",
-    annotations={
-        "readOnlyHint": True,
-        "title": "Find Similar Papers (Query)"
-    }
-)
-def find_similar_papers(
-    item_key: str,
-    limit: int = 10,
-    *,
-    ctx: Context
-) -> str:
-    """
-    Find papers similar to the given paper using vector similarity.
-
-    Args:
-        item_key: Zotero item key of the reference paper
-        limit: Maximum number of similar papers to return (default: 10)
-        ctx: MCP context
-
-    Returns:
-        Markdown-formatted list of similar papers with similarity scores
-    """
-    try:
-        from pathlib import Path
-        from agent_zot.search.semantic import create_semantic_search
-
-        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
-        search = create_semantic_search(str(config_path))
-
-        if not search or not search.qdrant_client:
-            return "Semantic search is not initialized. Please run 'agent-zot update-db' first."
-
-        ctx.info(f"Finding papers similar to {item_key}")
-
-        # Fallback approach: Get the item and use its abstract for search
-        ctx.info("Using abstract-based semantic search for similarity")
-        zot = get_zotero_client()
-        item = zot.item(item_key)
-
-        if not item:
-            return f"No item found with key: {item_key}"
-
-        abstract = item.get("data", {}).get("abstractNote", "")
-        if not abstract:
-            return f"Item {item_key} has no abstract for similarity search.\n\n💡 Suggestion: Use zot_find_related_papers for graph-based relationships instead."
-
-        # Use semantic search with the abstract
-        results = search.search(query=abstract, limit=limit + 1)  # +1 to exclude the source paper
-
-        # Format results
-        output = [f"# Papers Similar to: {item_key}", ""]
-
-        if "results" in results and results["results"]:
-            # Filter out the source paper if it appears in results
-            filtered_results = [p for p in results["results"] if p.get("item_key") != item_key][:limit]
-
-            for i, paper in enumerate(filtered_results, 1):
-                title = paper.get("title", "Untitled")
-                authors = paper.get("creators_str", "Unknown authors")
-                year = paper.get("year", "N/A")
-                key = paper.get("item_key", "")
-                score = paper.get("similarity_score", 0.0)
-
-                output.append(f"## {i}. {title}")
-                output.append(f"**Authors:** {authors}")
-                output.append(f"**Year:** {year}")
-                output.append(f"**Item Key:** `{key}`")
-                output.append(f"**Similarity:** {score:.3f}")
-
-                # Include abstract preview if available
-                abs_text = paper.get("abstract", "")
-                if abs_text:
-                    preview = abs_text[:200] + "..." if len(abs_text) > 200 else abs_text
-                    output.append(f"**Abstract:** {preview}")
-
-                output.append("")
-
-            output.append(f"\n**Total found:** {len(filtered_results)}")
-        else:
-            output.append("No similar papers found.")
-            output.append("\n💡 Try:")
-            output.append("- zot_semantic_search for topic-based discovery")
-            output.append("- zot_find_related_papers for graph-based relationships")
-
-        return "\n".join(output)
-
-    except Exception as e:
-        import traceback
-        ctx.error(f"Error finding similar papers: {str(e)}")
-        ctx.error(f"Traceback: {traceback.format_exc()}")
-        return f"Error finding similar papers: {str(e)}"
-
-
-@mcp.tool(
-    name="zot_enhanced_semantic_search",
-    description="🔵 ADVANCED - Implements Figure 3 pattern from Qdrant GraphRAG documentation.\n\nHow it works (4 steps):\n1. Semantic search in Qdrant finds relevant chunks\n2. Extracts chunk IDs (e.g., 'ABCD1234_chunk_5')\n3. Queries Neo4j for entities in those EXACT chunks\n4. Returns papers + matched text + entities from that text\n\n💡 Most precise search available. Use when you need to know:\n- 'Which concepts appear in papers about [topic]?'\n- 'What methods are used for [purpose] in the literature?'\n- 'Which theories are discussed alongside [concept]?'\n\nExample queries:\n✓ \"which methods appear in papers about [topic]?\"\n✓ \"what theories are discussed in [field] research?\"\n✓ \"which techniques are used for [purpose]?\"\n\nNOT for:\n✗ \"just find papers about [topic]\" → use zot_semantic_search (faster)\n✗ \"who worked with [author]\" → use zot_graph_search\n\n⚠️ Requires Neo4j population. If unpopulated (currently 0.5%), uses standard semantic search instead.\n\nUse for: Entity-aware semantic search, discovering what concepts/methods/theories appear in relevant passages",
-    annotations={
-        "readOnlyHint": True,
-        "title": "Enhanced Semantic Search (Query)"
-    }
-)
-def enhanced_semantic_search(
-    query: str,
-    limit: int = 10,
-    include_chunk_entities: bool = True,
-    filters: Optional[str] = None,
-    *,
-    ctx: Context
-) -> str:
-    """
-    Enhanced semantic search with chunk-level entity enrichment (Figure 3 pattern).
-
-    This implements the full Qdrant GraphRAG architecture:
-    1. Semantic search in Qdrant for relevant chunks
-    2. Extract Qdrant point IDs from results
-    3. Use those IDs to query Neo4j for chunk-specific entities
-    4. Enrich each result with entities, types, and relationships
-
-    Args:
-        query: Search query text
-        limit: Maximum number of results (default: 10)
-        include_chunk_entities: Whether to enrich with Neo4j entities (default: True)
-        filters: Optional metadata filters as JSON string
-        ctx: MCP context
-
-    Returns:
-        Markdown-formatted results with chunk-level entities and entity types
-    """
-    try:
-        from agent_zot.search.semantic import create_semantic_search
-        from pathlib import Path
-
-        if not query.strip():
-            return "Error: Search query cannot be empty"
-
-        ctx.info(f"Performing enhanced semantic search for: {query}")
-
-        # Parse filters if provided
-        parsed_filters = None
-        if filters:
-            if isinstance(filters, str):
-                try:
-                    parsed_filters = json.loads(filters)
-                except json.JSONDecodeError as e:
-                    return f"Error: Invalid JSON in filters parameter: {str(e)}"
-            else:
-                parsed_filters = filters
-
-        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
-        search = create_semantic_search(str(config_path))
-
-        # Call the enhanced_semantic_search method
-        results = search.enhanced_semantic_search(
-            query=query,
-            limit=limit,
-            include_chunk_entities=include_chunk_entities,
-            filters=parsed_filters
-        )
-
-        if results.get("error"):
-            return f"Error during enhanced search: {results['error']}"
-
-        if not results.get("results"):
-            return f"No results found for query: '{query}'\n\nTry:\n- Broadening your search terms\n- Running zot_update_search_database if you haven't indexed recently\n- Checking if Neo4j is populated (run with include_chunk_entities=False to test Qdrant only)"
-
-        # Format results
-        output = [f"# Enhanced Semantic Search Results"]
-        output.append(f"\n**Query:** {query}")
-        output.append(f"**Search Type:** {results.get('search_type', 'enhanced_semantic')}")
-        output.append(f"**Neo4j Enabled:** {results.get('neo4j_enabled', False)}")
-        output.append(f"**Results:** {results['total_found']}\n")
-
-        for i, result in enumerate(results["results"], 1):
-            # Extract result data
-            item_key = result.get("item_key", "unknown")
-            similarity = result.get("similarity_score", 0)
-            matched_text = result.get("matched_text", "")[:300]  # First 300 chars
-
-            # Get paper title from zotero_item
-            title = "Unknown"
-            if result.get("zotero_item"):
-                zotero_data = result["zotero_item"].get("data", {})
-                title = zotero_data.get("title", "Unknown")
-
-            output.append(f"## {i}. {title}")
-            output.append(f"**Item Key:** {item_key}")
-            output.append(f"**Relevance:** {similarity:.3f}")
-
-            # Show chunk entities if available
-            if result.get("chunk_entities"):
-                entities = result["chunk_entities"]
-                entity_types = result.get("entity_types", [])
-                sample_entities = result.get("sample_entities", [])
-
-                output.append(f"\n**Entities Found in This Chunk:** {len(entities)}")
-                if entity_types:
-                    output.append(f"**Entity Types:** {', '.join(entity_types)}")
-                if sample_entities:
-                    output.append(f"**Key Entities:** {', '.join(sample_entities[:5])}")
-
-                # Show detailed entities
-                output.append(f"\n**Detailed Entities:**")
-                for entity in entities[:10]:  # Show first 10
-                    entity_name = entity.get("name", "Unknown")
-                    entity_types_list = entity.get("types", [])
-                    entity_desc = entity.get("description", "")
-
-                    # Filter out base "Entity" type
-                    types_str = ", ".join([t for t in entity_types_list if t != "Entity"])
-
-                    output.append(f"- **{entity_name}** ({types_str})")
-                    if entity_desc:
-                        output.append(f"  └─ {entity_desc[:100]}")
-
-                if len(entities) > 10:
-                    output.append(f"  ... and {len(entities) - 10} more entities")
-
-            elif include_chunk_entities and results.get("neo4j_enabled"):
-                output.append(f"\n*No entities found for this chunk (Neo4j may not have data for this paper yet)*")
-
-            # Show matched text snippet
-            output.append(f"\n**Matched Text Snippet:**")
-            output.append(f"> {matched_text}...")
-            output.append("")
-
-        output.append("\n---")
-        output.append("**💡 Tips:**")
-        output.append("- Use `zot_ask_paper(item_key, question)` to read more content from specific papers")
-        output.append("- Use `zot_graph_search(entity_name)` to explore entity relationships")
-        output.append("- Entities are extracted from the exact chunks that matched your query")
-
-        return "\n".join(output)
-
-    except Exception as e:
-        import traceback
-        ctx.error(f"Error in enhanced_semantic_search: {str(e)}")
-        ctx.error(f"Traceback: {traceback.format_exc()}")
-        return f"Error performing enhanced semantic search: {str(e)}"
-
-
-# DEPRECATED - Removed for pure agentic approach
-# Workflow orchestration tools are "training wheels" in agentic systems
-# Agents should learn to chain primitives: semantic_search → graph operations → synthesis
-# @mcp.tool(
-#     name="zot_literature_review",
-#     description="🔵 WORKFLOW - Automated literature review workflow: search papers → analyze themes → identify gaps → generate structured summary. Coordinates multiple tools (semantic search, graph analysis, temporal trends) for comprehensive research synthesis.\n\n💡 This orchestrates Qdrant, Neo4j, and Zotero API tools automatically for comprehensive reviews.\n\nUse for: Generating structured literature reviews on research topics (end-to-end workflow)",
-#     annotations={
-#         "readOnlyHint": True,
-#         "title": "Literature Review (Workflow)"
-#     }
-# )
-def literature_review_DEPRECATED(
-    topic: str,
-    max_papers: int = 20,
-    include_temporal_analysis: bool = True,
-    include_network_analysis: bool = False,
-    *,
-    ctx: Context
-) -> str:
-    """
-    Automated literature review workflow combining multiple analysis tools.
-
-    This orchestrates a multi-step process:
-    1. Semantic search to find relevant papers
-    2. Temporal analysis to track topic evolution
-    3. Network analysis to identify key authors/institutions (optional)
-    4. Structured summary generation
-
-    Args:
-        topic: Research topic to review
-        max_papers: Maximum papers to include in review (default: 20)
-        include_temporal_analysis: Include topic evolution over time (default: True)
-        include_network_analysis: Include author/institution network analysis (default: False, requires Neo4j)
-        ctx: MCP context
-
-    Returns:
-        Comprehensive literature review in markdown format
-    """
-    try:
-        from agent_zot.search.semantic import create_semantic_search
-        from pathlib import Path
-        from datetime import datetime
-
-        ctx.info(f"Starting literature review for topic: {topic}")
-
-        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
-        search = create_semantic_search(str(config_path))
-
-        output = [f"# Literature Review: {topic}"]
-        output.append(f"\n*Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}*")
-        output.append(f"*Max Papers: {max_papers}*\n")
-
-        # Step 1: Semantic search for relevant papers
-        ctx.info("Step 1: Finding relevant papers...")
-        output.append("## 1. Relevant Papers\n")
-
-        results = search.search(query=topic, limit=max_papers, filters=None)
-
-        if results.get("error"):
-            return f"Error during literature review: {results['error']}"
-
-        if not results.get("ids") or not results["ids"][0]:
-            return f"No papers found for topic: '{topic}'\n\nTry:\n- Broadening your search terms\n- Running zot_update_search_database if you haven't indexed recently"
-
-        papers = []
-        for i in range(len(results["ids"][0])):
-            item_key = (results["ids"][0][i] if results.get("ids") and len(results["ids"]) > 0 and len(results["ids"][0]) > i else "")
-            zotero_item = None
-            if results.get("metadatas") and len(results["metadatas"]) > 0 and len(results["metadatas"][0]) > i:
-                metadata = results["metadatas"][0][i]
-                # Reconstruct minimal zotero_item structure
-                zotero_item = {"data": metadata}
-
-            if zotero_item:
-                data = zotero_item["data"]
-                title = data.get("title", "Untitled")
-                year = data.get("year", "N/A")
-                authors = data.get("authors", "Unknown authors")
-
-                papers.append({
-                    "item_key": item_key,
-                    "title": title,
-                    "year": year,
-                    "authors": authors
-                })
-
-                output.append(f"### {i+1}. {title} ({year})")
-                output.append(f"- **Authors:** {authors}")
-                output.append(f"- **Key:** {item_key}")
-                output.append("")
-
-        output.append(f"\n**Total papers found:** {len(papers)}\n")
-
-        # Step 2: Temporal analysis (if requested)
-        if include_temporal_analysis and papers:
-            ctx.info("Step 2: Analyzing temporal trends...")
-            output.append("## 2. Temporal Analysis\n")
-
-            # Group papers by year
-            year_counts = {}
-            for paper in papers:
-                year = paper["year"]
-                if year != "N/A" and year:
-                    try:
-                        year_int = int(str(year)[:4])  # Handle various year formats
-                        year_counts[year_int] = year_counts.get(year_int, 0) + 1
-                    except (ValueError, TypeError):
-                        pass
-
-            if year_counts:
-                sorted_years = sorted(year_counts.items())
-                output.append("**Publication trend:**\n")
-                for year, count in sorted_years:
-                    bar = "█" * count
-                    output.append(f"- {year}: {bar} ({count} papers)")
-                output.append("")
-
-                # Identify trend
-                if len(sorted_years) >= 3:
-                    recent_avg = sum(c for y, c in sorted_years[-3:]) / 3
-                    early_avg = sum(c for y, c in sorted_years[:3]) / 3
-                    if recent_avg > early_avg * 1.5:
-                        trend = "**INCREASING** - Growing research interest"
-                    elif recent_avg < early_avg * 0.67:
-                        trend = "**DECREASING** - Declining research activity"
-                    else:
-                        trend = "**STABLE** - Consistent research output"
-                    output.append(f"**Trend:** {trend}\n")
-
-        # Step 3: Network analysis (if requested and Neo4j available)
-        if include_network_analysis:
-            ctx.info("Step 3: Analyzing research networks...")
-            output.append("## 3. Network Analysis\n")
-
-            try:
-                from agent_zot.clients.neo4j_graphrag import create_neo4j_graphrag_client
-                graph_client = create_neo4j_graphrag_client(str(config_path))
-
-                if graph_client:
-                    # Find key authors in this topic area
-                    # This is a simplified version - full implementation would query the graph
-                    output.append("*Network analysis requires Neo4j GraphRAG configuration*\n")
-                else:
-                    output.append("*Neo4j GraphRAG not configured - skipping network analysis*\n")
-            except Exception as e:
-                output.append(f"*Network analysis unavailable: {str(e)}*\n")
-
-        # Step 4: Summary and recommendations
-        ctx.info("Step 4: Generating summary...")
-        output.append("## 4. Summary\n")
-        output.append(f"This literature review identified **{len(papers)} papers** relevant to '{topic}'.\n")
-
-        if papers:
-            # Extract earliest and latest years
-            years = [p["year"] for p in papers if p["year"] != "N/A"]
-            if years:
-                try:
-                    year_ints = [int(str(y)[:4]) for y in years]
-                    output.append(f"**Time span:** {min(year_ints)} to {max(year_ints)}\n")
-                except (ValueError, TypeError):
-                    pass
-
-        output.append("### Recommended Next Steps\n")
-        output.append("1. Use `zot_get_item()` to read abstracts and full details of key papers")
-        output.append("2. Use `zot_ask_paper()` to ask specific questions about individual papers")
-        output.append("3. Use `zot_find_related_papers()` to discover citation networks")
-        if not include_network_analysis:
-            output.append("4. Re-run with `include_network_analysis=true` to identify key researchers (requires Neo4j)")
-
-        output.append("\n---")
-        output.append("*This automated review provides an overview. Manual analysis is recommended for comprehensive research.*")
-
-        return "\n".join(output)
-
-    except Exception as e:
-        ctx.error(f"Error in literature_review: {str(e)}")
-        return f"Error generating literature review: {str(e)}"
