@@ -895,15 +895,27 @@ def get_item_children(
 
 @mcp.tool(
     name="zot_get_item",
-    description="⚪ Get bibliographic metadata for a Zotero item (title, authors, journal, abstract, DOI, etc.). Returns metadata + child items by default.\n\n⚠️ For paper content analysis, use zot_ask_paper() instead (more efficient, targeted chunk retrieval).\n⚠️ include_fulltext=True is RARELY needed - only for comprehensive summarization when multiple zot_ask_paper() calls aren't sufficient.\n\nUse for: Bibliographic information, citations, metadata. For content: use zot_ask_paper() instead",
+    description="""Get bibliographic metadata for a Zotero item (title, authors, journal, abstract, DOI, etc.) plus list of child items (attachments, notes).
+
+⚠️ For paper CONTENT analysis, use zot_ask_paper instead (more efficient, targeted chunk retrieval).
+⚠️ For raw full PDF text, use zot_get_item_fulltext (expensive operation, 10k-100k tokens).
+
+Returns:
+- Bibliographic metadata (title, authors, year, journal, DOI)
+- Abstract (if available)
+- List of child items (attachments, notes)
+- Tags, collections
+
+~500-800 tokens, fast.
+
+Use for: Bibliographic information, citations, checking what attachments exist""",
     annotations={
         "readOnlyHint": True,
-        "title": "Get Item Metadata"
+        "title": "Get Item (Zotero)"
     }
 )
 def get_item(
     item_key: str,
-    include_fulltext: bool = False,
     include_children: bool = True,
     include_abstract: bool = True,
     format: str = "markdown",
@@ -911,18 +923,17 @@ def get_item(
     ctx: Context
 ) -> str:
     """
-    Get complete information about a Zotero item in a single call.
+    Get bibliographic metadata for a Zotero item.
 
     Args:
         item_key: Zotero item key/ID
-        include_fulltext: Whether to fetch and include full PDF text (slow, default: False)
         include_children: Whether to include child items like attachments and notes (default: True)
         include_abstract: Whether to include abstract in metadata (default: True)
         format: Output format - "markdown" or "bibtex" (default: "markdown")
         ctx: MCP context
 
     Returns:
-        Comprehensive item information in specified format
+        Comprehensive item metadata with child items list
     """
     try:
         # Validate format parameter
@@ -996,44 +1007,115 @@ def get_item(
             except Exception as children_error:
                 ctx.info(f"Could not fetch children: {str(children_error)}")
 
-        # 3. Full text section (if requested)
-        if include_fulltext:
-            try:
-                attachment = get_attachment_details(zot, item)
-                if attachment:
-                    ctx.info(f"Found attachment: {attachment.key} ({attachment.content_type})")
-
-                    # Try fetching from Zotero's full text index first
-                    try:
-                        full_text_data = zot.fulltext_item(attachment.key)
-                        if full_text_data and "content" in full_text_data and full_text_data["content"]:
-                            ctx.info("Successfully retrieved full text from Zotero's index")
-                            output_parts.append("\n---\n\n## Full Text\n\n" + full_text_data['content'])
-                    except Exception:
-                        # Try to download and convert the file
-                        ctx.info(f"Attempting to download and convert attachment {attachment.key}")
-                        import tempfile
-                        import os
-
-                        with tempfile.TemporaryDirectory() as tmpdir:
-                            file_path = os.path.join(tmpdir, attachment.filename or f"{attachment.key}.pdf")
-                            zot.dump(attachment.key, filename=os.path.basename(file_path), path=tmpdir)
-
-                            if os.path.exists(file_path):
-                                ctx.info(f"Downloaded file to {file_path}, converting to markdown")
-                                converted_text = convert_to_markdown(file_path)
-                                output_parts.append("\n---\n\n## Full Text\n\n" + converted_text)
-                else:
-                    output_parts.append("\n---\n\n## Full Text\n\nNo suitable attachment found for full text extraction.")
-            except Exception as fulltext_error:
-                ctx.info(f"Could not fetch full text: {str(fulltext_error)}")
-                output_parts.append(f"\n---\n\n## Full Text\n\nError: {str(fulltext_error)}")
-
         return "\n".join(output_parts)
 
     except Exception as e:
         ctx.error(f"Error fetching item: {str(e)}")
         return f"Error fetching item: {str(e)}"
+
+
+@mcp.tool(
+    name="zot_get_item_fulltext",
+    description="""⚠️ EXPENSIVE FALLBACK (10,000-100,000 tokens) - Get complete raw PDF text from a Zotero item.
+
+💡 Try these MORE EFFICIENT options FIRST:
+- zot_ask_paper(item_key, question) → Retrieves relevant text chunks for Q&A (recommended)
+- zot_semantic_search(query) → Find papers by content/topic
+- zot_get_item(item_key) → Get metadata only
+
+✅ Use this ONLY when you need:
+- Comprehensive full-paper summarization (entire document context)
+- Semantic search failed but you know paper is relevant
+- Non-semantic tasks (word count, extract all references, find all equations)
+- Complete text export for external processing
+- Absoluteness > relevance (need ALL methodology, not excerpts)
+
+⚠️ WARNING: Returns 10k-100k tokens. Cost is 20-200x higher than zot_get_item.
+
+Returns:
+- All metadata (same as zot_get_item)
+- Complete extracted PDF text
+- Processing may take 10-30 seconds
+
+Use for: Complete text retrieval when targeted tools insufficient""",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Get Item Full Text (Zotero)"
+    }
+)
+def get_item_fulltext(
+    item_key: str,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Get the full text content of a Zotero item.
+
+    WARNING: This is an expensive operation that can return 10k-100k tokens.
+    Consider using zot_ask_paper for targeted content retrieval instead.
+
+    Args:
+        item_key: Zotero item key/ID
+        ctx: MCP context
+
+    Returns:
+        Markdown-formatted item metadata + complete full text
+    """
+    try:
+        ctx.info(f"Fetching full text for item {item_key} (this may take a while)")
+        zot = get_zotero_client()
+
+        # First get the item metadata
+        item = zot.item(item_key)
+        if not item:
+            return f"No item found with key: {item_key}"
+
+        # Get item metadata in markdown format
+        metadata = format_item_metadata(item, include_abstract=True)
+
+        # Try to get attachment details
+        attachment = get_attachment_details(zot, item)
+        if not attachment:
+            return f"{metadata}\n\n---\n\n⚠️ No suitable PDF attachment found for this item.\n\n💡 Suggestion: Use zot_get_item to verify attachments exist."
+
+        ctx.info(f"Found attachment: {attachment.key} ({attachment.content_type})")
+
+        # Try fetching full text from Zotero's full text index first
+        try:
+            full_text_data = zot.fulltext_item(attachment.key)
+            if full_text_data and "content" in full_text_data and full_text_data["content"]:
+                ctx.info("Successfully retrieved full text from Zotero's index")
+                return f"{metadata}\n\n---\n\n## Full Text\n\n{full_text_data['content']}"
+        except Exception as fulltext_error:
+            ctx.info(f"Zotero index unavailable, will parse PDF: {str(fulltext_error)}")
+
+        # Fallback: Download and parse PDF
+        ctx.info(f"Downloading and parsing PDF for {attachment.key}...")
+
+        # Download the file to a temporary location
+        import tempfile
+        import os
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = os.path.join(tmpdir, attachment.filename or f"{attachment.key}.pdf")
+            zot.dump(attachment.key, filename=os.path.basename(file_path), path=tmpdir)
+
+            if os.path.exists(file_path):
+                # Extract text from PDF using convert_to_markdown
+                ctx.info(f"Extracting text from PDF...")
+                converted_text = convert_to_markdown(file_path)
+
+                if converted_text:
+                    ctx.info(f"Successfully extracted text from PDF")
+                    return f"{metadata}\n\n---\n\n## Full Text (Extracted from PDF)\n\n{converted_text}"
+                else:
+                    return f"{metadata}\n\n---\n\n⚠️ Could not extract text from PDF. File may be scanned/image-based.\n\n💡 Suggestion: Try zot_ask_paper if this paper was indexed successfully."
+
+    except Exception as e:
+        import traceback
+        ctx.error(f"Error fetching full text: {str(e)}")
+        ctx.error(f"Traceback: {traceback.format_exc()}")
+        return f"Error fetching full text: {str(e)}\n\n💡 Suggestion: Use zot_ask_paper or zot_semantic_search instead."
 
 
 @mcp.tool(
@@ -2845,15 +2927,18 @@ def track_topic_evolution(
         return f"Error tracking topic evolution: {str(e)}"
 
 
-@mcp.tool(
-    name="zot_find_recent_developments",
-    description="🟢 SECONDARY - Find recent papers on a topic (default: last 2 years). Uses hybrid semantic search with temporal filtering.\n\n💡 This combines Qdrant semantic search with temporal filtering - good for \"recent papers about X\" queries.\n\nUse for: Discovering latest research developments on established topics (time-filtered semantic search)",
-    annotations={
-        "readOnlyHint": True,
-        "title": "Find Recent Developments (Temporal)"
-    }
-)
-def find_recent_developments(
+# DEPRECATED - Use zot_semantic_search with date filters instead
+# Redundant tool - just calls semantic_search with year filter
+# Agents should use: semantic_search(query="topic", filters={"year": {"$gte": 2023}})
+# @mcp.tool(
+#     name="zot_find_recent_developments",
+#     description="🟢 SECONDARY - Find recent papers on a topic (default: last 2 years). Uses hybrid semantic search with temporal filtering.\n\n💡 This combines Qdrant semantic search with temporal filtering - good for \"recent papers about X\" queries.\n\nUse for: Discovering latest research developments on established topics (time-filtered semantic search)",
+#     annotations={
+#         "readOnlyHint": True,
+#         "title": "Find Recent Developments (Temporal)"
+#     }
+# )
+def find_recent_developments_DEPRECATED(
     topic: str,
     years_back: int = 2,
     limit: int = 10,
@@ -3671,6 +3756,119 @@ def ask_paper(
 
 
 @mcp.tool(
+    name="zot_find_similar_papers",
+    description="""Find papers similar to a given paper using content-based vector similarity (More Like This query).
+
+Uses the paper's actual document embedding to find semantically similar papers. More accurate than semantic_search(abstract) because it uses the full document vector.
+
+💡 Different from zot_find_related_papers:
+- THIS TOOL: Content similarity via Qdrant vectors (what the paper discusses)
+- find_related_papers: Graph relationships via Neo4j (who/what it cites, shared authors)
+
+Use when:
+✓ 'Find papers similar to this one'
+✓ 'More papers like ABC123'
+✓ 'Papers with similar methodology/approach'
+
+NOT for:
+✗ 'Papers citing this' → use zot_find_citation_chain
+✗ 'Papers by same author' → use zot_find_collaborator_network
+
+Use for: Content-based 'More Like This' discovery using document vectors""",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Find Similar Papers (Query)"
+    }
+)
+def find_similar_papers(
+    item_key: str,
+    limit: int = 10,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Find papers similar to the given paper using vector similarity.
+
+    Args:
+        item_key: Zotero item key of the reference paper
+        limit: Maximum number of similar papers to return (default: 10)
+        ctx: MCP context
+
+    Returns:
+        Markdown-formatted list of similar papers with similarity scores
+    """
+    try:
+        from pathlib import Path
+        from agent_zot.search.semantic import create_semantic_search
+
+        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
+        search = create_semantic_search(str(config_path))
+
+        if not search or not search.qdrant_client:
+            return "Semantic search is not initialized. Please run 'agent-zot update-db' first."
+
+        ctx.info(f"Finding papers similar to {item_key}")
+
+        # Fallback approach: Get the item and use its abstract for search
+        ctx.info("Using abstract-based semantic search for similarity")
+        zot = get_zotero_client()
+        item = zot.item(item_key)
+
+        if not item:
+            return f"No item found with key: {item_key}"
+
+        abstract = item.get("data", {}).get("abstractNote", "")
+        if not abstract:
+            return f"Item {item_key} has no abstract for similarity search.\n\n💡 Suggestion: Use zot_find_related_papers for graph-based relationships instead."
+
+        # Use semantic search with the abstract
+        results = search.search(query=abstract, limit=limit + 1)  # +1 to exclude the source paper
+
+        # Format results
+        output = [f"# Papers Similar to: {item_key}", ""]
+
+        if "results" in results and results["results"]:
+            # Filter out the source paper if it appears in results
+            filtered_results = [p for p in results["results"] if p.get("item_key") != item_key][:limit]
+
+            for i, paper in enumerate(filtered_results, 1):
+                title = paper.get("title", "Untitled")
+                authors = paper.get("creators_str", "Unknown authors")
+                year = paper.get("year", "N/A")
+                key = paper.get("item_key", "")
+                score = paper.get("similarity_score", 0.0)
+
+                output.append(f"## {i}. {title}")
+                output.append(f"**Authors:** {authors}")
+                output.append(f"**Year:** {year}")
+                output.append(f"**Item Key:** `{key}`")
+                output.append(f"**Similarity:** {score:.3f}")
+
+                # Include abstract preview if available
+                abs_text = paper.get("abstract", "")
+                if abs_text:
+                    preview = abs_text[:200] + "..." if len(abs_text) > 200 else abs_text
+                    output.append(f"**Abstract:** {preview}")
+
+                output.append("")
+
+            output.append(f"\n**Total found:** {len(filtered_results)}")
+        else:
+            output.append("No similar papers found.")
+            output.append("\n💡 Try:")
+            output.append("- zot_semantic_search for topic-based discovery")
+            output.append("- zot_find_related_papers for graph-based relationships")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        import traceback
+        ctx.error(f"Error finding similar papers: {str(e)}")
+        ctx.error(f"Traceback: {traceback.format_exc()}")
+        return f"Error finding similar papers: {str(e)}"
+
+
+@mcp.tool(
     name="zot_enhanced_semantic_search",
     description="🔵 ADVANCED - Implements Figure 3 pattern from Qdrant GraphRAG documentation.\n\nHow it works (4 steps):\n1. Semantic search in Qdrant finds relevant chunks\n2. Extracts chunk IDs (e.g., 'ABCD1234_chunk_5')\n3. Queries Neo4j for entities in those EXACT chunks\n4. Returns papers + matched text + entities from that text\n\n💡 Most precise search available. Use when you need to know:\n- 'Which concepts appear in papers about [topic]?'\n- 'What methods are used for [purpose] in the literature?'\n- 'Which theories are discussed alongside [concept]?'\n\nExample queries:\n✓ \"which methods appear in papers about [topic]?\"\n✓ \"what theories are discussed in [field] research?\"\n✓ \"which techniques are used for [purpose]?\"\n\nNOT for:\n✗ \"just find papers about [topic]\" → use zot_semantic_search (faster)\n✗ \"who worked with [author]\" → use zot_graph_search\n\n⚠️ Requires Neo4j population. If unpopulated (currently 0.5%), uses standard semantic search instead.\n\nUse for: Entity-aware semantic search, discovering what concepts/methods/theories appear in relevant passages",
     annotations={
@@ -3817,15 +4015,18 @@ def enhanced_semantic_search(
         return f"Error performing enhanced semantic search: {str(e)}"
 
 
-@mcp.tool(
-    name="zot_literature_review",
-    description="🔵 WORKFLOW - Automated literature review workflow: search papers → analyze themes → identify gaps → generate structured summary. Coordinates multiple tools (semantic search, graph analysis, temporal trends) for comprehensive research synthesis.\n\n💡 This orchestrates Qdrant, Neo4j, and Zotero API tools automatically for comprehensive reviews.\n\nUse for: Generating structured literature reviews on research topics (end-to-end workflow)",
-    annotations={
-        "readOnlyHint": True,
-        "title": "Literature Review (Workflow)"
-    }
-)
-def literature_review(
+# DEPRECATED - Removed for pure agentic approach
+# Workflow orchestration tools are "training wheels" in agentic systems
+# Agents should learn to chain primitives: semantic_search → graph operations → synthesis
+# @mcp.tool(
+#     name="zot_literature_review",
+#     description="🔵 WORKFLOW - Automated literature review workflow: search papers → analyze themes → identify gaps → generate structured summary. Coordinates multiple tools (semantic search, graph analysis, temporal trends) for comprehensive research synthesis.\n\n💡 This orchestrates Qdrant, Neo4j, and Zotero API tools automatically for comprehensive reviews.\n\nUse for: Generating structured literature reviews on research topics (end-to-end workflow)",
+#     annotations={
+#         "readOnlyHint": True,
+#         "title": "Literature Review (Workflow)"
+#     }
+# )
+def literature_review_DEPRECATED(
     topic: str,
     max_papers: int = 20,
     include_temporal_analysis: bool = True,
