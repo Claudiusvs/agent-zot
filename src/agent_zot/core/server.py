@@ -288,7 +288,7 @@ def semantic_search(
 
 @mcp.tool(
     name="zot_update_search_database",
-    description="🔧 LOW PRIORITY - Index or re-index the Zotero library for semantic search. Extracts full PDF text using AI-powered parsing (Docling with OCR). Use this when the user asks to 'index my library', 'update the search database', or 'enable semantic search'. Automatically handles full-text extraction from PDFs.\n\nUse for: Rebuilding semantic search database after adding new papers",
+    description="🔧 LOW PRIORITY - ⚪ FALLBACK - Index or re-index the Zotero library for semantic search. Extracts full PDF text using AI-powered parsing (Docling with OCR). Use this when the user asks to 'index my library', 'update the search database', or 'enable semantic search'. Automatically handles full-text extraction from PDFs.\n\nUse for: Rebuilding semantic search database after adding new papers",
     annotations={
         "readOnlyHint": False,
         "title": "Update Search Index (Query)"
@@ -372,7 +372,7 @@ def update_search_database(
 
 @mcp.tool(
     name="zot_get_search_database_status",
-    description="🔧 LOW PRIORITY - Get status information about the semantic search database.\n\nUse for: Verifying semantic search database health and statistics"
+    description="🔧 LOW PRIORITY - ⚪ FALLBACK - Get status information about the semantic search database.\n\nUse for: Verifying semantic search database health and statistics"
 ,
     annotations={
         "readOnlyHint": True,
@@ -661,7 +661,7 @@ def ask_paper(
 
 @mcp.tool(
     name="zot_find_similar_papers",
-    description="""📊 MEDIUM PRIORITY - Find papers similar to a given paper using content-based vector similarity (More Like This query).
+    description="""🔥 HIGH PRIORITY - 🔵 PRIMARY - Find papers similar to a given paper using content-based vector similarity (More Like This query).
 
 Uses the paper's actual document embedding to find semantically similar papers. More accurate than semantic_search(abstract) because it uses the full document vector.
 
@@ -2116,7 +2116,7 @@ def get_item_fulltext(
 
 @mcp.tool(
     name="zot_get_collections",
-    description="📊 MEDIUM PRIORITY - List all collections in your Zotero library.\n\nUse for: Browsing library organization structure and collection hierarchy"
+    description="📊 MEDIUM PRIORITY - 🔸 SECONDARY - List all collections in your Zotero library.\n\nUse for: Browsing library organization structure and collection hierarchy"
 ,
     annotations={
         "readOnlyHint": True,
@@ -2212,7 +2212,7 @@ def get_collections(
 
 @mcp.tool(
     name="zot_get_collection_items",
-    description="📊 MEDIUM PRIORITY - Get all items in a specific Zotero collection.\n\nUse for: Retrieving all papers in a specific collection by collection key"
+    description="📊 MEDIUM PRIORITY - 🔸 SECONDARY - Get all items in a specific Zotero collection.\n\nUse for: Retrieving all papers in a specific collection by collection key"
 ,
     annotations={
         "readOnlyHint": True,
@@ -2285,7 +2285,7 @@ def get_collection_items(
 
 @mcp.tool(
     name="zot_create_collection",
-    description="📊 MEDIUM PRIORITY - Create a new collection in your Zotero library.\n\nUse for: Organizing papers into new collection like 'Machine Learning 2024'"
+    description="📊 MEDIUM PRIORITY - 🔸 SECONDARY - Create a new collection in your Zotero library.\n\nUse for: Organizing papers into new collection like 'Machine Learning 2024'"
 ,
     annotations={
         "readOnlyHint": True,
@@ -2339,7 +2339,7 @@ def create_collection(
 
 @mcp.tool(
     name="zot_add_to_collection",
-    description="📊 MEDIUM PRIORITY - Add one or more items to a collection.\n\nUse for: Batch adding multiple paper keys to an existing collection"
+    description="📊 MEDIUM PRIORITY - 🔸 SECONDARY - Add one or more items to a collection.\n\nUse for: Batch adding multiple paper keys to an existing collection"
 ,
     annotations={
         "readOnlyHint": True,
@@ -2398,7 +2398,7 @@ def add_to_collection(
 
 @mcp.tool(
     name="zot_remove_from_collection",
-    description="🔧 LOW PRIORITY - Remove one or more items from a collection.\n\nUse for: Batch removing papers from a collection without deleting them"
+    description="🔧 LOW PRIORITY - ⚪ FALLBACK - Remove one or more items from a collection.\n\nUse for: Batch removing papers from a collection without deleting them"
 ,
     annotations={
         "readOnlyHint": True,
@@ -2575,7 +2575,7 @@ def get_item_children(
 
 @mcp.tool(
     name="zot_get_item",
-    description="""🔥 HIGH PRIORITY - Get bibliographic metadata for a Zotero item (title, authors, journal, abstract, DOI, etc.) plus list of child items (attachments, notes).
+    description="""🔥 HIGH PRIORITY - 🔵 PRIMARY - Get bibliographic metadata for a Zotero item (title, authors, journal, abstract, DOI, etc.) plus list of child items (attachments, notes).
 
 ⚠️ For paper CONTENT analysis, use zot_ask_paper instead (more efficient, targeted chunk retrieval).
 ⚠️ For raw full PDF text, use zot_get_item_fulltext (expensive operation, 10k-100k tokens).
@@ -2696,7 +2696,7 @@ def get_item(
 
 @mcp.tool(
     name="zot_get_item_fulltext",
-    description="""🔧 LOW PRIORITY - ⚠️ EXPENSIVE FALLBACK (10,000-100,000 tokens) - Get complete raw PDF text from a Zotero item.
+    description="""🔧 LOW PRIORITY - ⚪ FALLBACK - ⚠️ EXPENSIVE FALLBACK (10,000-100,000 tokens) - Get complete raw PDF text from a Zotero item.
 
 💡 Try these MORE EFFICIENT options FIRST:
 - zot_ask_paper(item_key, question) → Retrieves relevant text chunks for Q&A (recommended)
@@ -2800,7 +2800,7 @@ def get_item_fulltext(
 
 @mcp.tool(
     name="zot_get_tags",
-    description="📊 MEDIUM PRIORITY - Get all tags used in your Zotero library.\n\nUse for: Exploring tag vocabulary and frequency across library"
+    description="📊 MEDIUM PRIORITY - 🔸 SECONDARY - Get all tags used in your Zotero library.\n\nUse for: Exploring tag vocabulary and frequency across library"
 ,
     annotations={
         "readOnlyHint": True,
@@ -2928,7 +2928,7 @@ def get_recent(
 
 @mcp.tool(
     name="zot_batch_update_tags",
-    description="📊 MEDIUM PRIORITY - Batch update tags across multiple items matching a search query.\n\nUse for: Adding/removing tags across multiple items efficiently"
+    description="📊 MEDIUM PRIORITY - 🔸 SECONDARY - Batch update tags across multiple items matching a search query.\n\nUse for: Adding/removing tags across multiple items efficiently"
 ,
     annotations={
         "readOnlyHint": True,
@@ -3152,7 +3152,7 @@ This tool will be fixed in a future update. See AUDIT_REPORT.md for details.
 
 @mcp.tool(
     name="zot_get_annotations",
-    description="📊 MEDIUM PRIORITY - Get all annotations for a specific item or across your entire Zotero library.\n\nUse for: Retrieving highlights and comments from PDF annotations"
+    description="📊 MEDIUM PRIORITY - 🔸 SECONDARY - Get all annotations for a specific item or across your entire Zotero library.\n\nUse for: Retrieving highlights and comments from PDF annotations"
 ,
     annotations={
         "readOnlyHint": True,
@@ -3460,7 +3460,7 @@ def get_annotations(
 
 @mcp.tool(
     name="zot_get_notes",
-    description="📊 MEDIUM PRIORITY - Retrieve notes from your Zotero library, with options to filter by parent item.\n\nUse for: Fetching standalone notes or notes attached to items"
+    description="📊 MEDIUM PRIORITY - 🔸 SECONDARY - Retrieve notes from your Zotero library, with options to filter by parent item.\n\nUse for: Fetching standalone notes or notes attached to items"
 ,
     annotations={
         "readOnlyHint": True,
@@ -3550,7 +3550,7 @@ def get_notes(
 
 @mcp.tool(
     name="zot_search_notes",
-    description="📊 MEDIUM PRIORITY - Search for notes across your Zotero library.\n\nUse for: Finding notes by text content across library"
+    description="📊 MEDIUM PRIORITY - 🔸 SECONDARY - Search for notes across your Zotero library.\n\nUse for: Finding notes by text content across library"
 ,
     annotations={
         "readOnlyHint": True,
@@ -3711,7 +3711,7 @@ def search_notes(
 
 @mcp.tool(
     name="zot_create_note",
-    description="📊 MEDIUM PRIORITY - Create a new note for a Zotero item.\n\nUse for: Adding research notes to items or library"
+    description="📊 MEDIUM PRIORITY - 🔸 SECONDARY - Create a new note for a Zotero item.\n\nUse for: Adding research notes to items or library"
 ,
     annotations={
         "readOnlyHint": True,
@@ -3797,7 +3797,7 @@ def create_note(
 # ============================================================================
 @mcp.tool(
     name="zot_export_markdown",
-    description="📊 MEDIUM PRIORITY - Export Zotero items to Markdown files with YAML frontmatter (Obsidian-compatible). Exports items matching a query or from a collection to a specified directory.\n\nUse for: Converting bibliographic data to markdown format for documentation",
+    description="📊 MEDIUM PRIORITY - 🔸 SECONDARY - Export Zotero items to Markdown files with YAML frontmatter (Obsidian-compatible). Exports items matching a query or from a collection to a specified directory.\n\nUse for: Converting bibliographic data to markdown format for documentation",
     annotations={
         "readOnlyHint": True,
         "title": "Export to Markdown (Export)"
@@ -3976,7 +3976,7 @@ def export_markdown(
 
 @mcp.tool(
     name="zot_export_bibtex",
-    description="📊 MEDIUM PRIORITY - Export Zotero items to BibTeX format. Can export items matching a query or from a collection to a .bib file.\n\nUse for: Generating BibTeX citations for LaTeX documents"
+    description="📊 MEDIUM PRIORITY - 🔸 SECONDARY - Export Zotero items to BibTeX format. Can export items matching a query or from a collection to a .bib file.\n\nUse for: Generating BibTeX citations for LaTeX documents"
 ,
     annotations={
         "readOnlyHint": True,
@@ -4085,7 +4085,7 @@ def export_bibtex(
 
 @mcp.tool(
     name="zot_export_graph",
-    description="🔧 LOW PRIORITY - Export Neo4j knowledge graph to GraphML format for visualization in Gephi or Cytoscape. Requires Neo4j GraphRAG to be enabled.\n\nUse for: Exporting Neo4j graph data for external analysis"
+    description="🔧 LOW PRIORITY - ⚪ FALLBACK - Export Neo4j knowledge graph to GraphML format for visualization in Gephi or Cytoscape. Requires Neo4j GraphRAG to be enabled.\n\nUse for: Exporting Neo4j graph data for external analysis"
 ,
     annotations={
         "readOnlyHint": True,
@@ -4156,7 +4156,7 @@ def export_graph(
 # ============================================================================
 @mcp.tool(
     name="search",
-    description="🔧 LOW PRIORITY - ChatGPT-compatible search wrapper. Performs semantic search and returns JSON results.\n\nFor Claude users: Use zot_semantic_search, zot_enhanced_semantic_search, or zot_ask_paper directly for better results.\n\nUse for: ChatGPT integrations only"
+    description="🔧 LOW PRIORITY - ⚪ FALLBACK - ChatGPT-compatible search wrapper. Performs semantic search and returns JSON results.\n\nFor Claude users: Use zot_semantic_search, zot_enhanced_semantic_search, or zot_ask_paper directly for better results.\n\nUse for: ChatGPT integrations only"
 ,
     annotations={
         "readOnlyHint": True,
@@ -4205,7 +4205,7 @@ def chatgpt_connector_search(
 
 @mcp.tool(
     name="fetch",
-    description="🔧 LOW PRIORITY - ChatGPT-compatible fetch wrapper. Retrieves fulltext/metadata for a Zotero item by ID.\n\nFor Claude users: Use zot_get_item, zot_ask_paper, or zot_semantic_search directly for better results.\n\nUse for: ChatGPT integrations only"
+    description="🔧 LOW PRIORITY - ⚪ FALLBACK - ChatGPT-compatible fetch wrapper. Retrieves fulltext/metadata for a Zotero item by ID.\n\nFor Claude users: Use zot_get_item, zot_ask_paper, or zot_semantic_search directly for better results.\n\nUse for: ChatGPT integrations only"
 ,
     annotations={
         "readOnlyHint": True,
