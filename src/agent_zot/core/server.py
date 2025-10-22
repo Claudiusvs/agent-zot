@@ -148,7 +148,7 @@ Agent-Zot fully implements the Qdrant GraphRAG patterns:
 # ============================================================================
 @mcp.tool(
     name="zot_semantic_search",
-    description="🔵 PRIMARY for content/topic discovery. Use when query involves meaning, concepts, or \"papers about X\".\n\n📊 Search Levels (choose based on your needs):\n- Use THIS (Level 1) when: Basic paper discovery, titles/abstracts sufficient\n- Upgrade to Level 3 (zot_enhanced_semantic_search) when: Need entities/concepts from matched passages\n- Use Level 2 (zot_hybrid_vector_graph_search) when: Need paper-level relationship exploration\n\n💡 Often combines with:\n- zot_ask_paper() to read content of found papers\n- Neo4j tools to explore relationships\n\nExample queries:\n✓ \"papers about [concept/topic]\"\n✓ \"research on [method/approach]\"\n✓ \"studies using [technique]\"\n\nNOT for:\n✗ \"who collaborated with [author]?\" → use zot_graph_search\n✗ \"papers citing [specific paper]\" → use zot_find_citation_chain\n\nUse for: Semantic discovery like \"papers about [concept]\" or \"research on [method]\"",
+    description="🔥 HIGH PRIORITY - 🔵 PRIMARY for content/topic discovery. Use when query involves meaning, concepts, or \"papers about X\".\n\n📊 Search Levels (choose based on your needs):\n- Use THIS (Level 1) when: Basic paper discovery, titles/abstracts sufficient\n- Upgrade to Level 3 (zot_enhanced_semantic_search) when: Need entities/concepts from matched passages\n- Use Level 2 (zot_hybrid_vector_graph_search) when: Need paper-level relationship exploration\n\n💡 Often combines with:\n- zot_ask_paper() to read content of found papers\n- Neo4j tools to explore relationships\n\nExample queries:\n✓ \"papers about [concept/topic]\"\n✓ \"research on [method/approach]\"\n✓ \"studies using [technique]\"\n\nNOT for:\n✗ \"who collaborated with [author]?\" → use zot_graph_search\n✗ \"papers citing [specific paper]\" → use zot_find_citation_chain\n\nUse for: Semantic discovery like \"papers about [concept]\" or \"research on [method]\"",
     annotations={
         "readOnlyHint": True,
         "title": "Semantic Search (Query)"
@@ -288,7 +288,7 @@ def semantic_search(
 
 @mcp.tool(
     name="zot_update_search_database",
-    description="Index or re-index the Zotero library for semantic search. Extracts full PDF text using AI-powered parsing (Docling with OCR). Use this when the user asks to 'index my library', 'update the search database', or 'enable semantic search'. Automatically handles full-text extraction from PDFs.\n\nUse for: Rebuilding semantic search database after adding new papers",
+    description="🔧 LOW PRIORITY - Index or re-index the Zotero library for semantic search. Extracts full PDF text using AI-powered parsing (Docling with OCR). Use this when the user asks to 'index my library', 'update the search database', or 'enable semantic search'. Automatically handles full-text extraction from PDFs.\n\nUse for: Rebuilding semantic search database after adding new papers",
     annotations={
         "readOnlyHint": False,
         "title": "Update Search Index (Query)"
@@ -372,7 +372,7 @@ def update_search_database(
 
 @mcp.tool(
     name="zot_get_search_database_status",
-    description="Get status information about the semantic search database.\n\nUse for: Verifying semantic search database health and statistics"
+    description="🔧 LOW PRIORITY - Get status information about the semantic search database.\n\nUse for: Verifying semantic search database health and statistics"
 ,
     annotations={
         "readOnlyHint": True,
@@ -470,7 +470,7 @@ def _extract_item_key_from_input(value: str) -> Optional[str]:
 
 @mcp.tool(
     name="zot_hybrid_vector_graph_search",
-    description="🔸 SECONDARY - Combines semantic search with relationship discovery. Use when you want both content relevance AND network connections in results. Requires Neo4j.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ For content-only queries, use zot_semantic_search instead (faster).\n\nUse for: Combined semantic+relationship queries when both content and connections matter"
+    description="🔧 LOW PRIORITY - 🔸 SECONDARY - Combines semantic search with relationship discovery. Use when you want both content relevance AND network connections in results. Requires Neo4j.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ For content-only queries, use zot_semantic_search instead (faster).\n\nUse for: Combined semantic+relationship queries when both content and connections matter"
 ,
     annotations={
         "readOnlyHint": True,
@@ -568,7 +568,7 @@ def hybrid_vector_graph_search(
 
 @mcp.tool(
     name="zot_ask_paper",
-    description="🔵 PRIMARY tool for accessing paper content. Uses semantic search to retrieve relevant text chunks from a paper's full text. Much more efficient than zot_get_item(include_fulltext=True). This does NOT generate AI answers - it returns source text chunks for you to analyze.\n\n✅ Use this when you need to read, analyze, or extract information from a paper's actual content.\n💡 For comprehensive paper summarization, call this multiple times with different questions (e.g., methods, results, conclusions) or use high top_k value.\n\nExample questions:\n✓ \"What methodology did the authors use?\"\n✓ \"What were the main findings?\"\n✓ \"How did they measure [variable]?\"\n\nNOT for:\n✗ \"find papers about [topic]\" → use zot_semantic_search\n✗ \"who are the authors\" → use zot_get_item\n\nUse for: Reading paper content, extracting findings, analyzing methodology, understanding results, comprehensive summarization",
+    description="🔥 HIGH PRIORITY - 🔵 PRIMARY tool for accessing paper content. Uses semantic search to retrieve relevant text chunks from a paper's full text. Much more efficient than zot_get_item(include_fulltext=True). This does NOT generate AI answers - it returns source text chunks for you to analyze.\n\n✅ Use this when you need to read, analyze, or extract information from a paper's actual content.\n💡 For comprehensive paper summarization, call this multiple times with different questions (e.g., methods, results, conclusions) or use high top_k value.\n\nExample questions:\n✓ \"What methodology did the authors use?\"\n✓ \"What were the main findings?\"\n✓ \"How did they measure [variable]?\"\n\nNOT for:\n✗ \"find papers about [topic]\" → use zot_semantic_search\n✗ \"who are the authors\" → use zot_get_item\n\nUse for: Reading paper content, extracting findings, analyzing methodology, understanding results, comprehensive summarization",
     annotations={
         "readOnlyHint": True,
         "title": "Ask Paper (Query)"
@@ -661,7 +661,7 @@ def ask_paper(
 
 @mcp.tool(
     name="zot_find_similar_papers",
-    description="""Find papers similar to a given paper using content-based vector similarity (More Like This query).
+    description="""📊 MEDIUM PRIORITY - Find papers similar to a given paper using content-based vector similarity (More Like This query).
 
 Uses the paper's actual document embedding to find semantically similar papers. More accurate than semantic_search(abstract) because it uses the full document vector.
 
@@ -774,7 +774,7 @@ def find_similar_papers(
 
 @mcp.tool(
     name="zot_enhanced_semantic_search",
-    description="🔵 ADVANCED - Implements Figure 3 pattern from Qdrant GraphRAG documentation.\n\nHow it works (4 steps):\n1. Semantic search in Qdrant finds relevant chunks\n2. Extracts chunk IDs (e.g., 'ABCD1234_chunk_5')\n3. Queries Neo4j for entities in those EXACT chunks\n4. Returns papers + matched text + entities from that text\n\n💡 Most precise search available. Use when you need to know:\n- 'Which concepts appear in papers about [topic]?'\n- 'What methods are used for [purpose] in the literature?'\n- 'Which theories are discussed alongside [concept]?'\n\nExample queries:\n✓ \"which methods appear in papers about [topic]?\"\n✓ \"what theories are discussed in [field] research?\"\n✓ \"which techniques are used for [purpose]?\"\n\nNOT for:\n✗ \"just find papers about [topic]\" → use zot_semantic_search (faster)\n✗ \"who worked with [author]\" → use zot_graph_search\n\n⚠️ Requires Neo4j population. If unpopulated (currently 0.5%), uses standard semantic search instead.\n\nUse for: Entity-aware semantic search, discovering what concepts/methods/theories appear in relevant passages",
+    description="🔥 HIGH PRIORITY - 🔵 ADVANCED - Implements Figure 3 pattern from Qdrant GraphRAG documentation.\n\nHow it works (4 steps):\n1. Semantic search in Qdrant finds relevant chunks\n2. Extracts chunk IDs (e.g., 'ABCD1234_chunk_5')\n3. Queries Neo4j for entities in those EXACT chunks\n4. Returns papers + matched text + entities from that text\n\n💡 Most precise search available. Use when you need to know:\n- 'Which concepts appear in papers about [topic]?'\n- 'What methods are used for [purpose] in the literature?'\n- 'Which theories are discussed alongside [concept]?'\n\nExample queries:\n✓ \"which methods appear in papers about [topic]?\"\n✓ \"what theories are discussed in [field] research?\"\n✓ \"which techniques are used for [purpose]?\"\n\nNOT for:\n✗ \"just find papers about [topic]\" → use zot_semantic_search (faster)\n✗ \"who worked with [author]\" → use zot_graph_search\n\n⚠️ Requires Neo4j population. If unpopulated (currently 0.5%), uses standard semantic search instead.\n\nUse for: Entity-aware semantic search, discovering what concepts/methods/theories appear in relevant passages",
     annotations={
         "readOnlyHint": True,
         "title": "Enhanced Semantic Search (Query)"
@@ -1102,7 +1102,7 @@ def literature_review_DEPRECATED(
 # ============================================================================
 @mcp.tool(
     name="zot_graph_search",
-    description="🟢 PRIMARY for relationship/network queries. Use when query involves connections, collaborations, or \"who/what is related to X\". Neo4j knowledge graph search for finding relationships between authors, institutions, concepts, methods, or other entities.\n\n💡 Often combines with zot_semantic_search to first discover papers by content, then explore their relationships.\n\nExample queries:\n✓ \"who collaborated with [author]?\"\n✓ \"institutions working on [topic]\"\n✓ \"authors researching [concept]\"\n\nNOT for:\n✗ \"papers about [topic]\" → use zot_semantic_search\n✗ \"what is [concept]\" → use zot_ask_paper\n\nUse for: Exploring relationships like \"who collaborated with [author]?\" or \"institutions working on [topic]\"",
+    description="📊 MEDIUM PRIORITY - 🟢 PRIMARY for relationship/network queries. Use when query involves connections, collaborations, or \"who/what is related to X\". Neo4j knowledge graph search for finding relationships between authors, institutions, concepts, methods, or other entities.\n\n💡 Often combines with zot_semantic_search to first discover papers by content, then explore their relationships.\n\nExample queries:\n✓ \"who collaborated with [author]?\"\n✓ \"institutions working on [topic]\"\n✓ \"authors researching [concept]\"\n\nNOT for:\n✗ \"papers about [topic]\" → use zot_semantic_search\n✗ \"what is [concept]\" → use zot_ask_paper\n\nUse for: Exploring relationships like \"who collaborated with [author]?\" or \"institutions working on [topic]\"",
     annotations={
         "readOnlyHint": True,
         "title": "Graph Search (Graph)"
@@ -1178,7 +1178,7 @@ def graph_search(
 
 @mcp.tool(
     name="zot_find_related_papers",
-    description="🟢 SECONDARY - Find papers related to a given paper via shared entities in the knowledge graph. Use when you want to discover connections through citations, authors, or concepts.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ For content-based similarity, use zot_semantic_search instead.\n\nExample use cases:\n✓ After finding key paper: \"What else cites this?\"\n✓ \"Papers by same authors or on related concepts\"\n✓ \"Follow citation trail from this paper\"\n\nNOT for:\n✗ \"papers similar to [broad concept]\" → use zot_semantic_search\n✗ \"broad topic discovery\" → use zot_semantic_search first\n\nUse for: Discovering papers connected through citations, authors, or shared concepts (relationship-based, not content-based)",
+    description="📊 MEDIUM PRIORITY - 🟢 SECONDARY - Find papers related to a given paper via shared entities in the knowledge graph. Use when you want to discover connections through citations, authors, or concepts.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ For content-based similarity, use zot_semantic_search instead.\n\nExample use cases:\n✓ After finding key paper: \"What else cites this?\"\n✓ \"Papers by same authors or on related concepts\"\n✓ \"Follow citation trail from this paper\"\n\nNOT for:\n✗ \"papers similar to [broad concept]\" → use zot_semantic_search\n✗ \"broad topic discovery\" → use zot_semantic_search first\n\nUse for: Discovering papers connected through citations, authors, or shared concepts (relationship-based, not content-based)",
     annotations={
         "readOnlyHint": True,
         "title": "Find Related Papers (Graph)"
@@ -1250,7 +1250,7 @@ def find_related_papers(
 
 @mcp.tool(
     name="zot_find_citation_chain",
-    description="🟢 SECONDARY - Find papers citing papers that cite a given paper (multi-hop citation analysis). Use for discovering extended citation networks.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ Requires Neo4j knowledge graph. For content-based discovery, use zot_semantic_search instead.\n\nUse for: Tracing how ideas propagate through citation networks (relationship analysis, not content analysis)",
+    description="📊 MEDIUM PRIORITY - 🟢 SECONDARY - Find papers citing papers that cite a given paper (multi-hop citation analysis). Use for discovering extended citation networks.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ Requires Neo4j knowledge graph. For content-based discovery, use zot_semantic_search instead.\n\nUse for: Tracing how ideas propagate through citation networks (relationship analysis, not content analysis)",
     annotations={
         "readOnlyHint": True,
         "title": "Find Citation Chain (Graph)"
@@ -1323,7 +1323,7 @@ def find_citation_chain(
 
 @mcp.tool(
     name="zot_explore_concept_network",
-    description="🟢 SECONDARY - Find concepts related through intermediate concepts (concept propagation). Discovers conceptual relationships by traversing the knowledge graph.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ Requires Neo4j knowledge graph. For content-based concept discovery, use zot_semantic_search instead.\n\nUse for: Mapping how concepts connect through shared papers (network analysis, not content analysis)",
+    description="📊 MEDIUM PRIORITY - 🟢 SECONDARY - Find concepts related through intermediate concepts (concept propagation). Discovers conceptual relationships by traversing the knowledge graph.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ Requires Neo4j knowledge graph. For content-based concept discovery, use zot_semantic_search instead.\n\nUse for: Mapping how concepts connect through shared papers (network analysis, not content analysis)",
     annotations={
         "readOnlyHint": True,
         "title": "Explore Concept Network (Graph)"
@@ -1397,7 +1397,7 @@ def explore_concept_network(
 
 @mcp.tool(
     name="zot_find_collaborator_network",
-    description="🟢 SECONDARY - Find collaborators of collaborators (co-authorship network). Discovers extended collaboration networks by traversing author relationships.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ Requires Neo4j knowledge graph. For simpler author queries, use zot_semantic_search with author filters instead.\n\nUse for: Analyzing multi-hop author collaboration patterns and networks (network analysis)",
+    description="📊 MEDIUM PRIORITY - 🟢 SECONDARY - Find collaborators of collaborators (co-authorship network). Discovers extended collaboration networks by traversing author relationships.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ Requires Neo4j knowledge graph. For simpler author queries, use zot_semantic_search with author filters instead.\n\nUse for: Analyzing multi-hop author collaboration patterns and networks (network analysis)",
     annotations={
         "readOnlyHint": True,
         "title": "Find Collaborator Network (Graph)"
@@ -1471,7 +1471,7 @@ def find_collaborator_network(
 
 @mcp.tool(
     name="zot_find_seminal_papers",
-    description="🟢 SECONDARY - Find most influential papers using citation-based analysis. Identifies highly-cited foundational papers using graph metrics.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ Requires Neo4j knowledge graph. For content-based importance, use zot_semantic_search with relevance ranking instead.\n\nUse for: Identifying papers by citation impact (citation-based ranking, not content-based relevance)",
+    description="📊 MEDIUM PRIORITY - 🟢 SECONDARY - Find most influential papers using citation-based analysis. Identifies highly-cited foundational papers using graph metrics.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ Requires Neo4j knowledge graph. For content-based importance, use zot_semantic_search with relevance ranking instead.\n\nUse for: Identifying papers by citation impact (citation-based ranking, not content-based relevance)",
     annotations={
         "readOnlyHint": True,
         "title": "Find Seminal Papers (Graph)"
@@ -1541,7 +1541,7 @@ def find_seminal_papers(
 
 @mcp.tool(
     name="zot_track_topic_evolution",
-    description="🟢 SECONDARY - Track how a research topic/concept has evolved over time using graph analysis. Shows yearly paper counts, related concepts, and trends.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ Requires Neo4j knowledge graph. For simpler temporal queries, use zot_find_recent_developments instead.\n\nUse for: Analyzing research trajectory and concept emergence over time (temporal network analysis)",
+    description="📊 MEDIUM PRIORITY - 🟢 SECONDARY - Track how a research topic/concept has evolved over time using graph analysis. Shows yearly paper counts, related concepts, and trends.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ Requires Neo4j knowledge graph. For simpler temporal queries, use zot_find_recent_developments instead.\n\nUse for: Analyzing research trajectory and concept emergence over time (temporal network analysis)",
     annotations={
         "readOnlyHint": True,
         "title": "Track Topic Evolution (Graph)"
@@ -1723,7 +1723,7 @@ def find_recent_developments_DEPRECATED(
 
 @mcp.tool(
     name="zot_analyze_venues",
-    description="🟢 SECONDARY - Analyze publication venues (journals/conferences) to identify top outlets using graph analysis. Shows paper counts and sample publications.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ Requires Neo4j knowledge graph. For content queries, use zot_semantic_search instead.\n\nUse for: Examining publication venue patterns and outlet rankings (venue analysis, not content analysis)",
+    description="🔧 LOW PRIORITY - 🟢 SECONDARY - Analyze publication venues (journals/conferences) to identify top outlets using graph analysis. Shows paper counts and sample publications.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ Requires Neo4j knowledge graph. For content queries, use zot_semantic_search instead.\n\nUse for: Examining publication venue patterns and outlet rankings (venue analysis, not content analysis)",
     annotations={
         "readOnlyHint": True,
         "title": "Analyze Venues (Graph)"
@@ -1799,7 +1799,7 @@ def analyze_venues(
 # ============================================================================
 @mcp.tool(
     name="zot_search_items",
-    description="⚪ FALLBACK - Direct Zotero API keyword-based metadata search. Use ONLY for exact title/author/year lookups when you don't have item keys yet.\n\n⚠️ DO NOT use after zot_semantic_search - you already have item keys! Use zot_get_item() for metadata or zot_ask_paper() for content instead.\n\n⚠️ This is literal keyword matching, NOT semantic. Always try zot_semantic_search first for research queries.\n\nUse for: Finding papers when you know exact author name/title phrase but don't have item key yet",
+    description="📊 MEDIUM PRIORITY - ⚪ FALLBACK - Direct Zotero API keyword-based metadata search. Use ONLY for exact title/author/year lookups when you don't have item keys yet.\n\n⚠️ DO NOT use after zot_semantic_search - you already have item keys! Use zot_get_item() for metadata or zot_ask_paper() for content instead.\n\n⚠️ This is literal keyword matching, NOT semantic. Always try zot_semantic_search first for research queries.\n\nUse for: Finding papers when you know exact author name/title phrase but don't have item key yet",
     annotations={
         "readOnlyHint": True,
         "title": "Search Items (Zotero)"
@@ -1895,7 +1895,7 @@ def search_items(
 
 @mcp.tool(
     name="zot_search_by_tag",
-    description="⚪ FALLBACK - Search for items by tag with advanced operators. Use when filtering by tags/metadata, not for semantic content search.\n\nSupports disjunction (tag1 || tag2), exclusion (-tag), and AND logic across conditions.\n\n⚠️ For semantic research queries, use zot_semantic_search first.\n\nUse for: Complex tag-based filtering like ['important || urgent', '-draft'] for (important OR urgent) AND NOT draft",
+    description="📊 MEDIUM PRIORITY - ⚪ FALLBACK - Search for items by tag with advanced operators. Use when filtering by tags/metadata, not for semantic content search.\n\nSupports disjunction (tag1 || tag2), exclusion (-tag), and AND logic across conditions.\n\n⚠️ For semantic research queries, use zot_semantic_search first.\n\nUse for: Complex tag-based filtering like ['important || urgent', '-draft'] for (important OR urgent) AND NOT draft",
     annotations={
         "readOnlyHint": True,
         "title": "Search by Tag (Zotero)"
@@ -2116,7 +2116,7 @@ def get_item_fulltext(
 
 @mcp.tool(
     name="zot_get_collections",
-    description="List all collections in your Zotero library.\n\nUse for: Browsing library organization structure and collection hierarchy"
+    description="📊 MEDIUM PRIORITY - List all collections in your Zotero library.\n\nUse for: Browsing library organization structure and collection hierarchy"
 ,
     annotations={
         "readOnlyHint": True,
@@ -2212,7 +2212,7 @@ def get_collections(
 
 @mcp.tool(
     name="zot_get_collection_items",
-    description="Get all items in a specific Zotero collection.\n\nUse for: Retrieving all papers in a specific collection by collection key"
+    description="📊 MEDIUM PRIORITY - Get all items in a specific Zotero collection.\n\nUse for: Retrieving all papers in a specific collection by collection key"
 ,
     annotations={
         "readOnlyHint": True,
@@ -2285,7 +2285,7 @@ def get_collection_items(
 
 @mcp.tool(
     name="zot_create_collection",
-    description="Create a new collection in your Zotero library.\n\nUse for: Organizing papers into new collection like 'Machine Learning 2024'"
+    description="📊 MEDIUM PRIORITY - Create a new collection in your Zotero library.\n\nUse for: Organizing papers into new collection like 'Machine Learning 2024'"
 ,
     annotations={
         "readOnlyHint": True,
@@ -2339,7 +2339,7 @@ def create_collection(
 
 @mcp.tool(
     name="zot_add_to_collection",
-    description="Add one or more items to a collection.\n\nUse for: Batch adding multiple paper keys to an existing collection"
+    description="📊 MEDIUM PRIORITY - Add one or more items to a collection.\n\nUse for: Batch adding multiple paper keys to an existing collection"
 ,
     annotations={
         "readOnlyHint": True,
@@ -2398,7 +2398,7 @@ def add_to_collection(
 
 @mcp.tool(
     name="zot_remove_from_collection",
-    description="Remove one or more items from a collection.\n\nUse for: Batch removing papers from a collection without deleting them"
+    description="🔧 LOW PRIORITY - Remove one or more items from a collection.\n\nUse for: Batch removing papers from a collection without deleting them"
 ,
     annotations={
         "readOnlyHint": True,
@@ -2575,7 +2575,7 @@ def get_item_children(
 
 @mcp.tool(
     name="zot_get_item",
-    description="""Get bibliographic metadata for a Zotero item (title, authors, journal, abstract, DOI, etc.) plus list of child items (attachments, notes).
+    description="""🔥 HIGH PRIORITY - Get bibliographic metadata for a Zotero item (title, authors, journal, abstract, DOI, etc.) plus list of child items (attachments, notes).
 
 ⚠️ For paper CONTENT analysis, use zot_ask_paper instead (more efficient, targeted chunk retrieval).
 ⚠️ For raw full PDF text, use zot_get_item_fulltext (expensive operation, 10k-100k tokens).
@@ -2696,7 +2696,7 @@ def get_item(
 
 @mcp.tool(
     name="zot_get_item_fulltext",
-    description="""⚠️ EXPENSIVE FALLBACK (10,000-100,000 tokens) - Get complete raw PDF text from a Zotero item.
+    description="""🔧 LOW PRIORITY - ⚠️ EXPENSIVE FALLBACK (10,000-100,000 tokens) - Get complete raw PDF text from a Zotero item.
 
 💡 Try these MORE EFFICIENT options FIRST:
 - zot_ask_paper(item_key, question) → Retrieves relevant text chunks for Q&A (recommended)
@@ -2800,7 +2800,7 @@ def get_item_fulltext(
 
 @mcp.tool(
     name="zot_get_tags",
-    description="Get all tags used in your Zotero library.\n\nUse for: Exploring tag vocabulary and frequency across library"
+    description="📊 MEDIUM PRIORITY - Get all tags used in your Zotero library.\n\nUse for: Exploring tag vocabulary and frequency across library"
 ,
     annotations={
         "readOnlyHint": True,
@@ -2857,7 +2857,7 @@ def get_tags(
 
 @mcp.tool(
     name="zot_get_recent",
-    description="⚪ FALLBACK - Get recently added/modified items from Zotero API by timestamp.\n\n⚠️ For semantic queries about recent research on a topic, use zot_find_recent_developments instead.\n\nUse for: Chronologically listing items you recently added to your library (not topic-specific)",
+    description="📊 MEDIUM PRIORITY - ⚪ FALLBACK - Get recently added/modified items from Zotero API by timestamp.\n\n⚠️ For semantic queries about recent research on a topic, use zot_find_recent_developments instead.\n\nUse for: Chronologically listing items you recently added to your library (not topic-specific)",
     annotations={
         "readOnlyHint": True,
         "title": "Get Recent Items (Zotero)"
@@ -2928,7 +2928,7 @@ def get_recent(
 
 @mcp.tool(
     name="zot_batch_update_tags",
-    description="Batch update tags across multiple items matching a search query.\n\nUse for: Adding/removing tags across multiple items efficiently"
+    description="📊 MEDIUM PRIORITY - Batch update tags across multiple items matching a search query.\n\nUse for: Adding/removing tags across multiple items efficiently"
 ,
     annotations={
         "readOnlyHint": True,
@@ -3152,7 +3152,7 @@ This tool will be fixed in a future update. See AUDIT_REPORT.md for details.
 
 @mcp.tool(
     name="zot_get_annotations",
-    description="Get all annotations for a specific item or across your entire Zotero library.\n\nUse for: Retrieving highlights and comments from PDF annotations"
+    description="📊 MEDIUM PRIORITY - Get all annotations for a specific item or across your entire Zotero library.\n\nUse for: Retrieving highlights and comments from PDF annotations"
 ,
     annotations={
         "readOnlyHint": True,
@@ -3460,7 +3460,7 @@ def get_annotations(
 
 @mcp.tool(
     name="zot_get_notes",
-    description="Retrieve notes from your Zotero library, with options to filter by parent item.\n\nUse for: Fetching standalone notes or notes attached to items"
+    description="📊 MEDIUM PRIORITY - Retrieve notes from your Zotero library, with options to filter by parent item.\n\nUse for: Fetching standalone notes or notes attached to items"
 ,
     annotations={
         "readOnlyHint": True,
@@ -3550,7 +3550,7 @@ def get_notes(
 
 @mcp.tool(
     name="zot_search_notes",
-    description="Search for notes across your Zotero library.\n\nUse for: Finding notes by text content across library"
+    description="📊 MEDIUM PRIORITY - Search for notes across your Zotero library.\n\nUse for: Finding notes by text content across library"
 ,
     annotations={
         "readOnlyHint": True,
@@ -3711,7 +3711,7 @@ def search_notes(
 
 @mcp.tool(
     name="zot_create_note",
-    description="Create a new note for a Zotero item.\n\nUse for: Adding research notes to items or library"
+    description="📊 MEDIUM PRIORITY - Create a new note for a Zotero item.\n\nUse for: Adding research notes to items or library"
 ,
     annotations={
         "readOnlyHint": True,
@@ -3797,7 +3797,7 @@ def create_note(
 # ============================================================================
 @mcp.tool(
     name="zot_export_markdown",
-    description="Export Zotero items to Markdown files with YAML frontmatter (Obsidian-compatible). Exports items matching a query or from a collection to a specified directory.\n\nUse for: Converting bibliographic data to markdown format for documentation",
+    description="📊 MEDIUM PRIORITY - Export Zotero items to Markdown files with YAML frontmatter (Obsidian-compatible). Exports items matching a query or from a collection to a specified directory.\n\nUse for: Converting bibliographic data to markdown format for documentation",
     annotations={
         "readOnlyHint": True,
         "title": "Export to Markdown (Export)"
@@ -3976,7 +3976,7 @@ def export_markdown(
 
 @mcp.tool(
     name="zot_export_bibtex",
-    description="Export Zotero items to BibTeX format. Can export items matching a query or from a collection to a .bib file.\n\nUse for: Generating BibTeX citations for LaTeX documents"
+    description="📊 MEDIUM PRIORITY - Export Zotero items to BibTeX format. Can export items matching a query or from a collection to a .bib file.\n\nUse for: Generating BibTeX citations for LaTeX documents"
 ,
     annotations={
         "readOnlyHint": True,
@@ -4085,7 +4085,7 @@ def export_bibtex(
 
 @mcp.tool(
     name="zot_export_graph",
-    description="Export Neo4j knowledge graph to GraphML format for visualization in Gephi or Cytoscape. Requires Neo4j GraphRAG to be enabled.\n\nUse for: Exporting Neo4j graph data for external analysis"
+    description="🔧 LOW PRIORITY - Export Neo4j knowledge graph to GraphML format for visualization in Gephi or Cytoscape. Requires Neo4j GraphRAG to be enabled.\n\nUse for: Exporting Neo4j graph data for external analysis"
 ,
     annotations={
         "readOnlyHint": True,
@@ -4156,7 +4156,7 @@ def export_graph(
 # ============================================================================
 @mcp.tool(
     name="search",
-    description="ChatGPT-compatible search wrapper. Performs semantic search and returns JSON results.\n\nFor Claude users: Use zot_semantic_search, zot_enhanced_semantic_search, or zot_ask_paper directly for better results.\n\nUse for: ChatGPT integrations only"
+    description="🔧 LOW PRIORITY - ChatGPT-compatible search wrapper. Performs semantic search and returns JSON results.\n\nFor Claude users: Use zot_semantic_search, zot_enhanced_semantic_search, or zot_ask_paper directly for better results.\n\nUse for: ChatGPT integrations only"
 ,
     annotations={
         "readOnlyHint": True,
@@ -4205,7 +4205,7 @@ def chatgpt_connector_search(
 
 @mcp.tool(
     name="fetch",
-    description="ChatGPT-compatible fetch wrapper. Retrieves fulltext/metadata for a Zotero item by ID.\n\nFor Claude users: Use zot_get_item, zot_ask_paper, or zot_semantic_search directly for better results.\n\nUse for: ChatGPT integrations only"
+    description="🔧 LOW PRIORITY - ChatGPT-compatible fetch wrapper. Retrieves fulltext/metadata for a Zotero item by ID.\n\nFor Claude users: Use zot_get_item, zot_ask_paper, or zot_semantic_search directly for better results.\n\nUse for: ChatGPT integrations only"
 ,
     annotations={
         "readOnlyHint": True,
