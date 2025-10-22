@@ -30,35 +30,43 @@ from agent_zot.utils.common import format_creators
 async def server_lifespan(server: FastMCP):
     """Manage server startup and shutdown lifecycle."""
     sys.stderr.write("Starting Zotero MCP server...\n")
-    
-    # Check for semantic search auto-update on startup
-    try:
-        from agent_zot.search.semantic import create_semantic_search
-        
-        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
-        
-        if config_path.exists():
-            search = create_semantic_search(str(config_path))
-            
-            if search.should_update_database():
-                sys.stderr.write("Auto-updating semantic search database with full-text extraction...\n")
 
-                # Run update in background to avoid blocking server startup
-                async def background_update():
-                    try:
-                        stats = search.update_database(extract_fulltext=True)
-                        sys.stderr.write(f"Database update completed: {stats.get('processed_items', 0)} items processed\n")
-                    except Exception as e:
-                        sys.stderr.write(f"Background database update failed: {e}\n")
-                
-                # Start background task
-                asyncio.create_task(background_update())
-    
-    except Exception as e:
-        sys.stderr.write(f"Warning: Could not check semantic search auto-update: {e}\n")
-    
+    # DISABLED: Auto-update check removed for instant server startup
+    # The initialization of semantic search (loading embeddings, connecting to databases)
+    # adds 3-5 seconds to startup time, making agent-zot slower than other MCP servers.
+    #
+    # To update the search database manually, run:
+    #   agent-zot update-db --force-rebuild --fulltext
+    #
+    # Original auto-update code commented out below:
+
+    # try:
+    #     from agent_zot.search.semantic import create_semantic_search
+    #
+    #     config_path = Path.home() / ".config" / "agent-zot" / "config.json"
+    #
+    #     if config_path.exists():
+    #         search = create_semantic_search(str(config_path))
+    #
+    #         if search.should_update_database():
+    #             sys.stderr.write("Auto-updating semantic search database with full-text extraction...\n")
+    #
+    #             # Run update in background to avoid blocking server startup
+    #             async def background_update():
+    #                 try:
+    #                     stats = search.update_database(extract_fulltext=True)
+    #                     sys.stderr.write(f"Database update completed: {stats.get('processed_items', 0)} items processed\n")
+    #                 except Exception as e:
+    #                     sys.stderr.write(f"Background database update failed: {e}\n")
+    #
+    #             # Start background task
+    #             asyncio.create_task(background_update())
+    #
+    # except Exception as e:
+    #     sys.stderr.write(f"Warning: Could not check semantic search auto-update: {e}\n")
+
     yield {}
-    
+
     sys.stderr.write("Shutting down Zotero MCP server...\n")
 
 
