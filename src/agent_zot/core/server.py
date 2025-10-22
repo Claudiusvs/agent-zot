@@ -474,7 +474,7 @@ def _extract_item_key_from_input(value: str) -> Optional[str]:
 ,
     annotations={
         "readOnlyHint": True,
-        "title": "Hybrid Vector+Graph Search (Vector)"
+        "title": "Hybrid Vector+Graph Search (Vector/Graph)"
     }
 )
 def hybrid_vector_graph_search(
@@ -3980,7 +3980,7 @@ def export_markdown(
 ,
     annotations={
         "readOnlyHint": True,
-        "title": "Export BibTeX (Zotero)"
+        "title": "Export BibTeX (Export)"
     }
 )
 def export_bibtex(
@@ -4089,7 +4089,7 @@ def export_bibtex(
 ,
     annotations={
         "readOnlyHint": True,
-        "title": "Export Graph (Graph)"
+        "title": "Export Graph (Export)"
     }
 )
 def export_graph(
