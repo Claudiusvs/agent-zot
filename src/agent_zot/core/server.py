@@ -151,7 +151,7 @@ Agent-Zot fully implements the Qdrant GraphRAG patterns:
     description="🔥 HIGH PRIORITY - 🔵 PRIMARY for content/topic discovery. Use when query involves meaning, concepts, or \"papers about X\".\n\n📊 Search Levels (choose based on your needs):\n- Use THIS (Level 1) when: Basic paper discovery, titles/abstracts sufficient\n- Upgrade to Level 3 (zot_enhanced_semantic_search) when: Need entities/concepts from matched passages\n- Use Level 2 (zot_hybrid_vector_graph_search) when: Need paper-level relationship exploration\n\n💡 Often combines with:\n- zot_ask_paper() to read content of found papers\n- Neo4j tools to explore relationships\n\nExample queries:\n✓ \"papers about [concept/topic]\"\n✓ \"research on [method/approach]\"\n✓ \"studies using [technique]\"\n\nNOT for:\n✗ \"who collaborated with [author]?\" → use zot_graph_search\n✗ \"papers citing [specific paper]\" → use zot_find_citation_chain\n\nUse for: Semantic discovery like \"papers about [concept]\" or \"research on [method]\"",
     annotations={
         "readOnlyHint": True,
-        "title": "Semantic Search (Query)"
+        "title": "Semantic Search (Vector)"
     }
 )
 def semantic_search(
@@ -291,7 +291,7 @@ def semantic_search(
     description="🔧 LOW PRIORITY - ⚪ FALLBACK - Index or re-index the Zotero library for semantic search. Extracts full PDF text using AI-powered parsing (Docling with OCR). Use this when the user asks to 'index my library', 'update the search database', or 'enable semantic search'. Automatically handles full-text extraction from PDFs.\n\nUse for: Rebuilding semantic search database after adding new papers",
     annotations={
         "readOnlyHint": False,
-        "title": "Update Search Index (Query)"
+        "title": "Update Search Index (Vector)"
     }
 )
 def update_search_database(
@@ -376,7 +376,7 @@ def update_search_database(
 ,
     annotations={
         "readOnlyHint": True,
-        "title": "Get Search Database Status (Query)"
+        "title": "Get Search Database Status (Vector)"
     }
 )
 def get_search_database_status(*, ctx: Context) -> str:
@@ -474,7 +474,7 @@ def _extract_item_key_from_input(value: str) -> Optional[str]:
 ,
     annotations={
         "readOnlyHint": True,
-        "title": "Hybrid Vector+Graph Search (Query)"
+        "title": "Hybrid Vector+Graph Search (Vector)"
     }
 )
 def hybrid_vector_graph_search(
@@ -571,7 +571,7 @@ def hybrid_vector_graph_search(
     description="🔥 HIGH PRIORITY - 🔵 PRIMARY tool for accessing paper content. Uses semantic search to retrieve relevant text chunks from a paper's full text. Much more efficient than zot_get_item(include_fulltext=True). This does NOT generate AI answers - it returns source text chunks for you to analyze.\n\n✅ Use this when you need to read, analyze, or extract information from a paper's actual content.\n💡 For comprehensive paper summarization, call this multiple times with different questions (e.g., methods, results, conclusions) or use high top_k value.\n\nExample questions:\n✓ \"What methodology did the authors use?\"\n✓ \"What were the main findings?\"\n✓ \"How did they measure [variable]?\"\n\nNOT for:\n✗ \"find papers about [topic]\" → use zot_semantic_search\n✗ \"who are the authors\" → use zot_get_item\n\nUse for: Reading paper content, extracting findings, analyzing methodology, understanding results, comprehensive summarization",
     annotations={
         "readOnlyHint": True,
-        "title": "Ask Paper (Query)"
+        "title": "Ask Paper (Vector)"
     }
 )
 def ask_paper(
@@ -681,7 +681,7 @@ NOT for:
 Use for: Content-based 'More Like This' discovery using document vectors""",
     annotations={
         "readOnlyHint": True,
-        "title": "Find Similar Papers (Query)"
+        "title": "Find Similar Papers (Vector)"
     }
 )
 def find_similar_papers(
@@ -777,7 +777,7 @@ def find_similar_papers(
     description="🔥 HIGH PRIORITY - 🔵 ADVANCED - Implements Figure 3 pattern from Qdrant GraphRAG documentation.\n\nHow it works (4 steps):\n1. Semantic search in Qdrant finds relevant chunks\n2. Extracts chunk IDs (e.g., 'ABCD1234_chunk_5')\n3. Queries Neo4j for entities in those EXACT chunks\n4. Returns papers + matched text + entities from that text\n\n💡 Most precise search available. Use when you need to know:\n- 'Which concepts appear in papers about [topic]?'\n- 'What methods are used for [purpose] in the literature?'\n- 'Which theories are discussed alongside [concept]?'\n\nExample queries:\n✓ \"which methods appear in papers about [topic]?\"\n✓ \"what theories are discussed in [field] research?\"\n✓ \"which techniques are used for [purpose]?\"\n\nNOT for:\n✗ \"just find papers about [topic]\" → use zot_semantic_search (faster)\n✗ \"who worked with [author]\" → use zot_graph_search\n\n⚠️ Requires Neo4j population. If unpopulated (currently 0.5%), uses standard semantic search instead.\n\nUse for: Entity-aware semantic search, discovering what concepts/methods/theories appear in relevant passages",
     annotations={
         "readOnlyHint": True,
-        "title": "Enhanced Semantic Search (Query)"
+        "title": "Enhanced Semantic Search (Vector)"
     }
 )
 def enhanced_semantic_search(
