@@ -373,6 +373,11 @@ def update_search_database(
 @mcp.tool(
     name="zot_get_search_database_status",
     description="Get status information about the semantic search database.\n\nUse for: Verifying semantic search database health and statistics"
+,
+    annotations={
+        "readOnlyHint": True,
+        "title": "Get Search Database Status (Query)"
+    }
 )
 def get_search_database_status(*, ctx: Context) -> str:
     """
@@ -466,6 +471,11 @@ def _extract_item_key_from_input(value: str) -> Optional[str]:
 @mcp.tool(
     name="zot_hybrid_vector_graph_search",
     description="🔸 SECONDARY - Combines semantic search with relationship discovery. Use when you want both content relevance AND network connections in results. Requires Neo4j.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ For content-only queries, use zot_semantic_search instead (faster).\n\nUse for: Combined semantic+relationship queries when both content and connections matter"
+,
+    annotations={
+        "readOnlyHint": True,
+        "title": "Hybrid Vector+Graph Search (Query)"
+    }
 )
 def hybrid_vector_graph_search(
     query: str,
@@ -2107,6 +2117,11 @@ def get_item_fulltext(
 @mcp.tool(
     name="zot_get_collections",
     description="List all collections in your Zotero library.\n\nUse for: Browsing library organization structure and collection hierarchy"
+,
+    annotations={
+        "readOnlyHint": True,
+        "title": "Get Collections (Zotero)"
+    }
 )
 def get_collections(
     limit: Optional[int] = None,
@@ -2198,6 +2213,11 @@ def get_collections(
 @mcp.tool(
     name="zot_get_collection_items",
     description="Get all items in a specific Zotero collection.\n\nUse for: Retrieving all papers in a specific collection by collection key"
+,
+    annotations={
+        "readOnlyHint": True,
+        "title": "Get Collection Items (Zotero)"
+    }
 )
 def get_collection_items(
     collection_key: str,
@@ -2266,6 +2286,11 @@ def get_collection_items(
 @mcp.tool(
     name="zot_create_collection",
     description="Create a new collection in your Zotero library.\n\nUse for: Organizing papers into new collection like 'Machine Learning 2024'"
+,
+    annotations={
+        "readOnlyHint": True,
+        "title": "Create Collection (Zotero)"
+    }
 )
 def create_collection(
     name: str,
@@ -2315,6 +2340,11 @@ def create_collection(
 @mcp.tool(
     name="zot_add_to_collection",
     description="Add one or more items to a collection.\n\nUse for: Batch adding multiple paper keys to an existing collection"
+,
+    annotations={
+        "readOnlyHint": True,
+        "title": "Add to Collection (Zotero)"
+    }
 )
 def add_to_collection(
     collection_key: str,
@@ -2369,6 +2399,11 @@ def add_to_collection(
 @mcp.tool(
     name="zot_remove_from_collection",
     description="Remove one or more items from a collection.\n\nUse for: Batch removing papers from a collection without deleting them"
+,
+    annotations={
+        "readOnlyHint": True,
+        "title": "Remove from Collection (Zotero)"
+    }
 )
 def remove_from_collection(
     collection_key: str,
@@ -2766,6 +2801,11 @@ def get_item_fulltext(
 @mcp.tool(
     name="zot_get_tags",
     description="Get all tags used in your Zotero library.\n\nUse for: Exploring tag vocabulary and frequency across library"
+,
+    annotations={
+        "readOnlyHint": True,
+        "title": "Get Tags (Zotero)"
+    }
 )
 def get_tags(
     limit: Optional[int] = None,
@@ -2889,6 +2929,11 @@ def get_recent(
 @mcp.tool(
     name="zot_batch_update_tags",
     description="Batch update tags across multiple items matching a search query.\n\nUse for: Adding/removing tags across multiple items efficiently"
+,
+    annotations={
+        "readOnlyHint": True,
+        "title": "Batch Update Tags (Zotero)"
+    }
 )
 def batch_update_tags(
     query: str,
@@ -3108,6 +3153,11 @@ This tool will be fixed in a future update. See AUDIT_REPORT.md for details.
 @mcp.tool(
     name="zot_get_annotations",
     description="Get all annotations for a specific item or across your entire Zotero library.\n\nUse for: Retrieving highlights and comments from PDF annotations"
+,
+    annotations={
+        "readOnlyHint": True,
+        "title": "Get Annotations (Zotero)"
+    }
 )
 def get_annotations(
     item_key: Optional[str] = None,
@@ -3411,6 +3461,11 @@ def get_annotations(
 @mcp.tool(
     name="zot_get_notes",
     description="Retrieve notes from your Zotero library, with options to filter by parent item.\n\nUse for: Fetching standalone notes or notes attached to items"
+,
+    annotations={
+        "readOnlyHint": True,
+        "title": "Get Notes (Zotero)"
+    }
 )
 def get_notes(
     item_key: Optional[str] = None,
@@ -3496,6 +3551,11 @@ def get_notes(
 @mcp.tool(
     name="zot_search_notes",
     description="Search for notes across your Zotero library.\n\nUse for: Finding notes by text content across library"
+,
+    annotations={
+        "readOnlyHint": True,
+        "title": "Search Notes (Zotero)"
+    }
 )
 def search_notes(
     query: str,
@@ -3652,6 +3712,11 @@ def search_notes(
 @mcp.tool(
     name="zot_create_note",
     description="Create a new note for a Zotero item.\n\nUse for: Adding research notes to items or library"
+,
+    annotations={
+        "readOnlyHint": True,
+        "title": "Create Note (Zotero)"
+    }
 )
 def create_note(
     item_key: str,
@@ -3912,6 +3977,11 @@ def export_markdown(
 @mcp.tool(
     name="zot_export_bibtex",
     description="Export Zotero items to BibTeX format. Can export items matching a query or from a collection to a .bib file.\n\nUse for: Generating BibTeX citations for LaTeX documents"
+,
+    annotations={
+        "readOnlyHint": True,
+        "title": "Export BibTeX (Zotero)"
+    }
 )
 def export_bibtex(
     output_file: str,
@@ -4016,6 +4086,11 @@ def export_bibtex(
 @mcp.tool(
     name="zot_export_graph",
     description="Export Neo4j knowledge graph to GraphML format for visualization in Gephi or Cytoscape. Requires Neo4j GraphRAG to be enabled.\n\nUse for: Exporting Neo4j graph data for external analysis"
+,
+    annotations={
+        "readOnlyHint": True,
+        "title": "Export Graph (Graph)"
+    }
 )
 def export_graph(
     output_file: str,
@@ -4082,6 +4157,11 @@ def export_graph(
 @mcp.tool(
     name="search",
     description="ChatGPT-compatible search wrapper. Performs semantic search and returns JSON results.\n\nFor Claude users: Use zot_semantic_search, zot_enhanced_semantic_search, or zot_ask_paper directly for better results.\n\nUse for: ChatGPT integrations only"
+,
+    annotations={
+        "readOnlyHint": True,
+        "title": "Search (ChatGPT)"
+    }
 )
 def chatgpt_connector_search(
     query: str,
@@ -4126,6 +4206,11 @@ def chatgpt_connector_search(
 @mcp.tool(
     name="fetch",
     description="ChatGPT-compatible fetch wrapper. Retrieves fulltext/metadata for a Zotero item by ID.\n\nFor Claude users: Use zot_get_item, zot_ask_paper, or zot_semantic_search directly for better results.\n\nUse for: ChatGPT integrations only"
+,
+    annotations={
+        "readOnlyHint": True,
+        "title": "Fetch (ChatGPT)"
+    }
 )
 def connector_fetch(
     id: str,
