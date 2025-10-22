@@ -688,26 +688,21 @@ def ask_paper(
         except Exception:
             paper_title = item_key
 
-        # Check if we got results
-        if not results.get("ids") or not results["ids"][0]:
+        # Check if we got results (search.search returns enriched results in "results" field)
+        search_results = results.get("results", [])
+        if not search_results:
             return f"No relevant content found in paper '{paper_title}' for question: '{question}'\n\nThis may mean:\n- The paper's full text hasn't been indexed yet (run zot_update_search_database)\n- The question topic isn't discussed in this paper\n- Try rephrasing your question"
 
         # Format results
         output = [f"# Relevant Content from '{paper_title}'"]
         output.append(f"\n**Question:** {question}")
         output.append(f"**Item Key:** {item_key}")
-        output.append(f"\n**Found {len(results['ids'][0])} relevant chunks:**\n")
+        output.append(f"\n**Found {len(search_results)} relevant chunks:**\n")
 
-        for i in range(len(results["ids"][0])):
-            # Safe nested list access
-            chunk_text = (results["documents"][0][i]
-                         if results.get("documents") and len(results["documents"]) > 0 and len(results["documents"][0]) > i
-                         else "")
-            distance = (results["distances"][0][i]
-                       if results.get("distances") and len(results["distances"]) > 0 and len(results["distances"][0]) > i
-                       else 0.0)
-
-            similarity = 1.0 - distance  # Convert distance to similarity score
+        for i, result in enumerate(search_results):
+            # Extract from enriched result format
+            chunk_text = result.get("matched_text", "")
+            similarity = result.get("similarity_score", 0.0)
 
             output.append(f"## Chunk {i+1} (Relevance: {similarity:.3f})")
             output.append(f"{chunk_text}")
