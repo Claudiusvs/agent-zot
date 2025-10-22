@@ -1015,6 +1015,63 @@ class ZoteroSemanticSearch:
         logger.debug(f"Truncated text from {len(text)} to {len(truncated)} chars (~{max_tokens} tokens)")
         return truncated
 
+    def _resolve_to_parent_key(self, item_key: str) -> Optional[str]:
+        """
+        Resolve an attachment item key to its parent paper key.
+        get_items_with_text() returns attachment items, not parent papers.
+        This method queries the database to find the parent item key.
+
+        Args:
+            item_key: The attachment item key
+
+        Returns:
+            Parent paper key, or None if not found
+        """
+        try:
+            from agent_zot.database.local_zotero import LocalZoteroReader
+
+            reader = LocalZoteroReader()
+            conn = reader._get_connection()
+            cursor = conn.cursor()
+
+            # Get itemID for this key
+            cursor.execute("SELECT itemID FROM items WHERE key = ?", (item_key,))
+            result = cursor.fetchone()
+            if not result:
+                logger.warning(f"Item {item_key} not found in database")
+                return None
+
+            item_id = result[0]
+
+            # Check if this is an attachment
+            cursor.execute("""
+                SELECT ia.parentItemID
+                FROM itemAttachments ia
+                WHERE ia.itemID = ?
+            """, (item_id,))
+
+            attach_result = cursor.fetchone()
+            if attach_result and attach_result[0]:
+                # This is an attachment, get parent key
+                parent_id = attach_result[0]
+                cursor.execute("SELECT key FROM items WHERE itemID = ?", (parent_id,))
+                parent_result = cursor.fetchone()
+                if parent_result:
+                    parent_key = parent_result[0]
+                    logger.debug(f"Resolved attachment {item_key} to parent {parent_key}")
+                    return parent_key
+                else:
+                    logger.warning(f"Parent itemID {parent_id} not found for attachment {item_key}")
+                    return None
+            else:
+                # Not an attachment, use item_key as-is
+                logger.debug(f"Item {item_key} is not an attachment, using as-is")
+                return item_key
+
+        except Exception as e:
+            logger.error(f"Error resolving parent key for {item_key}: {e}")
+            return None
+
     def _process_item_batch(self, items: List[Dict[str, Any]], force_rebuild: bool = False) -> Dict[str, int]:
         """
         Process a batch of items with chunk-based indexing.
@@ -1046,9 +1103,18 @@ class ZoteroSemanticSearch:
                 # DEBUG: Log chunks at indexing stage
                 logger.info(f"[DEBUG] Item {item_key}: chunks array length at indexing: {len(chunks)}")
 
+                # CRITICAL FIX: Resolve attachment keys to parent paper keys
+                # get_items_with_text() returns attachment items, not parent papers
+                # We need to use the parent paper key as parent_item_key for proper linking
+                parent_key = self._resolve_to_parent_key(item_key)
+                if not parent_key:
+                    logger.warning(f"Could not resolve parent key for {item_key}, skipping")
+                    stats["skipped"] += 1
+                    continue
+
                 # CHUNK-BASED INDEXING (new, preferred method)
                 if chunks:
-                    logger.debug(f"Indexing {len(chunks)} chunks for item {item_key}")
+                    logger.debug(f"Indexing {len(chunks)} chunks for item {item_key} (parent: {parent_key})")
 
                     # Create base metadata for this document
                     base_metadata = self._create_metadata(item)
@@ -1072,14 +1138,14 @@ class ZoteroSemanticSearch:
 
                         # Create metadata for this chunk
                         chunk_metadata = base_metadata.copy()
-                        chunk_metadata["parent_item_key"] = item_key
+                        chunk_metadata["parent_item_key"] = parent_key  # Use resolved parent key
                         chunk_metadata["chunk_id"] = chunk_id
                         chunk_metadata["chunk_headings"] = chunk_meta.get("headings", [])
                         chunk_metadata["is_chunk"] = True
 
                         # Add Neo4j references for bidirectional linking (GraphRAG integration)
-                        chunk_metadata["neo4j_paper_id"] = f"paper:{item_key}"
-                        chunk_metadata["neo4j_chunk_id"] = f"chunk:{item_key}_{chunk_id}"
+                        chunk_metadata["neo4j_paper_id"] = f"paper:{parent_key}"  # Use parent key for Neo4j linking
+                        chunk_metadata["neo4j_chunk_id"] = f"chunk:{item_key}_{chunk_id}"  # Keep attachment key for chunk ID
 
                         documents.append(chunk_text)
                         metadatas.append(chunk_metadata)
@@ -1107,9 +1173,10 @@ class ZoteroSemanticSearch:
 
                     metadata = self._create_metadata(item)
                     metadata["is_chunk"] = False  # Mark as document-level
+                    metadata["parent_item_key"] = parent_key  # Add parent key for document-level too
 
                     # Add Neo4j references for bidirectional linking (GraphRAG integration)
-                    metadata["neo4j_paper_id"] = f"paper:{item_key}"
+                    metadata["neo4j_paper_id"] = f"paper:{parent_key}"  # Use parent key for Neo4j linking
 
                     if not doc_text.strip():
                         stats["skipped"] += 1
