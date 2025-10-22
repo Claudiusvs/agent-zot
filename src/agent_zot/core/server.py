@@ -26,6 +26,62 @@ from agent_zot.clients.zotero import (
 )
 from agent_zot.utils.common import format_creators
 
+
+def get_item_with_fallback(zot, item_key: str) -> Optional[Dict]:
+    """
+    Get item from Zotero API with fallback to local SQLite database.
+
+    When ZOTERO_LOCAL=true, some items may exist in the local SQLite database
+    but not be served by the local API server (e.g., unsynced items). This
+    function tries the API first, then falls back to direct SQLite access.
+
+    Args:
+        zot: Zotero client instance
+        item_key: Item key to fetch
+
+    Returns:
+        Item dict in pyzotero format, or None if not found
+    """
+    try:
+        # Try API first
+        return get_item_with_fallback(zot, item_key)
+    except Exception as e:
+        # Check if it's a 404 (ResourceNotFoundError)
+        if "404" in str(e) or "Not found" in str(e):
+            # Fall back to local SQLite database
+            try:
+                from agent_zot.database.local_zotero import LocalZoteroReader
+
+                reader = LocalZoteroReader()
+                zot_item = reader.get_item_by_key(item_key)
+
+                if zot_item is None:
+                    return None
+
+                # Convert ZoteroItem to pyzotero dict format
+                return {
+                    "key": zot_item.key,
+                    "data": {
+                        "key": zot_item.key,
+                        "itemType": zot_item.item_type or "unknown",
+                        "title": zot_item.title or "",
+                        "abstractNote": zot_item.abstract or "",
+                        "creators": format_creators(zot_item.creators) if zot_item.creators else [],
+                        "DOI": zot_item.doi or "",
+                        "extra": zot_item.extra or "",
+                        "dateAdded": zot_item.date_added or "",
+                        "dateModified": zot_item.date_modified or "",
+                    },
+                    "meta": {},
+                    "links": {},
+                }
+            except Exception as fallback_error:
+                # If fallback also fails, re-raise original error
+                raise e
+        else:
+            # Not a 404, re-raise
+            raise
+
 @asynccontextmanager
 async def server_lifespan(server: FastMCP):
     """Manage server startup and shutdown lifecycle."""
@@ -613,11 +669,11 @@ def ask_paper(
         config_path = Path.home() / ".config" / "agent-zot" / "config.json"
         search = create_semantic_search(str(config_path))
 
-        # Search with item_key filter to only get chunks from this specific paper
+        # Search with parent_item_key filter to only get chunks from this specific paper
         results = search.search(
             query=question,
             limit=top_k,
-            filters={"item_key": item_key}
+            filters={"parent_item_key": item_key}
         )
 
         if results.get("error"):
@@ -626,7 +682,7 @@ def ask_paper(
         # Get paper metadata for context
         zot = get_zotero_client()
         try:
-            item = zot.item(item_key)
+            item = get_item_with_fallback(zot, item_key)
             paper_data = item.get("data", {}) if item else {}
             paper_title = paper_data.get("title", "Unknown")
         except Exception:
@@ -724,7 +780,7 @@ def find_similar_papers(
         # Fallback approach: Get the item and use its abstract for search
         ctx.info("Using abstract-based semantic search for similarity")
         zot = get_zotero_client()
-        item = zot.item(item_key)
+        item = get_item_with_fallback(zot, item_key)
 
         if not item:
             return f"No item found with key: {item_key}"
@@ -2029,7 +2085,7 @@ def get_item_metadata(
         ctx.info(f"Fetching metadata for item {item_key} in {format} format")
         zot = get_zotero_client()
 
-        item = zot.item(item_key)
+        item = get_item_with_fallback(zot, item_key)
         if not item:
             return f"No item found with key: {item_key}"
 
@@ -2072,7 +2128,7 @@ def get_item_fulltext(
         zot = get_zotero_client()
         
         # First get the item metadata
-        item = zot.item(item_key)
+        item = get_item_with_fallback(zot, item_key)
         if not item:
             return f"No item found with key: {item_key}"
         
@@ -2492,7 +2548,7 @@ def get_item_children(
         
         # First get the parent item details
         try:
-            parent = zot.item(item_key)
+            parent = get_item_with_fallback(zot, item_key)
             parent_title = parent["data"].get("title", "Untitled Item")
         except Exception:
             parent_title = f"Item {item_key}"
@@ -2632,7 +2688,7 @@ def get_item(
         zot = get_zotero_client()
 
         # Get the main item
-        item = zot.item(item_key)
+        item = get_item_with_fallback(zot, item_key)
         if not item:
             return f"No item found with key: {item_key}"
 
@@ -2754,7 +2810,7 @@ def get_item_fulltext(
         zot = get_zotero_client()
 
         # First get the item metadata
-        item = zot.item(item_key)
+        item = get_item_with_fallback(zot, item_key)
         if not item:
             return f"No item found with key: {item_key}"
 
@@ -3198,7 +3254,7 @@ def get_annotations(
         if item_key:
             # First, verify the item exists and get its details
             try:
-                parent = zot.item(item_key)
+                parent = get_item_with_fallback(zot, item_key)
                 parent_title = parent["data"].get("title", "Untitled Item")
                 ctx.info(f"Fetching annotations for item: {parent_title}")
             except Exception:
@@ -3406,7 +3462,7 @@ def get_annotations(
             parent_info = ""
             if not item_key and (parent_key := data.get("parentItem")):
                 try:
-                    parent = zot.item(parent_key)
+                    parent = get_item_with_fallback(zot, parent_key)
                     parent_title = parent["data"].get("title", "Untitled")
                     parent_info = f" (from \"{parent_title}\")"
                 except Exception:
@@ -3519,7 +3575,7 @@ def get_notes(
             parent_info = ""
             if parent_key := data.get("parentItem"):
                 try:
-                    parent = zot.item(parent_key)
+                    parent = get_item_with_fallback(zot, parent_key)
                     parent_title = parent["data"].get("title", "Untitled")
                     parent_info = f" (from \"{parent_title}\")"
                 except Exception:
@@ -3655,7 +3711,7 @@ def search_notes(
                 parent_info = ""
                 if parent_key := data.get("parentItem"):
                     try:
-                        parent = zot.item(parent_key)
+                        parent = get_item_with_fallback(zot, parent_key)
                         parent_title = parent["data"].get("title", "Untitled")
                         parent_info = f" (from \"{parent_title}\")"
                     except Exception:
@@ -3753,7 +3809,7 @@ def create_note(
         
         # First verify the parent item exists
         try:
-            parent = zot.item(item_key)
+            parent = get_item_with_fallback(zot, item_key)
             parent_title = parent["data"].get("title", "Untitled Item")
         except Exception:
             return f"Error: No item found with key: {item_key}"
@@ -4243,7 +4299,7 @@ def connector_fetch(
         # Fetch item metadata for title and context
         zot = get_zotero_client()
         try:
-            item = zot.item(item_key)
+            item = get_item_with_fallback(zot, item_key)
             data = item.get("data", {}) if item else {}
         except Exception:
             item = None
