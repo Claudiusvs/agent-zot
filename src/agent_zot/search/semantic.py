@@ -1686,8 +1686,79 @@ class ZoteroSemanticSearch:
                 else:
                     zotero_key = item_key
 
-                # Get full item data from Zotero
-                zotero_item = self.zotero_client.item(zotero_key)
+                # Get full item data from Zotero with fallback to local SQLite
+                try:
+                    zotero_item = self.zotero_client.item(zotero_key)
+                except Exception as api_error:
+                    # Fallback to local SQLite database for unsynced items
+                    if "404" in str(api_error) or "Not found" in str(api_error):
+                        from agent_zot.database.local_zotero import LocalZoteroReader
+
+                        reader = LocalZoteroReader()
+                        conn = reader._get_connection()
+                        cursor = conn.cursor()
+
+                        # Query database directly for this item (bypasses get_items_with_text filter)
+                        cursor.execute("""
+                            SELECT i.key, it.typeName,
+                                   iv_title.value as title,
+                                   iv_abstract.value as abstract,
+                                   iv_doi.value as doi,
+                                   i.dateAdded, i.dateModified
+                            FROM items i
+                            LEFT JOIN itemTypes it ON i.itemTypeID = it.itemTypeID
+                            LEFT JOIN itemData id_title ON i.itemID = id_title.itemID AND id_title.fieldID = 1
+                            LEFT JOIN itemDataValues iv_title ON id_title.valueID = iv_title.valueID
+                            LEFT JOIN itemData id_abstract ON i.itemID = id_abstract.itemID AND id_abstract.fieldID = 27
+                            LEFT JOIN itemDataValues iv_abstract ON id_abstract.valueID = iv_abstract.valueID
+                            LEFT JOIN itemData id_doi ON i.itemID = id_doi.itemID AND id_doi.fieldID = 26
+                            LEFT JOIN itemDataValues iv_doi ON id_doi.valueID = iv_doi.valueID
+                            WHERE i.key = ?
+                        """, (zotero_key,))
+
+                        db_result = cursor.fetchone()
+                        if db_result is None:
+                            raise api_error  # Re-raise if not in local DB either
+
+                        key, item_type, title, abstract, doi, date_added, date_modified = db_result
+
+                        # Get creators
+                        cursor.execute("""
+                            SELECT c.firstName, c.lastName, ct.creatorType
+                            FROM itemCreators ic
+                            JOIN creators c ON ic.creatorID = c.creatorID
+                            JOIN creatorTypes ct ON ic.creatorTypeID = ct.creatorTypeID
+                            JOIN items i ON ic.itemID = i.itemID
+                            WHERE i.key = ?
+                            ORDER BY ic.orderIndex
+                        """, (zotero_key,))
+
+                        creators = []
+                        for first, last, creator_type in cursor.fetchall():
+                            creators.append({
+                                "creatorType": creator_type,
+                                "firstName": first or "",
+                                "lastName": last or ""
+                            })
+
+                        # Convert to pyzotero format
+                        zotero_item = {
+                            "key": key,
+                            "data": {
+                                "key": key,
+                                "itemType": item_type or "unknown",
+                                "title": title or "",
+                                "abstractNote": abstract or "",
+                                "creators": creators,
+                                "DOI": doi or "",
+                                "dateAdded": date_added or "",
+                                "dateModified": date_modified or "",
+                            },
+                            "meta": {},
+                            "links": {},
+                        }
+                    else:
+                        raise  # Not a 404, re-raise
 
                 enriched_result = {
                     "item_key": zotero_key,  # Use parent key for Claude, not chunk key
@@ -1701,12 +1772,14 @@ class ZoteroSemanticSearch:
                 }
 
                 enriched.append(enriched_result)
-                
+
             except Exception as e:
-                logger.error(f"Error enriching result for item {item_key}: {e}")
+                logger.error(f"Error enriching result for item {zotero_key}: {e}")
                 # Include basic result even if enrichment fails
+                # IMPORTANT: Use zotero_key (resolved parent), not item_key (chunk ID)
                 enriched.append({
-                    "item_key": item_key,
+                    "item_key": zotero_key,  # Fixed: use resolved parent key, not chunk ID
+                    "original_chunk_key": item_key if "_chunk_" in item_key else None,
                     "similarity_score": 1 - distances[i] if i < len(distances) else 0,
                     "matched_text": documents[i] if i < len(documents) else "",
                     "metadata": metadatas[i] if i < len(metadatas) else {},
