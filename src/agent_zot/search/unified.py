@@ -217,12 +217,26 @@ def unified_search(
     logger.info("Applying Reciprocal Rank Fusion...")
     merged_rankings = reciprocal_rank_fusion(ranked_lists)
 
+    # Build cache of already-enriched items from semantic search results
+    # to avoid redundant Zotero API calls
+    enriched_items_cache = {}
+    if semantic_result := results_by_backend.get("semantic"):
+        for result in semantic_result.get("results", []):
+            if result.get("zotero_item"):
+                enriched_items_cache[result["item_key"]] = result["zotero_item"]
+
     # Fetch full details for top results
     final_results = []
     for item_key, rrf_score in merged_rankings[:limit]:
         try:
-            # Get full item details from Zotero
-            zotero_item = semantic_search_instance.zotero_client.item(item_key)
+            # Check if we already have this item from semantic search
+            if item_key in enriched_items_cache:
+                zotero_item = enriched_items_cache[item_key]
+                logger.debug(f"Reusing cached Zotero item for {item_key}")
+            else:
+                # Fetch only if not already enriched
+                zotero_item = semantic_search_instance.zotero_client.item(item_key)
+                logger.debug(f"Fetched Zotero item for {item_key}")
 
             final_results.append({
                 "item_key": item_key,
