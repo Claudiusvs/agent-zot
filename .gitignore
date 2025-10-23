@@ -21,6 +21,10 @@ chroma_db/
 # Qdrant vector database storage (runtime data)
 qdrant_storage/
 
+# Backup files (large binary snapshots)
+backups/qdrant/*.snapshot
+backups/neo4j/*.dump
+
 # Secrets
 .env
 *.key
