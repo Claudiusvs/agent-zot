@@ -202,6 +202,63 @@ Agent-Zot fully implements the Qdrant GraphRAG patterns:
 - **Figure 1:** Basic vector search → `zot_semantic_search`
 - **Figure 2:** Paper-level hybrid → `zot_hybrid_vector_graph_search`
 - **Figure 3:** Chunk-level enrichment → `zot_enhanced_semantic_search` ⭐ MOST ADVANCED
+
+## Advanced Search Tools (Flexible Query-Driven Use)
+
+**These tools can be used DIRECTLY for appropriate queries - no need to try basic search first.**
+
+### Query Pattern Recognition
+
+**Multi-concept query** (e.g., "X AND Y", "X, Y, Z") → `zot_decompose_query`
+- Automatically breaks into sub-queries and merges results
+- Use directly when you see boolean operators (AND, OR) or multiple distinct concepts
+- Example: "fMRI studies of working memory AND aging"
+
+**Multi-faceted comprehensive search** → `zot_unified_search`
+- Merges Qdrant + Neo4j + Zotero API using Reciprocal Rank Fusion (RRF)
+- Use directly when need maximum coverage across all backends
+- Example: "neural mechanisms AND clinical applications" (benefits from multi-backend)
+
+**Query needs improvement** → `zot_refine_search`
+- Automatic iterative refinement based on result quality
+- Use directly if you anticipate low-quality results
+- Also triggered automatically when quality metrics show confidence=low or coverage<40%
+
+### Multi-Tool Workflow Examples
+
+**Example 1 - Complex query recognized upfront:**
+```
+Query: "fMRI studies of working memory AND aging"
+→ zot_decompose_query (handles multi-concept directly)
+→ zot_ask_paper (read content from found papers)
+→ zot_find_related_papers (explore connections)
+```
+
+**Example 2 - Comprehensive then targeted:**
+```
+Query: "neural mechanisms of decision making"
+→ zot_unified_search (maximize coverage across backends)
+→ zot_ask_paper (extract specific findings)
+→ zot_graph_search (explore relationships)
+```
+
+**Example 3 - Iterative refinement:**
+```
+Query: "attention networks"
+→ zot_semantic_search (fast first attempt)
+→ Quality metrics: confidence=low, coverage=25%
+→ zot_refine_search (automatic improvement)
+```
+
+**Example 4 - Direct to advanced:**
+```
+Query: "methods used in machine learning AND neuroscience"
+→ zot_decompose_query (obvious multi-concept from start)
+  No need to try zot_semantic_search first
+```
+
+**Key Principle: QUERY-DRIVEN selection, not hierarchical ordering.**
+Choose tools based on what the query needs, not a predetermined sequence.
 """
 )
 
@@ -371,7 +428,9 @@ def semantic_search(
 
 @mcp.tool(
     name="zot_unified_search",
-    description="🔥 HIGH PRIORITY - 🔵 ADVANCED - Unified search using Reciprocal Rank Fusion to merge semantic, graph, and metadata results.\n\n💡 Use when:\n✓ You want comprehensive results across all search backends\n✓ Query is multi-faceted (e.g., 'neural mechanisms AND clinical applications')\n✓ You want to maximize recall (finding all relevant papers)\n✓ Simple semantic search returned insufficient results\n\nCombines:\n- Semantic search (Qdrant vector DB) - content similarity\n- Graph search (Neo4j knowledge graph) - relationship discovery\n- Metadata search (Zotero API) - keyword matching\n\nResults are merged using Reciprocal Rank Fusion (RRF), which:\n- Gives higher scores to papers appearing in multiple backends\n- Balances relevance across different retrieval methods\n- Often outperforms single-backend search\n\nNOT for:\n✗ Simple single-concept queries → use zot_semantic_search (faster)\n✗ Purely relationship-based queries → use zot_graph_search\n\nUse for: Comprehensive multi-backend search with intelligent result merging",
+    description="🔥 HIGH PRIORITY - 🔵 ADVANCED - Unified search using Reciprocal Rank Fusion to merge semantic, graph, and metadata results.\n\n💡 Use when:\n✓ You want comprehensive results across all search backends\n✓ Query is multi-faceted (e.g., 'neural mechanisms AND clinical applications')\n✓ You want to maximize recall (finding all relevant papers)\n✓ Simple semantic search returned insufficient results\n\nCombines:\n- Semantic search (Qdrant vector DB) - content similarity\n- Graph search (Neo4j knowledge graph) - relationship discovery\n- Metadata search (Zotero API) - keyword matching\n\nResults are merged using Reciprocal Rank Fusion (RRF), which:\n- Gives higher scores to papers appearing in multiple backends\n- Balances relevance across different retrieval methods\n- Often outperforms single-backend search\n\nNOT for:\n✗ Simple single-concept queries → use zot_semantic_search (faster)\n✗ Purely relationship-based queries → use zot_graph_search\n\n💡 Often combines with:\n- zot_ask_paper - Read content from papers found\n- zot_find_related_papers - Explore citation connections\n- Neo4j graph tools - Analyze relationships between results
+
+Use for: Comprehensive multi-backend search with intelligent result merging",
     annotations={
         "readOnlyHint": True,
         "title": "Unified Search (RRF)"
@@ -503,7 +562,11 @@ def unified_search_tool(
 
 @mcp.tool(
     name="zot_refine_search",
-    description="🔥 HIGH PRIORITY - 🔵 ADVANCED - Iterative retrieval with automatic query refinement based on initial results.\n\n💡 Use when:\n✓ Initial search returned poor-quality results (low confidence/coverage)\n✓ Initial search returned too few results\n✓ You want the system to automatically improve the query\n✓ Quality metrics indicate need for refinement\n\nHow it works:\n1. Performs initial semantic search\n2. Analyzes quality metrics (confidence, coverage)\n3. If quality is low:\n   - Extracts key concepts from top results\n   - Generates refined queries using concepts\n   - Performs additional searches with refined queries\n   - Merges all results and ranks by relevance\n\nRefinement strategies:\n- Add key concepts from high-quality results\n- Expand with domain-specific terms (neuroimaging, behavioral, clinical)\n- Include methodology terms found in results (fMRI, EEG, etc.)\n- Adjust specificity based on initial result quality\n\nOften more effective than manual query reformulation because it uses actual result content to guide refinement.\n\nNOT for:\n✗ High-quality initial results (confidence=high, coverage>60%) → unnecessary\n✗ When you want exact control over query formulation → use zot_semantic_search\n\nUse for: Automatic query improvement when initial search quality is insufficient",
+    description="🔥 HIGH PRIORITY - 🔵 ADVANCED - Iterative retrieval with automatic query refinement based on initial results.\n\n💡 Use when:\n✓ Initial search returned poor-quality results (low confidence/coverage)\n✓ Initial search returned too few results\n✓ You want the system to automatically improve the query\n✓ Quality metrics indicate need for refinement\n\nHow it works:\n1. Performs initial semantic search\n2. Analyzes quality metrics (confidence, coverage)\n3. If quality is low:\n   - Extracts key concepts from top results\n   - Generates refined queries using concepts\n   - Performs additional searches with refined queries\n   - Merges all results and ranks by relevance\n\nRefinement strategies:\n- Add key concepts from high-quality results\n- Expand with domain-specific terms (neuroimaging, behavioral, clinical)\n- Include methodology terms found in results (fMRI, EEG, etc.)\n- Adjust specificity based on initial result quality\n\nOften more effective than manual query reformulation because it uses actual result content to guide refinement.\n\nNOT for:\n✗ High-quality initial results (confidence=high, coverage>60%) → unnecessary\n✗ When you want exact control over query formulation → use zot_semantic_search\n\n💡 Often combines with:\n- zot_semantic_search - Start here, then refine if quality is low
+- zot_ask_paper - Read content from refined results
+- zot_unified_search - Alternatively, use comprehensive multi-backend search
+
+Use for: Automatic query improvement when initial search quality is insufficient",
     annotations={
         "readOnlyHint": True,
         "title": "Iterative Search (Auto-Refine)"
@@ -663,7 +726,11 @@ def refine_search_tool(
 
 @mcp.tool(
     name="zot_decompose_query",
-    description="🔥 HIGH PRIORITY - 🔵 ADVANCED - Query decomposition for complex multi-concept queries.\n\n💡 Use when:\n✓ Query contains multiple distinct concepts (e.g., 'neural networks AND decision making')\n✓ Query uses boolean operators (AND, OR)\n✓ Query has natural conjunctions (and, with, or, versus)\n✓ Query combines different domains/methods (e.g., 'fMRI studies of memory in aging')\n✓ You want comprehensive coverage of multi-faceted topics\n\nHow it works:\n1. Analyzes query structure to identify multiple concepts\n2. Decomposes into simpler sub-queries based on patterns:\n   - Boolean operators (AND, OR)\n   - Natural conjunctions (and, with, plus, or, versus)\n   - Prepositions (in, about, regarding, concerning)\n   - Comma-separated concepts\n   - Multiple noun phrases\n3. Executes sub-queries in parallel\n4. Merges results using weighted scoring:\n   - Required concepts (AND) have higher importance (1.0)\n   - Optional concepts (OR) have lower importance (0.7)\n   - Supporting concepts have moderate importance (0.4-0.6)\n   - Papers appearing in multiple sub-queries rank higher\n\nDecomposition patterns:\n- 'X AND Y' → searches for X, Y separately (both required)\n- 'X OR Y' → searches for X, Y separately (either acceptable)\n- 'X in Y' → searches for 'X in Y', X, Y separately\n- 'X, Y, Z' → searches for full query + individual concepts\n\nOften finds more comprehensive results than single complex query because it:\n- Reduces query complexity for better matching\n- Increases recall by searching variants\n- Balances precision (full query) with coverage (sub-queries)\n\nNOT for:\n✗ Simple single-concept queries → use zot_semantic_search (faster)\n✗ Queries that shouldn't be split (e.g., proper names like 'New York') → use zot_semantic_search\n\nUse for: Complex multi-concept queries requiring comprehensive coverage across concepts",
+    description="🔥 HIGH PRIORITY - 🔵 ADVANCED - Query decomposition for complex multi-concept queries.\n\n💡 Use when:\n✓ Query contains multiple distinct concepts (e.g., 'neural networks AND decision making')\n✓ Query uses boolean operators (AND, OR)\n✓ Query has natural conjunctions (and, with, or, versus)\n✓ Query combines different domains/methods (e.g., 'fMRI studies of memory in aging')\n✓ You want comprehensive coverage of multi-faceted topics\n\nHow it works:\n1. Analyzes query structure to identify multiple concepts\n2. Decomposes into simpler sub-queries based on patterns:\n   - Boolean operators (AND, OR)\n   - Natural conjunctions (and, with, plus, or, versus)\n   - Prepositions (in, about, regarding, concerning)\n   - Comma-separated concepts\n   - Multiple noun phrases\n3. Executes sub-queries in parallel\n4. Merges results using weighted scoring:\n   - Required concepts (AND) have higher importance (1.0)\n   - Optional concepts (OR) have lower importance (0.7)\n   - Supporting concepts have moderate importance (0.4-0.6)\n   - Papers appearing in multiple sub-queries rank higher\n\nDecomposition patterns:\n- 'X AND Y' → searches for X, Y separately (both required)\n- 'X OR Y' → searches for X, Y separately (either acceptable)\n- 'X in Y' → searches for 'X in Y', X, Y separately\n- 'X, Y, Z' → searches for full query + individual concepts\n\nOften finds more comprehensive results than single complex query because it:\n- Reduces query complexity for better matching\n- Increases recall by searching variants\n- Balances precision (full query) with coverage (sub-queries)\n\nNOT for:\n✗ Simple single-concept queries → use zot_semantic_search (faster)\n✗ Queries that shouldn't be split (e.g., proper names like 'New York') → use zot_semantic_search\n\n💡 Often combines with:\n- zot_unified_search - Combine for maximum multi-backend coverage
+- zot_ask_paper - Read content from papers found via sub-queries
+- zot_find_related_papers - Explore connections between results
+
+Use for: Complex multi-concept queries requiring comprehensive coverage across concepts",
     annotations={
         "readOnlyHint": True,
         "title": "Query Decomposition (Multi-Concept)"
