@@ -4,6 +4,215 @@ This file contains important context and pending tasks for Claude to execute whe
 
 ---
 
+## Backup System & Data Quality Fixes (Completed 2025-10-24)
+
+### Overview
+Implemented comprehensive backup infrastructure and fixed critical data quality issues in semantic search and database access.
+
+### Data Quality Fixes (5 Critical Issues Resolved)
+
+#### Fix #1: Score Normalization
+**Problem:** Qdrant DBSF (Distribution-Based Score Fusion) was producing similarity scores >1.0 (e.g., 1.026), which is invalid for cosine similarity.
+
+**Root Cause:** Qdrant's hybrid search fusion can produce out-of-range scores in edge cases (Qdrant GitHub issues #4646, #5921).
+
+**Solution:** Added defensive normalization in `src/agent_zot/clients/qdrant.py:633`:
+```python
+# Defensive normalization: clamp scores to [0,1] range before conversion
+# Qdrant DBSF fusion can produce scores >1.0 in edge cases (GitHub #4646, #5921)
+distances = [max(0.0, 1.0 - min(1.0, hit.score)) for hit in search_result]
+```
+
+**Impact:** All similarity scores now guaranteed to be in valid [0,1] range.
+
+#### Fix #2: SQLite WAL Mode + Timeout
+**Problem:** "Database is locked" errors when querying Zotero's SQLite database while Zotero was actively writing.
+
+**Root Cause:** No timeout configured, blocking on write locks.
+
+**Solution:** Enhanced database connection in `src/agent_zot/database/local_zotero.py:135-167`:
+- Added 10-second timeout for lock acquisition
+- Enabled read-only mode for safety
+- Thread-safe connection sharing
+- WAL (Write-Ahead Logging) mode verification
+
+**Impact:** Dramatically reduced database locking issues. Most read operations now succeed concurrently with Zotero's writes.
+
+#### Fix #3: Chunk Deduplication
+**Problem:** Duplicate chunks appearing in `zot_ask_paper` results due to overlapping text extractions.
+
+**Solution:** Added `deduplicate_chunks()` function in `src/agent_zot/core/server.py:1163-1203`:
+- Normalizes text (strip whitespace, lowercase) for comparison
+- Uses hash-based duplicate detection (efficient O(n))
+- Preserves relevance order
+- Logs number of duplicates removed
+- Non-destructive (filters at runtime, doesn't delete data)
+
+**Impact:** Cleaner, more concise results with no redundant content.
+
+#### Fix #4: CRITICAL Attachment Filtering Bug
+**Problem:** SQL query had **backwards logic** - was ONLY indexing PDF attachments instead of excluding them. This caused:
+- Empty Qdrant collection (0 documents)
+- PDF attachments appearing in search results instead of papers
+- Incorrect item counts
+
+**Root Cause:** Two SQL queries in `local_zotero.py` had `WHERE itemType = 'attachment'` instead of `WHERE itemType NOT IN ('attachment', 'note')`.
+
+**Solution:** Fixed SQL in two locations:
+- Line 589: `get_item_count()`
+- Line 658: `get_items_with_text()`
+
+**Impact:** Now correctly indexes actual papers (journal articles, books, etc.) instead of PDF files. This was the most critical bug.
+
+#### Fix #5: Reference Section Filtering
+**Status:** Verified already implemented in `src/agent_zot/parsers/docling.py:246-257`.
+
+Uses Docling's structural metadata to filter chunks labeled as:
+- `DocItemLabel.REFERENCE` (bibliography/reference sections)
+- `DocItemLabel.PAGE_HEADER` (headers)
+- `DocItemLabel.PAGE_FOOTER` (footers)
+
+Comment indicates this "solves 54% contamination".
+
+**Impact:** Reference sections, headers, and footers already excluded from indexed chunks.
+
+### Backup System Implementation
+
+#### Problem Statement
+Qdrant collection became empty (0 documents) due to unknown event. While Docker volumes persist across restarts, they can still be deleted or corrupted. Need automated backup solution.
+
+#### Solution Architecture
+
+**New Files Created:**
+1. `src/agent_zot/utils/backup.py` (500 lines)
+   - `BackupManager` class with full backup/restore logic
+   - Qdrant snapshot creation and download
+   - Neo4j dump with automatic container stop/start
+   - Automatic cleanup (keeps last N backups)
+   - Statistics tracking (nodes, relationships, file sizes)
+
+2. `scripts/backup.py` (150 lines)
+   - CLI tool for manual backups
+   - Commands: `backup-all`, `backup-qdrant`, `backup-neo4j`, `list`
+   - User-friendly output with success/error indicators
+
+3. `scripts/cron-backup.sh`
+   - Automated cron script (commented out by default)
+   - Configured for manual backups per user preference
+
+4. `docs/BACKUP_AUTOMATION.md` (400 lines)
+   - Comprehensive documentation
+   - Restore procedures
+   - Troubleshooting guide
+   - Best practices
+
+#### Technical Implementation Details
+
+**Qdrant Backup (Zero Downtime):**
+- Uses Qdrant snapshot API (`POST /collections/{name}/snapshots`)
+- Downloads snapshot to `backups/qdrant/`
+- ~1.7 GB compressed snapshot
+- Contains all vectors, metadata, index configuration
+- No service interruption
+
+**Neo4j Backup (~30 Second Downtime):**
+- Stops Neo4j container with `docker stop`
+- Creates dump using temporary container with `--volumes-from`
+- Runs `neo4j-admin database dump` command
+- Copies dump to host before restarting
+- ~88 MB compressed dump
+- Contains all nodes, relationships, properties, indexes
+
+**Automatic Cleanup:**
+- Configurable retention policy (default: keep last 5)
+- Old backups automatically deleted
+- `--keep-last N` flag to customize
+
+**Error Handling:**
+- Always restarts Neo4j even if dump fails
+- Detailed logging for troubleshooting
+- Exit codes indicate success/failure
+
+#### Usage Examples
+
+**Manual backup (current workflow):**
+```bash
+cd /Users/claudiusv.schroder/toolboxes/agent-zot
+.venv/bin/python scripts/backup.py backup-all
+```
+
+**List available backups:**
+```bash
+.venv/bin/python scripts/backup.py list
+```
+
+**Restore Qdrant snapshot:**
+```bash
+# Copy to container
+docker cp backups/qdrant/zotero_library_qdrant-backup-20251024.snapshot \
+  agent-zot-qdrant:/qdrant/snapshots/zotero_library_qdrant/
+
+# Restore via API
+curl -X PUT 'http://localhost:6333/collections/zotero_library_qdrant/snapshots/recover' \
+  -H 'Content-Type: application/json' \
+  -d '{"location":"file:///qdrant/snapshots/zotero_library_qdrant/zotero_library_qdrant-backup-20251024.snapshot"}'
+```
+
+**Restore Neo4j dump:**
+```bash
+docker stop agent-zot-neo4j
+docker cp backups/neo4j/neo4j-neo4j-20251024.dump agent-zot-neo4j:/tmp/
+docker exec agent-zot-neo4j neo4j-admin database load \
+  --from-path=/tmp --database=neo4j --overwrite-destination=true
+docker start agent-zot-neo4j
+```
+
+#### Data Recovery Success Story
+
+**Incident:** Qdrant collection showed 0 documents on 2025-10-24.
+
+**Recovery Process:**
+1. Found 3 snapshots in `/qdrant/snapshots/zotero_library_qdrant/`:
+   - Oct 17: 132 MB
+   - Oct 19 (16:17:00): 1.7 GB
+   - Oct 19 (16:17:20): 1.7 GB ⭐ (most recent)
+2. Restored from most recent snapshot using Qdrant API
+3. **Result:** 234,152 chunks and 462,072 vectors fully recovered
+
+**Neo4j Status:** Never lost (Docker volume persisted) - 25,184 nodes, 134,068 relationships intact.
+
+#### Files Modified
+- **src/agent_zot/utils/backup.py** - New file (backup manager)
+- **scripts/backup.py** - New file (CLI tool)
+- **scripts/cron-backup.sh** - New file (automation script)
+- **docs/BACKUP_AUTOMATION.md** - New file (comprehensive documentation)
+- **README.md** - Added "💾 Backup & Data Protection" section
+- **src/agent_zot/clients/qdrant.py** - Line 633 (score normalization)
+- **src/agent_zot/database/local_zotero.py** - Lines 135-167, 589, 658 (WAL + filtering fixes)
+- **src/agent_zot/core/server.py** - Lines 1163-1203, 1267-1269 (deduplication)
+
+#### Best Practices Documented
+
+**Recommended Frequency:**
+- Weekly manual backups
+- Before adding many new papers
+- Before experiments or risky operations
+- (Optional) Daily automated backups at 2 AM
+
+**Storage:**
+- Local: `backups/qdrant/` and `backups/neo4j/`
+- Recommended: Also copy to external drive or cloud storage
+
+**Testing:**
+- Monthly test restore to verify backups work
+- Practice restore procedure
+
+#### Commits
+- **4cb14ff** - Data quality fixes (5 fixes)
+- **8b309e2** - Backup system (4 new files, 1,319 lines)
+
+---
+
 ## MCP Server Startup Optimization (Completed 2025-10-22)
 
 ### Problem Identified

@@ -228,12 +228,114 @@ Agent-Zot uses a single JSON config at `~/.config/agent-zot/config.json`. Here a
 
 ---
 
+## 💾 Backup & Data Protection
+
+### Why Backups Matter
+
+Your Qdrant and Neo4j data is stored in **Docker volumes** which persist across container restarts. However, volumes can be accidentally deleted or corrupted. Regular backups protect against:
+
+- 🗑️ Accidental deletion
+- 💥 Database corruption
+- 🚀 Migration to new machines
+- 🔬 Safe experimentation (rollback points)
+
+### Quick Backup Commands
+
+**Backup everything now:**
+```bash
+cd /Users/claudiusv.schroder/toolboxes/agent-zot
+.venv/bin/python scripts/backup.py backup-all
+```
+
+**List available backups:**
+```bash
+.venv/bin/python scripts/backup.py list
+```
+
+**Backup only Qdrant or Neo4j:**
+```bash
+.venv/bin/python scripts/backup.py backup-qdrant  # Vector database
+.venv/bin/python scripts/backup.py backup-neo4j   # Knowledge graph
+```
+
+### What Gets Backed Up
+
+| Component | Size | Downtime | Contains |
+|-----------|------|----------|----------|
+| **Qdrant Snapshot** | ~1.7 GB | Zero | 234K text chunks, embeddings, metadata |
+| **Neo4j Dump** | ~88 MB | ~30 sec | 25K nodes, 134K relationships |
+
+**Backup locations:**
+- Qdrant: `backups/qdrant/*.snapshot`
+- Neo4j: `backups/neo4j/*.dump`
+
+### Automated Backups (Optional)
+
+Enable daily backups at 2 AM:
+```bash
+crontab -e
+# Add this line:
+0 2 * * * /Users/claudiusv.schroder/toolboxes/agent-zot/scripts/cron-backup.sh >> /tmp/agent-zot-backup.log 2>&1
+```
+
+### How Backups Work
+
+**Qdrant (Vector Database):**
+- Uses Qdrant's native snapshot API
+- Creates compressed snapshot of entire collection
+- Downloads to local `backups/qdrant/` directory
+- Zero downtime during backup
+
+**Neo4j (Knowledge Graph):**
+- Stops Neo4j container temporarily (~30 seconds)
+- Creates dump using `neo4j-admin database dump`
+- Automatically restarts container
+- Brief unavailability during backup
+
+**Automatic Cleanup:**
+- Keeps last 5 backups by default (configurable)
+- Old backups automatically deleted
+- Change retention: `--keep-last N`
+
+### Restore from Backup
+
+**Qdrant:**
+```bash
+# Copy snapshot to container
+docker cp backups/qdrant/zotero_library_qdrant-backup-YYYYMMDD.snapshot \
+  agent-zot-qdrant:/qdrant/snapshots/zotero_library_qdrant/
+
+# Restore via API
+curl -X PUT 'http://localhost:6333/collections/zotero_library_qdrant/snapshots/recover' \
+  -H 'Content-Type: application/json' \
+  -d '{"location":"file:///qdrant/snapshots/zotero_library_qdrant/zotero_library_qdrant-backup-YYYYMMDD.snapshot"}'
+```
+
+**Neo4j:**
+```bash
+# Stop container, copy dump, restore, restart
+docker stop agent-zot-neo4j
+docker cp backups/neo4j/neo4j-neo4j-YYYYMMDD.dump agent-zot-neo4j:/tmp/
+docker exec agent-zot-neo4j neo4j-admin database load \
+  --from-path=/tmp --database=neo4j --overwrite-destination=true
+docker start agent-zot-neo4j
+```
+
+**📖 Full Documentation:** See [BACKUP_AUTOMATION.md](docs/BACKUP_AUTOMATION.md) for:
+- Complete restore procedures
+- Scheduled backup setup
+- Troubleshooting guide
+- Best practices
+
+---
+
 ## 📖 Documentation
 
 ### For Users
 
 - **[Quick Start Guide](docs/guides/quick-start.md)** - Get up and running fast
 - **[Configuration Reference](docs/guides/configuration.md)** - All settings explained
+- **[Backup & Recovery Guide](docs/BACKUP_AUTOMATION.md)** - Protect your data
 - **[FAQ](docs/guides/faq.md)** - Common questions answered
 
 ### For Developers
