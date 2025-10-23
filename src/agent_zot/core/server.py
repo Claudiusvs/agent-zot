@@ -44,7 +44,7 @@ def get_item_with_fallback(zot, item_key: str) -> Optional[Dict]:
     """
     try:
         # Try API first
-        return get_item_with_fallback(zot, item_key)
+        return zot.item(item_key)
     except Exception as e:
         # Check if it's a 404 (ResourceNotFoundError)
         if "404" in str(e) or "Not found" in str(e):
@@ -2622,85 +2622,6 @@ def get_item_metadata(
     except Exception as e:
         ctx.error(f"Error fetching item metadata: {str(e)}")
         return f"Error fetching item metadata: {str(e)}"
-
-
-# DEPRECATED - Use zot_get_item(include_fulltext=True) instead
-# @mcp.tool(
-#     name="zot_get_item_fulltext",
-#     description="⚠️ DEPRECATED: Use zot_get_item(include_fulltext=True) instead for unified retrieval.\n\nGet the full text content of a Zotero item by its key.\n\nUse for: Extracting complete document text from a paper's PDF attachment",
-#     annotations={
-#         "readOnlyHint": True,
-#         "title": "Get Item Full Text (Deprecated)"
-#     }
-# )
-def get_item_fulltext(
-    item_key: str,
-    *,
-    ctx: Context
-) -> str:
-    """
-    Get the full text content of a Zotero item.
-    
-    Args:
-        item_key: Zotero item key/ID
-        ctx: MCP context
-    
-    Returns:
-        Markdown-formatted item full text
-    """
-    try:
-        ctx.info(f"Fetching full text for item {item_key}")
-        zot = get_zotero_client()
-        
-        # First get the item metadata
-        item = get_item_with_fallback(zot, item_key)
-        if not item:
-            return f"No item found with key: {item_key}"
-        
-        # Get item metadata in markdown format
-        metadata = format_item_metadata(item, include_abstract=True)
-        
-        # Try to get attachment details
-        attachment = get_attachment_details(zot, item)
-        if not attachment:
-            return f"{metadata}\n\n---\n\nNo suitable attachment found for this item."
-        
-        ctx.info(f"Found attachment: {attachment.key} ({attachment.content_type})")
-        
-        # Try fetching full text from Zotero's full text index first
-        try:
-            full_text_data = zot.fulltext_item(attachment.key)
-            if full_text_data and "content" in full_text_data and full_text_data["content"]:
-                ctx.info("Successfully retrieved full text from Zotero's index")
-                return f"{metadata}\n\n---\n\n## Full Text\n\n{full_text_data['content']}"
-        except Exception as fulltext_error:
-            ctx.info(f"Couldn't retrieve indexed full text: {str(fulltext_error)}")
-        
-        # If we couldn't get indexed full text, try to download and convert the file
-        try:
-            ctx.info(f"Attempting to download and convert attachment {attachment.key}")
-            
-            # Download the file to a temporary location
-            import tempfile
-            import os
-            
-            with tempfile.TemporaryDirectory() as tmpdir:
-                file_path = os.path.join(tmpdir, attachment.filename or f"{attachment.key}.pdf")
-                zot.dump(attachment.key, filename=os.path.basename(file_path), path=tmpdir)
-                
-                if os.path.exists(file_path):
-                    ctx.info(f"Downloaded file to {file_path}, converting to markdown")
-                    converted_text = convert_to_markdown(file_path)
-                    return f"{metadata}\n\n---\n\n## Full Text\n\n{converted_text}"
-                else:
-                    return f"{metadata}\n\n---\n\nFile download failed."
-        except Exception as download_error:
-            ctx.error(f"Error downloading/converting file: {str(download_error)}")
-            return f"{metadata}\n\n---\n\nError accessing attachment: {str(download_error)}"
-        
-    except Exception as e:
-        ctx.error(f"Error fetching item full text: {str(e)}")
-        return f"Error fetching item full text: {str(e)}"
 
 
 @mcp.tool(
