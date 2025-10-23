@@ -1349,12 +1349,16 @@ class ZoteroSemanticSearch:
             # Enrich results with full Zotero item data
             enriched_results = self._enrich_search_results(results, query)
 
+            # Calculate quality metrics for adaptive search
+            quality_metrics = self._calculate_quality_metrics(enriched_results)
+
             return {
                 "query": query,
                 "limit": limit,
                 "filters": filters,
                 "results": enriched_results,
-                "total_found": len(enriched_results)
+                "total_found": len(enriched_results),
+                "quality_metrics": quality_metrics
             }
 
         except Exception as e:
@@ -1788,7 +1792,68 @@ class ZoteroSemanticSearch:
                 })
         
         return enriched
-    
+
+    def _calculate_quality_metrics(self, results: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Calculate quality metrics for search results to enable adaptive search strategies.
+
+        Args:
+            results: Enriched search results
+
+        Returns:
+            Dictionary with quality metrics including:
+            - mean_similarity: Average similarity score
+            - min_similarity: Lowest similarity score
+            - max_similarity: Highest similarity score
+            - std_similarity: Standard deviation of scores
+            - high_quality_count: Number of results above 0.75 threshold
+            - coverage: Percentage of results above 0.75 threshold
+            - confidence: High/Medium/Low based on minimum similarity
+        """
+        if not results:
+            return {
+                "mean_similarity": 0.0,
+                "min_similarity": 0.0,
+                "max_similarity": 0.0,
+                "std_similarity": 0.0,
+                "high_quality_count": 0,
+                "coverage": 0.0,
+                "confidence": "low"
+            }
+
+        import statistics
+
+        similarities = [r.get("similarity_score", 0.0) for r in results]
+
+        # Calculate statistics
+        mean_sim = sum(similarities) / len(similarities)
+        min_sim = min(similarities)
+        max_sim = max(similarities)
+        std_sim = statistics.stdev(similarities) if len(similarities) > 1 else 0.0
+
+        # Quality thresholds
+        high_quality_threshold = 0.75
+        high_quality_count = sum(1 for s in similarities if s >= high_quality_threshold)
+        coverage = high_quality_count / len(similarities) if similarities else 0.0
+
+        # Confidence assessment based on minimum similarity
+        if min_sim >= 0.65:
+            confidence = "high"
+        elif min_sim >= 0.45:
+            confidence = "medium"
+        else:
+            confidence = "low"
+
+        return {
+            "mean_similarity": round(mean_sim, 4),
+            "min_similarity": round(min_sim, 4),
+            "max_similarity": round(max_sim, 4),
+            "std_similarity": round(std_sim, 4),
+            "high_quality_count": high_quality_count,
+            "coverage": round(coverage, 4),
+            "confidence": confidence
+        }
+
     def get_database_status(self) -> Dict[str, Any]:
         """Get status information about the semantic search database."""
         collection_info = self.qdrant_client.get_collection_info()

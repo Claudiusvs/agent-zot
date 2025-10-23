@@ -342,12 +342,485 @@ def semantic_search(
                 if error := result.get("error"):
                     output.append(f"**Error:** {error}")
                 output.append("")
-        
+
+        # Add quality metrics if available
+        if quality_metrics := results.get("quality_metrics"):
+            output.append("---")
+            output.append("")
+            output.append("## Search Quality Metrics")
+            output.append("")
+            output.append(f"- **Mean Similarity**: {quality_metrics['mean_similarity']:.3f}")
+            output.append(f"- **Range**: {quality_metrics['min_similarity']:.3f} - {quality_metrics['max_similarity']:.3f}")
+            output.append(f"- **Standard Deviation**: {quality_metrics['std_similarity']:.3f}")
+            output.append(f"- **High Quality Results** (≥0.75): {quality_metrics['high_quality_count']}/{len(search_results)} ({quality_metrics['coverage']*100:.1f}%)")
+            output.append(f"- **Search Confidence**: {quality_metrics['confidence'].title()}")
+            output.append("")
+
+            # Provide adaptive search recommendations
+            if quality_metrics['confidence'] == 'low':
+                output.append("💡 **Recommendation**: Consider refining your query or using `zot_refine_search` for better results.")
+            elif quality_metrics['coverage'] < 0.5:
+                output.append("💡 **Recommendation**: Many results have low relevance. Try a more specific query.")
+
         return "\n".join(output)
     
     except Exception as e:
         ctx.error(f"Error in semantic search: {str(e)}")
         return f"Error in semantic search: {str(e)}"
+
+
+@mcp.tool(
+    name="zot_unified_search",
+    description="🔥 HIGH PRIORITY - 🔵 ADVANCED - Unified search using Reciprocal Rank Fusion to merge semantic, graph, and metadata results.\n\n💡 Use when:\n✓ You want comprehensive results across all search backends\n✓ Query is multi-faceted (e.g., 'neural mechanisms AND clinical applications')\n✓ You want to maximize recall (finding all relevant papers)\n✓ Simple semantic search returned insufficient results\n\nCombines:\n- Semantic search (Qdrant vector DB) - content similarity\n- Graph search (Neo4j knowledge graph) - relationship discovery\n- Metadata search (Zotero API) - keyword matching\n\nResults are merged using Reciprocal Rank Fusion (RRF), which:\n- Gives higher scores to papers appearing in multiple backends\n- Balances relevance across different retrieval methods\n- Often outperforms single-backend search\n\nNOT for:\n✗ Simple single-concept queries → use zot_semantic_search (faster)\n✗ Purely relationship-based queries → use zot_graph_search\n\nUse for: Comprehensive multi-backend search with intelligent result merging",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Unified Search (RRF)"
+    }
+)
+def unified_search_tool(
+    query: str,
+    limit: int = 10,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Perform unified search across all backends using Reciprocal Rank Fusion.
+
+    Args:
+        query: Search query text
+        limit: Maximum number of results to return (default: 10)
+        ctx: MCP context
+
+    Returns:
+        Markdown-formatted unified search results with RRF scores
+    """
+    try:
+        if not query.strip():
+            return "Error: Search query cannot be empty"
+
+        ctx.info(f"Performing unified search for: '{query}'")
+
+        # Import required modules
+        from agent_zot.search.semantic import create_semantic_search
+        from agent_zot.search.unified import unified_search
+        from pathlib import Path
+
+        # Determine config path
+        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
+
+        # Create semantic search instance (provides access to all backends)
+        search = create_semantic_search(str(config_path))
+
+        # Perform unified search
+        results = unified_search(search, query, limit)
+
+        if results.get("error"):
+            error_msg = f"Unified search error: {results['error']}"
+            if backend_errors := results.get("errors_by_backend"):
+                error_msg += f"\n\nBackend errors:\n"
+                for backend, error in backend_errors.items():
+                    error_msg += f"- {backend}: {error}\n"
+            return error_msg
+
+        search_results = results.get("results", [])
+
+        if not search_results:
+            return f"No results found for query: '{query}'"
+
+        # Format results as markdown
+        output = [f"# Unified Search Results for '{query}'", ""]
+
+        # Show backend contributions
+        if contributions := results.get("backend_contributions"):
+            output.append("## Search Backends Used")
+            output.append("")
+            for backend, count in contributions.items():
+                output.append(f"- **{backend.title()}**: {count} papers contributed")
+            output.append("")
+
+        output.append(f"Found {len(search_results)} papers (merged using Reciprocal Rank Fusion):")
+        output.append("")
+
+        for i, result in enumerate(search_results, 1):
+            rrf_score = result.get("rrf_score", 0)
+            zotero_item = result.get("zotero_item", {})
+
+            if zotero_item:
+                data = zotero_item.get("data", {})
+                title = data.get("title", "Untitled")
+                item_type = data.get("itemType", "unknown")
+                key = result.get("item_key", "")
+
+                # Format creators
+                creators = data.get("creators", [])
+                creators_str = format_creators(creators)
+
+                output.append(f"## {i}. {title}")
+                output.append(f"**RRF Score:** {rrf_score:.4f}")
+                output.append(f"**Type:** {item_type}")
+                output.append(f"**Item Key:** {key}")
+                output.append(f"**Authors:** {creators_str}")
+
+                # Add date if available
+                if date := data.get("date"):
+                    output.append(f"**Date:** {date}")
+
+                # Add abstract snippet if present
+                if abstract := data.get("abstractNote"):
+                    abstract_snippet = abstract[:200] + "..." if len(abstract) > 200 else abstract
+                    output.append(f"**Abstract:** {abstract_snippet}")
+
+                # Add tags if present
+                if tags := data.get("tags"):
+                    tag_list = [f"`{tag['tag']}`" for tag in tags]
+                    if tag_list:
+                        output.append(f"**Tags:** {' '.join(tag_list)}")
+
+                output.append("")  # Empty line between items
+            else:
+                # Fallback if full item not available
+                output.append(f"## {i}. Item {result.get('item_key', 'Unknown')}")
+                output.append(f"**RRF Score:** {rrf_score:.4f}")
+                if error := result.get("error"):
+                    output.append(f"**Error:** {error}")
+                output.append("")
+
+        # Add explanation of RRF score
+        output.append("---")
+        output.append("")
+        output.append("## About RRF Scores")
+        output.append("")
+        output.append("Reciprocal Rank Fusion (RRF) scores indicate how relevant a paper is across multiple search backends.")
+        output.append("Higher scores mean the paper appeared in multiple backends and/or ranked highly in those backends.")
+        output.append("")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        ctx.error(f"Error in unified search: {str(e)}")
+        return f"Error in unified search: {str(e)}"
+
+
+@mcp.tool(
+    name="zot_refine_search",
+    description="🔥 HIGH PRIORITY - 🔵 ADVANCED - Iterative retrieval with automatic query refinement based on initial results.\n\n💡 Use when:\n✓ Initial search returned poor-quality results (low confidence/coverage)\n✓ Initial search returned too few results\n✓ You want the system to automatically improve the query\n✓ Quality metrics indicate need for refinement\n\nHow it works:\n1. Performs initial semantic search\n2. Analyzes quality metrics (confidence, coverage)\n3. If quality is low:\n   - Extracts key concepts from top results\n   - Generates refined queries using concepts\n   - Performs additional searches with refined queries\n   - Merges all results and ranks by relevance\n\nRefinement strategies:\n- Add key concepts from high-quality results\n- Expand with domain-specific terms (neuroimaging, behavioral, clinical)\n- Include methodology terms found in results (fMRI, EEG, etc.)\n- Adjust specificity based on initial result quality\n\nOften more effective than manual query reformulation because it uses actual result content to guide refinement.\n\nNOT for:\n✗ High-quality initial results (confidence=high, coverage>60%) → unnecessary\n✗ When you want exact control over query formulation → use zot_semantic_search\n\nUse for: Automatic query improvement when initial search quality is insufficient",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Iterative Search (Auto-Refine)"
+    }
+)
+def refine_search_tool(
+    query: str,
+    limit: int = 10,
+    max_iterations: int = 2,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Perform iterative search with automatic query refinement.
+
+    Args:
+        query: Initial search query
+        limit: Number of final results to return (default: 10)
+        max_iterations: Maximum refinement iterations (default: 2)
+        ctx: MCP context
+
+    Returns:
+        Formatted search results with refinement metadata
+    """
+    try:
+        ctx.info(f"Starting iterative search for: '{query}'")
+
+        # Import modules
+        from agent_zot.search.semantic import create_semantic_search
+        from agent_zot.search.iterative import iterative_search
+        from pathlib import Path
+
+        # Determine config path
+        config_path = Path.home() / ".config" / "agent-zot" / "config.toml"
+        if not config_path.exists():
+            # Fallback to ~/.agent-zot/config.toml
+            config_path = Path.home() / ".agent-zot" / "config.toml"
+
+        # Create semantic search instance
+        search = create_semantic_search(config_path=str(config_path))
+
+        # Perform iterative search
+        results = iterative_search(
+            semantic_search_instance=search,
+            query=query,
+            limit=limit,
+            max_iterations=max_iterations
+        )
+
+        # Format output
+        output = []
+        output.append(f"# Iterative Search Results: '{query}'")
+        output.append("")
+
+        # Show iteration metadata
+        iterations = results.get("iterations", 1)
+        refinements = results.get("refinements", [])
+
+        output.append("## Search Process")
+        output.append("")
+        output.append(f"- **Iterations**: {iterations}")
+        output.append(f"- **Refinements Attempted**: {len(refinements)}")
+        output.append(f"- **Final Results**: {results.get('total_found', 0)}")
+        output.append(f"- **Total Unique Papers Found**: {results.get('final_result_count', 0)}")
+        output.append("")
+
+        # Show initial quality
+        if initial_quality := results.get("initial_quality"):
+            output.append("### Initial Search Quality")
+            output.append("")
+            output.append(f"- **Confidence**: {initial_quality.get('confidence', 'unknown').title()}")
+            output.append(f"- **Coverage**: {initial_quality.get('coverage', 0)*100:.1f}%")
+            output.append(f"- **Mean Similarity**: {initial_quality.get('mean_similarity', 0):.3f}")
+            output.append("")
+
+        # Show refinements if any
+        if refinements:
+            output.append("### Query Refinements")
+            output.append("")
+            for ref in refinements:
+                iter_num = ref.get("iteration", 0)
+                ref_query = ref.get("query", "")
+                results_found = ref.get("results_found", 0)
+
+                output.append(f"**Iteration {iter_num}**: `{ref_query}`")
+
+                if error := ref.get("error"):
+                    output.append(f"  - ❌ Error: {error}")
+                else:
+                    output.append(f"  - Found {results_found} results")
+
+                    if ref_quality := ref.get("quality_metrics"):
+                        ref_confidence = ref_quality.get("confidence", "unknown")
+                        ref_coverage = ref_quality.get("coverage", 0)
+                        output.append(f"  - Quality: {ref_confidence.title()} confidence, {ref_coverage*100:.1f}% coverage")
+
+                output.append("")
+
+        # Show results
+        output.append("---")
+        output.append("")
+        output.append("## Papers Found")
+        output.append("")
+
+        search_results = results.get("results", [])
+
+        if not search_results:
+            output.append("No results found.")
+        else:
+            for idx, result in enumerate(search_results, 1):
+                item_key = result.get("item_key", "unknown")
+                similarity = result.get("similarity_score", 0.0)
+                zotero_item = result.get("zotero_item", {})
+                data = zotero_item.get("data", {})
+
+                title = data.get("title", "Untitled")
+                creators = format_creators(data.get("creators", []))
+                year = data.get("date", "")[:4] if data.get("date") else "n.d."
+
+                output.append(f"### {idx}. {title}")
+                output.append("")
+                output.append(f"- **Authors**: {creators}")
+                output.append(f"- **Year**: {year}")
+                output.append(f"- **Item Key**: `{item_key}`")
+                output.append(f"- **Similarity**: {similarity:.3f}")
+
+                if abstract := data.get("abstractNote"):
+                    abstract_preview = abstract[:200] + "..." if len(abstract) > 200 else abstract
+                    output.append(f"- **Abstract**: {abstract_preview}")
+
+                output.append("")
+
+        # Add recommendation
+        output.append("---")
+        output.append("")
+
+        if iterations > 1:
+            output.append("✅ **Query refinement was applied** to improve result quality.")
+        else:
+            output.append("ℹ️ **No refinement needed** - initial results were sufficient.")
+
+        if results.get("total_found", 0) < limit:
+            output.append("")
+            output.append("💡 **Tip**: If more results are needed, try:")
+            output.append("  - Using broader query terms")
+            output.append("  - Using `zot_unified_search` to search across multiple backends")
+            output.append("  - Using `zot_decompose_query` to break down the query into components")
+
+        ctx.info(f"Iterative search completed: {results.get('total_found', 0)} results from {iterations} iterations")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        ctx.error(f"Error in iterative search: {str(e)}")
+        return f"Error in iterative search: {str(e)}"
+
+
+@mcp.tool(
+    name="zot_decompose_query",
+    description="🔥 HIGH PRIORITY - 🔵 ADVANCED - Query decomposition for complex multi-concept queries.\n\n💡 Use when:\n✓ Query contains multiple distinct concepts (e.g., 'neural networks AND decision making')\n✓ Query uses boolean operators (AND, OR)\n✓ Query has natural conjunctions (and, with, or, versus)\n✓ Query combines different domains/methods (e.g., 'fMRI studies of memory in aging')\n✓ You want comprehensive coverage of multi-faceted topics\n\nHow it works:\n1. Analyzes query structure to identify multiple concepts\n2. Decomposes into simpler sub-queries based on patterns:\n   - Boolean operators (AND, OR)\n   - Natural conjunctions (and, with, plus, or, versus)\n   - Prepositions (in, about, regarding, concerning)\n   - Comma-separated concepts\n   - Multiple noun phrases\n3. Executes sub-queries in parallel\n4. Merges results using weighted scoring:\n   - Required concepts (AND) have higher importance (1.0)\n   - Optional concepts (OR) have lower importance (0.7)\n   - Supporting concepts have moderate importance (0.4-0.6)\n   - Papers appearing in multiple sub-queries rank higher\n\nDecomposition patterns:\n- 'X AND Y' → searches for X, Y separately (both required)\n- 'X OR Y' → searches for X, Y separately (either acceptable)\n- 'X in Y' → searches for 'X in Y', X, Y separately\n- 'X, Y, Z' → searches for full query + individual concepts\n\nOften finds more comprehensive results than single complex query because it:\n- Reduces query complexity for better matching\n- Increases recall by searching variants\n- Balances precision (full query) with coverage (sub-queries)\n\nNOT for:\n✗ Simple single-concept queries → use zot_semantic_search (faster)\n✗ Queries that shouldn't be split (e.g., proper names like 'New York') → use zot_semantic_search\n\nUse for: Complex multi-concept queries requiring comprehensive coverage across concepts",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Query Decomposition (Multi-Concept)"
+    }
+)
+def decompose_query_tool(query: str, limit: int = 10, *, ctx: Context) -> str:
+    """
+    Decompose complex query into sub-queries and merge results.
+
+    Args:
+        query: Complex multi-concept search query
+        limit: Number of final results to return (default: 10)
+        ctx: MCP context
+
+    Returns:
+        Formatted search results with decomposition metadata
+    """
+    try:
+        ctx.info(f"Starting decomposed search for: '{query}'")
+
+        # Import modules
+        from agent_zot.search.semantic import create_semantic_search
+        from agent_zot.search.decomposition import decomposed_search
+        from pathlib import Path
+
+        # Determine config path
+        config_path = Path.home() / ".config" / "agent-zot" / "config.toml"
+        if not config_path.exists():
+            # Fallback to ~/.agent-zot/config.toml
+            config_path = Path.home() / ".agent-zot" / "config.toml"
+
+        # Create semantic search instance
+        search = create_semantic_search(config_path=str(config_path))
+
+        # Perform decomposed search
+        results = decomposed_search(
+            semantic_search_instance=search,
+            query=query,
+            limit=limit
+        )
+
+        # Format output
+        output = []
+        output.append(f"# Decomposed Search Results: '{query}'")
+        output.append("")
+
+        # Show decomposition metadata
+        decomposition = results.get("decomposition", {})
+        was_decomposed = decomposition.get("decomposed", False)
+
+        output.append("## Query Decomposition")
+        output.append("")
+
+        if not was_decomposed:
+            output.append(f"ℹ️ **No decomposition applied**: {decomposition.get('reason', 'Query is already simple')}")
+            output.append("")
+        else:
+            sub_queries = decomposition.get("sub_queries", [])
+            output.append(f"- **Sub-queries Generated**: {len(sub_queries)}")
+            output.append(f"- **Total Results from Sub-queries**: {decomposition.get('total_sub_results', 0)}")
+            output.append(f"- **Unique Papers Found**: {decomposition.get('unique_papers_found', 0)}")
+            output.append(f"- **Final Results**: {results.get('total_found', 0)}")
+            output.append("")
+
+            # Show sub-queries
+            output.append("### Sub-queries")
+            output.append("")
+
+            for idx, sq in enumerate(sub_queries, 1):
+                sq_text = sq.get("query", "")
+                sq_type = sq.get("type", "unknown")
+                sq_importance = sq.get("importance", 0.0)
+
+                # Format type
+                type_emoji = {
+                    "primary": "🎯",
+                    "required": "✅",
+                    "optional": "🔷",
+                    "supporting": "📎"
+                }.get(sq_type, "•")
+
+                output.append(f"{idx}. {type_emoji} **{sq_type.title()}**: `{sq_text}`")
+                output.append(f"   - Importance weight: {sq_importance}")
+                output.append("")
+
+            # Show errors if any
+            if errors := decomposition.get("errors"):
+                output.append("### Errors")
+                output.append("")
+                for subquery, error in errors.items():
+                    output.append(f"- `{subquery}`: {error}")
+                output.append("")
+
+        # Show results
+        output.append("---")
+        output.append("")
+        output.append("## Papers Found")
+        output.append("")
+
+        search_results = results.get("results", [])
+
+        if not search_results:
+            output.append("No results found.")
+        else:
+            for idx, result in enumerate(search_results, 1):
+                item_key = result.get("item_key", "unknown")
+                similarity = result.get("similarity_score", 0.0)
+                combined_score = result.get("combined_score")
+                zotero_item = result.get("zotero_item", {})
+                data = zotero_item.get("data", {})
+
+                title = data.get("title", "Untitled")
+                creators = format_creators(data.get("creators", []))
+                year = data.get("date", "")[:4] if data.get("date") else "n.d."
+
+                output.append(f"### {idx}. {title}")
+                output.append("")
+                output.append(f"- **Authors**: {creators}")
+                output.append(f"- **Year**: {year}")
+                output.append(f"- **Item Key**: `{item_key}`")
+
+                if combined_score is not None:
+                    output.append(f"- **Combined Score**: {combined_score:.3f} (from multiple sub-queries)")
+                else:
+                    output.append(f"- **Similarity**: {similarity:.3f}")
+
+                if abstract := data.get("abstractNote"):
+                    abstract_preview = abstract[:200] + "..." if len(abstract) > 200 else abstract
+                    output.append(f"- **Abstract**: {abstract_preview}")
+
+                output.append("")
+
+        # Add explanation
+        output.append("---")
+        output.append("")
+
+        if was_decomposed:
+            output.append("✅ **Query decomposition applied** to increase coverage across multiple concepts.")
+            output.append("")
+            output.append("Papers appearing in multiple sub-queries receive higher combined scores, indicating relevance to multiple aspects of your query.")
+        else:
+            output.append("ℹ️ **Simple query** - no decomposition needed.")
+
+        if results.get("total_found", 0) < limit:
+            output.append("")
+            output.append("💡 **Tip**: To find more results, try:")
+            output.append("  - Using broader query terms")
+            output.append("  - Using `zot_unified_search` for multi-backend search")
+            output.append("  - Using `zot_refine_search` for automatic query refinement")
+
+        ctx.info(f"Decomposed search completed: {results.get('total_found', 0)} results")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        ctx.error(f"Error in decomposed search: {str(e)}")
+        return f"Error in decomposed search: {str(e)}"
 
 
 @mcp.tool(
