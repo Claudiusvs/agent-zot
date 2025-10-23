@@ -45,6 +45,12 @@ Agent-Zot transforms your Zotero research library into an intelligent, searchabl
 - **Re-ranking**: Cross-encoder boosts result quality by 10-20%
 - **Memory Efficient**: INT8 quantization saves 75% RAM
 
+### 🎯 **Advanced Search Capabilities**
+- **Quality Assessment**: Real-time confidence scoring, coverage metrics, and adaptive recommendations
+- **Unified Multi-Backend**: RRF fusion merges results from Qdrant, Neo4j, and Zotero API
+- **Iterative Refinement**: Automatic query reformulation improves low-quality searches
+- **Query Decomposition**: Handles complex multi-concept queries (AND/OR logic, comma-separated)
+
 ### 📄 **Intelligent Document Processing**
 - **Advanced PDF Parsing**: Docling V2 backend with structure preservation
 - **Blazing Fast**: CPU-only processing, 8 parallel workers (~18 seconds/PDF)

@@ -90,6 +90,11 @@ python populate_neo4j_from_qdrant.py
 - `zot_semantic_search(query, limit)` - Semantic search via Qdrant/BGE-M3
 - `zot_ask_paper(item_key, question, top_k)` - Read paper content
 
+### Advanced Search
+- `zot_unified_search(query, limit)` - Multi-backend RRF fusion (Qdrant + Neo4j + API)
+- `zot_refine_search(query, limit, max_iterations)` - Iterative query refinement
+- `zot_decompose_query(query, limit)` - Multi-concept query decomposition
+
 ### Relationship Analysis
 - `zot_graph_search(query, entity_types, limit)` - Neo4j graph search
 - `zot_find_related_papers(item_key, limit)` - Citation/author connections
