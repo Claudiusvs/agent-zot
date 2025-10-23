@@ -135,10 +135,35 @@ class LocalZoteroReader:
     def _get_connection(self) -> sqlite3.Connection:
         """Get database connection, creating if needed."""
         if self._connection is None:
-            # Open in read-only mode for safety
+            # Open in read-only mode for safety with timeout for concurrent access
+            # WAL mode (set by Zotero) allows concurrent reads while Zotero writes
             uri = f"file:{self.db_path}?mode=ro"
-            self._connection = sqlite3.connect(uri, uri=True)
+            self._connection = sqlite3.connect(
+                uri,
+                uri=True,
+                timeout=10.0,  # Wait up to 10 seconds for locks (prevents "database is locked")
+                check_same_thread=False  # Allow connection sharing across threads
+            )
             self._connection.row_factory = sqlite3.Row
+
+            # Verify WAL mode is enabled (Zotero 5.0+ uses WAL by default)
+            # WAL allows concurrent readers + single writer without blocking
+            try:
+                cursor = self._connection.cursor()
+                cursor.execute('PRAGMA journal_mode')
+                mode = cursor.fetchone()[0]
+                if mode.lower() != 'wal':
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(
+                        f"Zotero database is using '{mode}' journal mode instead of WAL. "
+                        f"WAL mode is recommended for better concurrent access. "
+                        f"Consider enabling WAL in Zotero: Edit → Preferences → Advanced → Config Editor → "
+                        f"extensions.zotero.dataDir.useWAL = true"
+                    )
+            except Exception:
+                pass  # Ignore if we can't check (read-only mode might prevent this)
+
         return self._connection
 
     def _get_storage_dir(self) -> Path:
@@ -551,7 +576,7 @@ except Exception as e:
     def get_item_count(self) -> int:
         """
         Get total count of non-attachment items.
-        
+
         Returns:
             Number of items in the library.
         """
@@ -561,7 +586,7 @@ except Exception as e:
             SELECT COUNT(*)
             FROM items i
             JOIN itemTypes it ON i.itemTypeID = it.itemTypeID
-            WHERE it.typeName = 'attachment'
+            WHERE it.typeName NOT IN ('attachment', 'note')
             """
         )
         return cursor.fetchone()[0]
@@ -627,9 +652,11 @@ except Exception as e:
         -- Get creators
         LEFT JOIN itemCreators ic ON i.itemID = ic.itemID
         LEFT JOIN creators c ON ic.creatorID = c.creatorID
-        
-        WHERE it.typeName = 'attachment'
-        
+
+        -- Filter out attachments and notes (Fix #4 - CRITICAL BUG FIX)
+        -- Previous code was ONLY selecting attachments (backwards logic)
+        WHERE it.typeName NOT IN ('attachment', 'note')
+
         GROUP BY i.itemID, i.key, i.itemTypeID, it.typeName, i.dateAdded, i.dateModified,
                  title_val.value, abstract_val.value, extra_val.value
         

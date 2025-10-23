@@ -630,7 +630,9 @@ class QdrantClientWrapper:
 
                 # Convert to ChromaDB-compatible format
                 ids = [str(hit.id) for hit in search_result]
-                distances = [1 - hit.score for hit in search_result]  # Convert similarity to distance
+                # Defensive normalization: clamp scores to [0,1] range before conversion
+                # Qdrant DBSF fusion can produce scores >1.0 in edge cases (GitHub #4646, #5921)
+                distances = [max(0.0, 1.0 - min(1.0, hit.score)) for hit in search_result]
                 metadatas = []
                 documents = []
 

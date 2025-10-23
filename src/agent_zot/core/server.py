@@ -428,7 +428,7 @@ def semantic_search(
 
 @mcp.tool(
     name="zot_unified_search",
-    description="🔥 HIGH PRIORITY - 🔵 ADVANCED - Unified search using Reciprocal Rank Fusion to merge semantic, graph, and metadata results.\n\n💡 Use when:\n✓ You want comprehensive results across all search backends\n✓ Query is multi-faceted (e.g., 'neural mechanisms AND clinical applications')\n✓ You want to maximize recall (finding all relevant papers)\n✓ Simple semantic search returned insufficient results\n\nCombines:\n- Semantic search (Qdrant vector DB) - content similarity\n- Graph search (Neo4j knowledge graph) - relationship discovery\n- Metadata search (Zotero API) - keyword matching\n\nResults are merged using Reciprocal Rank Fusion (RRF), which:\n- Gives higher scores to papers appearing in multiple backends\n- Balances relevance across different retrieval methods\n- Often outperforms single-backend search\n\nNOT for:\n✗ Simple single-concept queries → use zot_semantic_search (faster)\n✗ Purely relationship-based queries → use zot_graph_search\n\n💡 Often combines with:\n- zot_ask_paper - Read content from papers found\n- zot_find_related_papers - Explore citation connections\n- Neo4j graph tools - Analyze relationships between results\n\nUse for: Comprehensive multi-backend search with intelligent result merging",
+    description="📊 MEDIUM PRIORITY - 🔵 ADVANCED - Unified search using Reciprocal Rank Fusion to merge semantic, graph, and metadata results.\n\n💡 Use when:\n✓ You want comprehensive results across all search backends\n✓ Query is multi-faceted (e.g., 'neural mechanisms AND clinical applications')\n✓ You want to maximize recall (finding all relevant papers)\n✓ Simple semantic search returned insufficient results\n\n⚠️ Consider zot_hybrid_vector_graph_search first for most combined content+relationship queries.\n\nCombines:\n- Semantic search (Qdrant vector DB) - content similarity\n- Graph search (Neo4j knowledge graph) - relationship discovery\n- Metadata search (Zotero API) - keyword matching\n\nResults are merged using Reciprocal Rank Fusion (RRF), which:\n- Gives higher scores to papers appearing in multiple backends\n- Balances relevance across different retrieval methods\n- Often outperforms single-backend search\n\nNOT for:\n✗ Simple single-concept queries → use zot_semantic_search (faster)\n✗ Purely relationship-based queries → use zot_graph_search\n\n💡 Often combines with:\n- zot_ask_paper - Read content from papers found\n- zot_find_related_papers - Explore citation connections\n- Neo4j graph tools - Analyze relationships between results\n\nUse for: Comprehensive multi-backend search with intelligent result merging",
     annotations={
         "readOnlyHint": True,
         "title": "Unified Search (RRF)"
@@ -1064,7 +1064,7 @@ def _extract_item_key_from_input(value: str) -> Optional[str]:
 
 @mcp.tool(
     name="zot_hybrid_vector_graph_search",
-    description="🔧 LOW PRIORITY - 🔸 SECONDARY - Combines semantic search with relationship discovery. Use when you want both content relevance AND network connections in results. Requires Neo4j.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ For content-only queries, use zot_semantic_search instead (faster).\n\nUse for: Combined semantic+relationship queries when both content and connections matter"
+    description="🔥 HIGH PRIORITY - 🔵 PRIMARY - Combines semantic search with relationship discovery. Use when you want both content relevance AND network connections in results. Requires Neo4j.\n\n💡 Preferred over zot_unified_search for most queries combining content and relationships.\n⚠️ For content-only queries, use zot_semantic_search instead (faster).\n\nUse for: Combined semantic+relationship queries when both content and connections matter"
 ,
     annotations={
         "readOnlyHint": True,
@@ -1160,6 +1160,49 @@ def hybrid_vector_graph_search(
         return f"Error in hybrid search: {str(e)}"
 
 
+def deduplicate_chunks(chunks: List[Dict]) -> List[Dict]:
+    """
+    Remove duplicate chunks based on normalized text content.
+
+    Duplicate chunks can occur when:
+    - Same text appears in overlapping chunks
+    - Text is extracted multiple times with slight formatting differences
+    - Vector search returns near-identical content from different positions
+
+    Args:
+        chunks: List of chunk dictionaries with 'matched_text' field
+
+    Returns:
+        Deduplicated list of chunks, preserving order by relevance
+    """
+    seen_hashes = set()
+    unique_chunks = []
+    duplicates_removed = 0
+
+    for chunk in chunks:
+        # Normalize text for comparison: strip whitespace, lowercase
+        text = chunk.get('matched_text', '').strip().lower()
+
+        # Skip empty chunks
+        if not text:
+            continue
+
+        # Use hash for efficient duplicate detection
+        # Note: Hash collisions are rare and acceptable for this use case
+        chunk_hash = hash(text)
+
+        if chunk_hash not in seen_hashes:
+            seen_hashes.add(chunk_hash)
+            unique_chunks.append(chunk)
+        else:
+            duplicates_removed += 1
+
+    if duplicates_removed > 0:
+        logger.info(f"Removed {duplicates_removed} duplicate chunks from results")
+
+    return unique_chunks
+
+
 @mcp.tool(
     name="zot_ask_paper",
     description="🔥 HIGH PRIORITY - 🔵 PRIMARY tool for accessing paper content. Uses semantic search to retrieve relevant text chunks from a paper's full text. Much more efficient than zot_get_item(include_fulltext=True). This does NOT generate AI answers - it returns source text chunks for you to analyze.\n\n✅ Use this when you need to read, analyze, or extract information from a paper's actual content.\n💡 For comprehensive paper summarization, call this multiple times with different questions (e.g., methods, results, conclusions) or use high top_k value.\n\nExample questions:\n✓ \"What methodology did the authors use?\"\n✓ \"What were the main findings?\"\n✓ \"How did they measure [variable]?\"\n\nNOT for:\n✗ \"find papers about [topic]\" → use zot_semantic_search\n✗ \"who are the authors\" → use zot_get_item\n\nUse for: Reading paper content, extracting findings, analyzing methodology, understanding results, comprehensive summarization",
@@ -1220,6 +1263,11 @@ def ask_paper(
 
         # Check if we got results (search.search returns enriched results in "results" field)
         search_results = results.get("results", [])
+
+        # Apply deduplication to remove duplicate chunks (Fix #3)
+        # This prevents showing the same or nearly-identical content multiple times
+        search_results = deduplicate_chunks(search_results)
+
         if not search_results:
             return f"No relevant content found in paper '{paper_title}' for question: '{question}'\n\nThis may mean:\n- The paper's full text hasn't been indexed yet (run zot_update_search_database)\n- The question topic isn't discussed in this paper\n- Try rephrasing your question"
 
@@ -1519,172 +1567,6 @@ def enhanced_semantic_search(
 #         "title": "Literature Review (Workflow)"
 #     }
 # )
-def literature_review_DEPRECATED(
-    topic: str,
-    max_papers: int = 20,
-    include_temporal_analysis: bool = True,
-    include_network_analysis: bool = False,
-    *,
-    ctx: Context
-) -> str:
-    """
-    Automated literature review workflow combining multiple analysis tools.
-
-    This orchestrates a multi-step process:
-    1. Semantic search to find relevant papers
-    2. Temporal analysis to track topic evolution
-    3. Network analysis to identify key authors/institutions (optional)
-    4. Structured summary generation
-
-    Args:
-        topic: Research topic to review
-        max_papers: Maximum papers to include in review (default: 20)
-        include_temporal_analysis: Include topic evolution over time (default: True)
-        include_network_analysis: Include author/institution network analysis (default: False, requires Neo4j)
-        ctx: MCP context
-
-    Returns:
-        Comprehensive literature review in markdown format
-    """
-    try:
-        from agent_zot.search.semantic import create_semantic_search
-        from pathlib import Path
-        from datetime import datetime
-
-        ctx.info(f"Starting literature review for topic: {topic}")
-
-        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
-        search = create_semantic_search(str(config_path))
-
-        output = [f"# Literature Review: {topic}"]
-        output.append(f"\n*Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}*")
-        output.append(f"*Max Papers: {max_papers}*\n")
-
-        # Step 1: Semantic search for relevant papers
-        ctx.info("Step 1: Finding relevant papers...")
-        output.append("## 1. Relevant Papers\n")
-
-        results = search.search(query=topic, limit=max_papers, filters=None)
-
-        if results.get("error"):
-            return f"Error during literature review: {results['error']}"
-
-        if not results.get("ids") or not results["ids"][0]:
-            return f"No papers found for topic: '{topic}'\n\nTry:\n- Broadening your search terms\n- Running zot_update_search_database if you haven't indexed recently"
-
-        papers = []
-        for i in range(len(results["ids"][0])):
-            item_key = (results["ids"][0][i] if results.get("ids") and len(results["ids"]) > 0 and len(results["ids"][0]) > i else "")
-            zotero_item = None
-            if results.get("metadatas") and len(results["metadatas"]) > 0 and len(results["metadatas"][0]) > i:
-                metadata = results["metadatas"][0][i]
-                # Reconstruct minimal zotero_item structure
-                zotero_item = {"data": metadata}
-
-            if zotero_item:
-                data = zotero_item["data"]
-                title = data.get("title", "Untitled")
-                year = data.get("year", "N/A")
-                authors = data.get("authors", "Unknown authors")
-
-                papers.append({
-                    "item_key": item_key,
-                    "title": title,
-                    "year": year,
-                    "authors": authors
-                })
-
-                output.append(f"### {i+1}. {title} ({year})")
-                output.append(f"- **Authors:** {authors}")
-                output.append(f"- **Key:** {item_key}")
-                output.append("")
-
-        output.append(f"\n**Total papers found:** {len(papers)}\n")
-
-        # Step 2: Temporal analysis (if requested)
-        if include_temporal_analysis and papers:
-            ctx.info("Step 2: Analyzing temporal trends...")
-            output.append("## 2. Temporal Analysis\n")
-
-            # Group papers by year
-            year_counts = {}
-            for paper in papers:
-                year = paper["year"]
-                if year != "N/A" and year:
-                    try:
-                        year_int = int(str(year)[:4])  # Handle various year formats
-                        year_counts[year_int] = year_counts.get(year_int, 0) + 1
-                    except (ValueError, TypeError):
-                        pass
-
-            if year_counts:
-                sorted_years = sorted(year_counts.items())
-                output.append("**Publication trend:**\n")
-                for year, count in sorted_years:
-                    bar = "█" * count
-                    output.append(f"- {year}: {bar} ({count} papers)")
-                output.append("")
-
-                # Identify trend
-                if len(sorted_years) >= 3:
-                    recent_avg = sum(c for y, c in sorted_years[-3:]) / 3
-                    early_avg = sum(c for y, c in sorted_years[:3]) / 3
-                    if recent_avg > early_avg * 1.5:
-                        trend = "**INCREASING** - Growing research interest"
-                    elif recent_avg < early_avg * 0.67:
-                        trend = "**DECREASING** - Declining research activity"
-                    else:
-                        trend = "**STABLE** - Consistent research output"
-                    output.append(f"**Trend:** {trend}\n")
-
-        # Step 3: Network analysis (if requested and Neo4j available)
-        if include_network_analysis:
-            ctx.info("Step 3: Analyzing research networks...")
-            output.append("## 3. Network Analysis\n")
-
-            try:
-                from agent_zot.clients.neo4j_graphrag import create_neo4j_graphrag_client
-                graph_client = create_neo4j_graphrag_client(str(config_path))
-
-                if graph_client:
-                    # Find key authors in this topic area
-                    # This is a simplified version - full implementation would query the graph
-                    output.append("*Network analysis requires Neo4j GraphRAG configuration*\n")
-                else:
-                    output.append("*Neo4j GraphRAG not configured - skipping network analysis*\n")
-            except Exception as e:
-                output.append(f"*Network analysis unavailable: {str(e)}*\n")
-
-        # Step 4: Summary and recommendations
-        ctx.info("Step 4: Generating summary...")
-        output.append("## 4. Summary\n")
-        output.append(f"This literature review identified **{len(papers)} papers** relevant to '{topic}'.\n")
-
-        if papers:
-            # Extract earliest and latest years
-            years = [p["year"] for p in papers if p["year"] != "N/A"]
-            if years:
-                try:
-                    year_ints = [int(str(y)[:4]) for y in years]
-                    output.append(f"**Time span:** {min(year_ints)} to {max(year_ints)}\n")
-                except (ValueError, TypeError):
-                    pass
-
-        output.append("### Recommended Next Steps\n")
-        output.append("1. Use `zot_get_item()` to read abstracts and full details of key papers")
-        output.append("2. Use `zot_ask_paper()` to ask specific questions about individual papers")
-        output.append("3. Use `zot_find_related_papers()` to discover citation networks")
-        if not include_network_analysis:
-            output.append("4. Re-run with `include_network_analysis=true` to identify key researchers (requires Neo4j)")
-
-        output.append("\n---")
-        output.append("*This automated review provides an overview. Manual analysis is recommended for comprehensive research.*")
-
-        return "\n".join(output)
-
-    except Exception as e:
-        ctx.error(f"Error in literature_review: {str(e)}")
-        return f"Error generating literature review: {str(e)}"
 
 # ============================================================================
 # GRAPH TOOLS - Knowledge Graph Operations (Neo4j)
@@ -2229,85 +2111,6 @@ def track_topic_evolution(
 #         "title": "Find Recent Developments (Temporal)"
 #     }
 # )
-def find_recent_developments_DEPRECATED(
-    topic: str,
-    years_back: int = 2,
-    limit: int = 10,
-    *,
-    ctx: Context
-) -> str:
-    """
-    Search for recent papers on a topic with year filtering.
-
-    Args:
-        topic: Research topic or query
-        years_back: How many years back to search (default: 2)
-        limit: Maximum results (default: 10)
-        ctx: MCP context
-
-    Returns:
-        Markdown-formatted recent papers on the topic
-    """
-    try:
-        from pathlib import Path
-        from agent_zot.search.semantic import create_semantic_search
-
-        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
-        search = create_semantic_search(str(config_path))
-
-        if not search or not search.vector_db:
-            return "Semantic search is not initialized. Please run 'agent-zot update-db' first."
-
-        ctx.info(f"Finding recent developments on '{topic}' (last {years_back} years, limit: {limit})")
-
-        # Use Qdrant's temporal search
-        results = search.vector_db.search_recent_on_topic(
-            query=topic,
-            years_back=years_back,
-            limit=limit
-        )
-
-        if not results or not results.get("ids") or not results["ids"][0]:
-            return f"No recent papers found on '{topic}' in the last {years_back} years"
-
-        # Extract search params
-        search_params = results.get("search_params", {})
-        year_range = search_params.get("year_range", f"last {years_back} years")
-
-        # Format results
-        output = [f"# Recent Developments: '{topic}' ({year_range})\n"]
-        output.append(f"Found {len(results['ids'][0])} recent papers:\n")
-
-        for i in range(len(results["ids"][0])):
-            # Safe nested list access with bounds checking (see commit 416a12c for similar fix)
-            metadata = (results["metadatas"][0][i]
-                       if results.get("metadatas") and len(results["metadatas"]) > 0 and len(results["metadatas"][0]) > i
-                       else {})
-            doc_text = (results["documents"][0][i]
-                       if results.get("documents") and len(results["documents"]) > 0 and len(results["documents"][0]) > i
-                       else "")
-
-            title = metadata.get("title", "Unknown")
-            year = metadata.get("year", "N/A")
-            authors = metadata.get("authors", "Unknown authors")
-            item_key = metadata.get("item_key", "")
-
-            output.append(f"## {i+1}. {title} ({year})")
-            output.append(f"- **Authors**: {authors}")
-            output.append(f"- **Key**: {item_key}")
-
-            # Show preview of relevant content
-            if doc_text and len(doc_text) > 200:
-                preview = doc_text[:200] + "..."
-                output.append(f"- **Preview**: {preview}")
-
-            output.append("")
-
-        return "\n".join(output)
-
-    except Exception as e:
-        ctx.error(f"Error finding recent developments: {str(e)}")
-        return f"Error finding recent developments: {str(e)}"
 
 
 @mcp.tool(
@@ -2583,45 +2386,6 @@ def search_by_tag(
 #         "title": "Get Item Metadata (Deprecated)"
 #     }
 # )
-def get_item_metadata(
-    item_key: str,
-    include_abstract: bool = True,
-    format: str = "markdown",
-    *,
-    ctx: Context
-) -> str:
-    """
-    Get detailed metadata for a Zotero item.
-
-    Args:
-        item_key: Zotero item key/ID
-        include_abstract: Whether to include the abstract in the output (markdown format only)
-        format: Output format - must be "markdown" or "bibtex" (default: "markdown")
-        ctx: MCP context
-
-    Returns:
-        Formatted item metadata (markdown or BibTeX)
-    """
-    try:
-        # Validate format parameter
-        if format not in ["markdown", "bibtex"]:
-            return f"Error: Invalid format '{format}'. Must be 'markdown' or 'bibtex'"
-
-        ctx.info(f"Fetching metadata for item {item_key} in {format} format")
-        zot = get_zotero_client()
-
-        item = get_item_with_fallback(zot, item_key)
-        if not item:
-            return f"No item found with key: {item_key}"
-
-        if format == "bibtex":
-            return generate_bibtex(item)
-        else:
-            return format_item_metadata(item, include_abstract)
-    
-    except Exception as e:
-        ctx.error(f"Error fetching item metadata: {str(e)}")
-        return f"Error fetching item metadata: {str(e)}"
 
 
 @mcp.tool(
@@ -2973,114 +2737,6 @@ def remove_from_collection(
 #         "title": "Get Item Children (Deprecated)"
 #     }
 # )
-def get_item_children(
-    item_key: str,
-    *,
-    ctx: Context
-) -> str:
-    """
-    Get all child items (attachments, notes) for a specific Zotero item.
-    
-    Args:
-        item_key: Zotero item key/ID
-        ctx: MCP context
-    
-    Returns:
-        Markdown-formatted list of child items
-    """
-    try:
-        ctx.info(f"Fetching children for item {item_key}")
-        zot = get_zotero_client()
-        
-        # First get the parent item details
-        try:
-            parent = get_item_with_fallback(zot, item_key)
-            parent_title = parent["data"].get("title", "Untitled Item")
-        except Exception:
-            parent_title = f"Item {item_key}"
-        
-        # Then get the children
-        children = zot.children(item_key)
-        if not children:
-            return f"No child items found for: {parent_title} (Key: {item_key})"
-        
-        # Format children as markdown
-        output = [f"# Child Items for: {parent_title}", ""]
-        
-        # Group children by type
-        attachments = []
-        notes = []
-        others = []
-        
-        for child in children:
-            data = child.get("data", {})
-            item_type = data.get("itemType", "unknown")
-            
-            if item_type == "attachment":
-                attachments.append(child)
-            elif item_type == "note":
-                notes.append(child)
-            else:
-                others.append(child)
-        
-        # Format attachments
-        if attachments:
-            output.append("## Attachments")
-            for i, att in enumerate(attachments, 1):
-                data = att.get("data", {})
-                title = data.get("title", "Untitled")
-                key = att.get("key", "")
-                content_type = data.get("contentType", "Unknown")
-                filename = data.get("filename", "")
-                
-                output.append(f"{i}. **{title}**")
-                output.append(f"   - Key: {key}")
-                output.append(f"   - Type: {content_type}")
-                if filename:
-                    output.append(f"   - Filename: {filename}")
-                output.append("")
-        
-        # Format notes
-        if notes:
-            output.append("## Notes")
-            for i, note in enumerate(notes, 1):
-                data = note.get("data", {})
-                title = data.get("title", "Untitled Note")
-                key = note.get("key", "")
-                note_text = data.get("note", "")
-                
-                # Clean up HTML in notes
-                note_text = note_text.replace("<p>", "").replace("</p>", "\n\n")
-                note_text = note_text.replace("<br/>", "\n").replace("<br>", "\n")
-                
-                # Limit note length for display
-                if len(note_text) > 500:
-                    note_text = note_text[:500] + "...\n\n(Note truncated)"
-                
-                output.append(f"{i}. **{title}**")
-                output.append(f"   - Key: {key}")
-                output.append(f"   - Content:\n```\n{note_text}\n```")
-                output.append("")
-        
-        # Format other item types
-        if others:
-            output.append("## Other Items")
-            for i, other in enumerate(others, 1):
-                data = other.get("data", {})
-                title = data.get("title", "Untitled")
-                key = other.get("key", "")
-                item_type = data.get("itemType", "unknown")
-                
-                output.append(f"{i}. **{title}**")
-                output.append(f"   - Key: {key}")
-                output.append(f"   - Type: {item_type}")
-                output.append("")
-        
-        return "\n".join(output)
-
-    except Exception as e:
-        ctx.error(f"Error fetching item children: {str(e)}")
-        return f"Error fetching item children: {str(e)}"
 
 
 @mcp.tool(
@@ -3584,80 +3240,6 @@ def batch_update_tags(
     except Exception as e:
         ctx.error(f"Error in batch tag update: {str(e)}")
         return f"Error in batch tag update: {str(e)}"
-
-
-# REMOVED: zot_advanced_search - broken tool using wrong API method
-# See AUDIT_REPORT.md for details. Alternatives: zot_semantic_search, zot_search_items
-#
-# @mcp.tool(
-#     name="zot_advanced_search",
-#     description="[TEMPORARILY DISABLED] Perform an advanced search with multiple criteria."
-# )
-def advanced_search(
-    conditions: List[Dict[str, str]],
-    join_mode: str = "all",
-    sort_by: Optional[str] = None,
-    sort_direction: str = "asc",
-    limit: int = 50,
-    *,
-    ctx: Context
-) -> str:
-    """
-    Perform an advanced search with multiple criteria.
-
-    **CURRENTLY DISABLED**: This tool has a known bug with the pyzotero API
-    (uses incorrect API method for saved search execution).
-
-    Use alternative tools:
-    - For text search: zot_search_items (simple queries)
-    - For semantic search: zot_semantic_search (vector search)
-    - For tag search: zot_search_by_tag
-
-    This tool will be fixed in a future update.
-
-    Args:
-        conditions: List of search condition dictionaries
-        join_mode: Whether all conditions must match ("all") or any can match ("any")
-        sort_by: Field to sort by
-        sort_direction: Direction to sort - "asc" or "desc"
-        limit: Maximum number of results
-        ctx: MCP context
-
-    Returns:
-        Error message directing to alternative tools
-    """
-    ctx.warn("zot_advanced_search called but is currently disabled")
-
-    return """# Advanced Search Currently Unavailable
-
-This tool is temporarily disabled due to a bug in the pyzotero API integration (incorrect method for executing saved searches).
-
-## Alternative Tools
-
-Please use these working alternatives:
-
-### For Simple Text Search
-```
-zot_search_items(query="your search terms", limit=50)
-```
-
-### For Semantic/Vector Search
-```
-zot_semantic_search(query="research question or concept", top_k=20)
-```
-
-### For Tag-Based Search
-```
-zot_search_by_tag(tag="your-tag", limit=50)
-```
-
-### For Collection Search
-```
-zot_get_collection_items(collection_id="COLLECTION_KEY", limit=50)
-```
-
-This tool will be fixed in a future update. See AUDIT_REPORT.md for details.
-"""
 
 
 @mcp.tool(
@@ -4664,15 +4246,15 @@ def export_graph(
 # ============================================================================
 # CHATGPT COMPATIBILITY TOOLS
 # ============================================================================
-@mcp.tool(
-    name="search",
-    description="🔧 LOW PRIORITY - ⚪ FALLBACK - ChatGPT-compatible search wrapper. Performs semantic search and returns JSON results.\n\nFor Claude users: Use zot_semantic_search, zot_enhanced_semantic_search, or zot_ask_paper directly for better results.\n\nUse for: ChatGPT integrations only"
-,
-    annotations={
-        "readOnlyHint": True,
-        "title": "Search (ChatGPT)"
-    }
-)
+# @mcp.tool(
+#     name="search",
+#     description="🔧 LOW PRIORITY - ⚪ FALLBACK - ChatGPT-compatible search wrapper. Performs semantic search and returns JSON results.\n\nFor Claude users: Use zot_semantic_search, zot_enhanced_semantic_search, or zot_ask_paper directly for better results.\n\nUse for: ChatGPT integrations only"
+# ,
+#     annotations={
+#         "readOnlyHint": True,
+#         "title": "Search (ChatGPT)"
+#     }
+# )
 def chatgpt_connector_search(
     query: str,
     *,
@@ -4713,15 +4295,15 @@ def chatgpt_connector_search(
         return json.dumps({"results": []}, separators=(",", ":"))
 
 
-@mcp.tool(
-    name="fetch",
-    description="🔧 LOW PRIORITY - ⚪ FALLBACK - ChatGPT-compatible fetch wrapper. Retrieves fulltext/metadata for a Zotero item by ID.\n\nFor Claude users: Use zot_get_item, zot_ask_paper, or zot_semantic_search directly for better results.\n\nUse for: ChatGPT integrations only"
-,
-    annotations={
-        "readOnlyHint": True,
-        "title": "Fetch (ChatGPT)"
-    }
-)
+# @mcp.tool(
+#     name="fetch",
+#     description="🔧 LOW PRIORITY - ⚪ FALLBACK - ChatGPT-compatible fetch wrapper. Retrieves fulltext/metadata for a Zotero item by ID.\n\nFor Claude users: Use zot_get_item, zot_ask_paper, or zot_semantic_search directly for better results.\n\nUse for: ChatGPT integrations only"
+# ,
+#     annotations={
+#         "readOnlyHint": True,
+#         "title": "Fetch (ChatGPT)"
+#     }
+# )
 def connector_fetch(
     id: str,
     *,
