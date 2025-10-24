@@ -193,22 +193,39 @@ def run_citation_chain_mode(
     logger.info(f"Running CITATION CHAIN Mode: paper_key={paper_key}, max_hops={max_hops}")
 
     try:
-        result = neo4j_client.find_citation_chain(paper_key, max_hops=max_hops, limit=limit)
+        # Neo4j client returns a list directly
+        results = neo4j_client.find_citation_chain(paper_key, max_hops=max_hops, limit=limit)
 
-        if result.get("error"):
+        if not results:
             return {
                 "success": False,
-                "error": result["error"],
+                "error": f"No citation chain found for paper: {paper_key}",
                 "mode": "citation"
             }
 
-        papers = result.get("papers", [])
+        # Format results as markdown
+        output = [f"# Citation Chain for {paper_key}\n"]
+        output.append(f"Found {len(results)} papers in citation network (max {max_hops} hops):\n")
+
+        for paper in results:
+            hops = paper.get("citation_hops", 0)
+            title = paper.get("title", "Unknown")
+            year = paper.get("year", "N/A")
+            key = paper.get("item_key", "")
+            path = paper.get("citation_path", [])
+
+            output.append(f"## {title} ({year})")
+            output.append(f"- **Key**: {key}")
+            output.append(f"- **Citation Distance**: {hops} hop{'s' if hops != 1 else ''}")
+            if path:
+                output.append(f"- **Citation Path**: {' → '.join(path[:3])}{'...' if len(path) > 3 else ''}")
+            output.append("")
 
         return {
             "success": True,
             "mode": "citation",
-            "content": result.get("formatted_output", ""),
-            "papers_found": len(papers),
+            "content": "\n".join(output),
+            "papers_found": len(results),
             "max_hops": max_hops,
             "strategy": f"Multi-hop citation chain analysis ({max_hops} hops)"
         }
@@ -235,22 +252,39 @@ def run_seminal_papers_mode(
     logger.info(f"Running SEMINAL PAPERS Mode: field={field}, top_n={top_n}")
 
     try:
-        result = neo4j_client.find_seminal_papers(field=field, top_n=top_n)
+        # Neo4j client returns a list directly
+        results = neo4j_client.find_seminal_papers(field=field, top_n=top_n)
 
-        if result.get("error"):
+        if not results:
             return {
                 "success": False,
-                "error": result["error"],
+                "error": f"No seminal papers found{' in field: ' + field if field else ''}",
                 "mode": "influence"
             }
 
-        papers = result.get("papers", [])
+        # Format results as markdown
+        field_info = f" in field: {field}" if field else " across all fields"
+        output = [f"# Seminal Papers{field_info.title()}\n"]
+        output.append(f"Top {len(results)} most influential papers by citation analysis:\n")
+
+        for i, paper in enumerate(results, 1):
+            title = paper.get("title", "Unknown")
+            year = paper.get("year", "N/A")
+            key = paper.get("item_key", "")
+            influence = paper.get("influence_score", 0)
+
+            output.append(f"## {i}. {title} ({year})")
+            output.append(f"- **Key**: {key}")
+            output.append(f"- **Influence Score**: {influence:.2f} citations")
+            output.append("")
+
+        output.append("\n*Note: Influence score based on citation count (proxy for PageRank)*")
 
         return {
             "success": True,
             "mode": "influence",
-            "content": result.get("formatted_output", ""),
-            "papers_found": len(papers),
+            "content": "\n".join(output),
+            "papers_found": len(results),
             "field_filter": field or "all fields",
             "strategy": "PageRank influence ranking"
         }
@@ -277,22 +311,43 @@ def run_related_papers_mode(
     logger.info(f"Running RELATED PAPERS Mode: item_key={item_key}")
 
     try:
-        result = neo4j_client.find_related_papers(item_key, limit=limit)
+        # Neo4j client returns a list directly
+        results = neo4j_client.find_related_papers(item_key, limit=limit)
 
-        if result.get("error"):
+        if not results:
             return {
                 "success": False,
-                "error": result["error"],
+                "error": f"No related papers found for item: {item_key}",
                 "mode": "related"
             }
 
-        papers = result.get("papers", [])
+        # Format results as markdown
+        output = [f"# Papers Related to {item_key}", ""]
+        output.append(f"Found {len(results)} related papers via knowledge graph:")
+        output.append("")
+
+        for i, paper in enumerate(results, 1):
+            title = paper.get("title", "Untitled")
+            year = paper.get("year", "N/A")
+            authors = paper.get("authors", [])
+            shared_count = paper.get("shared_entities", 0)
+            sample_entities = paper.get("sample_entities", [])
+
+            output.append(f"## {i}. {title}")
+            output.append(f"**Year:** {year}")
+            if authors:
+                output.append(f"**Authors:** {', '.join(authors[:3])}")
+            output.append(f"**Shared Entities:** {shared_count}")
+            if sample_entities:
+                output.append(f"**Sample Connections:** {', '.join(sample_entities)}")
+            output.append(f"**Item Key:** {paper.get('item_key', 'N/A')}")
+            output.append("")
 
         return {
             "success": True,
             "mode": "related",
-            "content": result.get("formatted_output", ""),
-            "papers_found": len(papers),
+            "content": "\n".join(output),
+            "papers_found": len(results),
             "strategy": "Shared entity connections"
         }
 
@@ -303,7 +358,6 @@ def run_related_papers_mode(
             "error": str(e),
             "mode": "related"
         }
-
 
 def run_collaborator_network_mode(
     neo4j_client,
@@ -319,22 +373,40 @@ def run_collaborator_network_mode(
     logger.info(f"Running COLLABORATOR NETWORK Mode: author={author}, max_hops={max_hops}")
 
     try:
-        result = neo4j_client.find_collaborator_network(author, max_hops=max_hops, limit=limit)
+        # Neo4j client returns a list directly
+        results = neo4j_client.find_collaborator_network(author, max_hops=max_hops, limit=limit)
 
-        if result.get("error"):
+        if not results:
             return {
                 "success": False,
-                "error": result["error"],
+                "error": f"No collaborators found for: {author}",
                 "mode": "collaboration"
             }
 
-        collaborators = result.get("collaborators", [])
+        # Format results as markdown
+        output = [f"# Collaborator Network for '{author}'\n"]
+        output.append(f"Found {len(results)} collaborators (max {max_hops} hops):\n")
+
+        for item in results:
+            collab_name = item.get("author", "Unknown")
+            hops = item.get("collaboration_hops", 0)
+            collab_count = item.get("collaboration_count", 0)
+            sample_papers = item.get("sample_papers", [])
+
+            output.append(f"## {collab_name}")
+            output.append(f"- **Collaboration Distance**: {hops} hop{'s' if hops != 1 else ''}")
+            output.append(f"- **Shared Papers**: {collab_count}")
+            if sample_papers:
+                output.append(f"- **Sample Collaborations**:")
+                for paper in sample_papers[:3]:
+                    output.append(f"  - {paper}")
+            output.append("")
 
         return {
             "success": True,
             "mode": "collaboration",
-            "content": result.get("formatted_output", ""),
-            "collaborators_found": len(collaborators),
+            "content": "\n".join(output),
+            "collaborators_found": len(results),
             "max_hops": max_hops,
             "strategy": f"Co-authorship network ({max_hops} hops)"
         }
@@ -362,22 +434,38 @@ def run_concept_network_mode(
     logger.info(f"Running CONCEPT NETWORK Mode: concept={concept}, max_hops={max_hops}")
 
     try:
-        result = neo4j_client.explore_concept_network(concept, max_hops=max_hops, limit=limit)
+        # Neo4j client returns a list directly (find_related_concepts)
+        results = neo4j_client.find_related_concepts(concept, max_hops=max_hops, limit=limit)
 
-        if result.get("error"):
+        if not results:
             return {
                 "success": False,
-                "error": result["error"],
+                "error": f"No related concepts found for: {concept}",
                 "mode": "concept"
             }
 
-        concepts = result.get("concepts", [])
+        # Format results as markdown
+        output = [f"# Related Concepts for '{concept}'\n"]
+        output.append(f"Found {len(results)} related concepts (max {max_hops} hops):\n")
+
+        for item in results:
+            concept_name = item.get("concept", "Unknown")
+            hops = item.get("concept_hops", 0)
+            shared_papers = item.get("shared_papers", 0)
+            sample_papers = item.get("sample_papers", [])
+
+            output.append(f"## {concept_name}")
+            output.append(f"- **Relationship Distance**: {hops} hop{'s' if hops != 1 else ''}")
+            output.append(f"- **Shared Papers**: {shared_papers}")
+            if sample_papers:
+                output.append(f"- **Sample Papers**: {', '.join(sample_papers[:3])}")
+            output.append("")
 
         return {
             "success": True,
             "mode": "concept",
-            "content": result.get("formatted_output", ""),
-            "concepts_found": len(concepts),
+            "content": "\n".join(output),
+            "concepts_found": len(results),
             "max_hops": max_hops,
             "strategy": f"Concept propagation ({max_hops} hops)"
         }
@@ -389,7 +477,6 @@ def run_concept_network_mode(
             "error": str(e),
             "mode": "concept"
         }
-
 
 def run_topic_evolution_mode(
     neo4j_client,
@@ -405,22 +492,29 @@ def run_topic_evolution_mode(
     logger.info(f"Running TOPIC EVOLUTION Mode: concept={concept}, {start_year}-{end_year}")
 
     try:
+        # This method returns a dict with possible "error" key
         result = neo4j_client.track_topic_evolution(concept, start_year, end_year)
 
-        if result.get("error"):
+        if isinstance(result, dict) and result.get("error"):
             return {
                 "success": False,
                 "error": result["error"],
                 "mode": "temporal"
             }
 
-        yearly_data = result.get("yearly_data", [])
+        if isinstance(result, dict) and result.get("total_papers", 0) == 0:
+            return {
+                "success": False,
+                "error": f"No papers found for concept '{concept}' in {start_year}-{end_year}",
+                "mode": "temporal"
+            }
 
+        # Format results (result should have formatted_output from the client)
         return {
             "success": True,
             "mode": "temporal",
-            "content": result.get("formatted_output", ""),
-            "years_analyzed": len(yearly_data),
+            "content": result.get("formatted_output", str(result)),
+            "years_analyzed": len(result.get("yearly_data", [])),
             "time_span": f"{start_year}-{end_year}",
             "strategy": "Temporal trajectory analysis"
         }
@@ -432,7 +526,6 @@ def run_topic_evolution_mode(
             "error": str(e),
             "mode": "temporal"
         }
-
 
 def run_venue_analysis_mode(
     neo4j_client,
@@ -447,22 +540,40 @@ def run_venue_analysis_mode(
     logger.info(f"Running VENUE ANALYSIS Mode: field={field}, top_n={top_n}")
 
     try:
-        result = neo4j_client.analyze_venues(field=field, top_n=top_n)
+        # Neo4j client returns a list directly
+        results = neo4j_client.analyze_publication_venues(field=field, top_n=top_n)
 
-        if result.get("error"):
+        if not results:
+            field_info = f" in field: {field}" if field else ""
             return {
                 "success": False,
-                "error": result["error"],
+                "error": f"No publication venues found{field_info}",
                 "mode": "venue"
             }
 
-        venues = result.get("venues", [])
+        # Format results as markdown
+        field_info = f" in field: {field}" if field else " across all fields"
+        output = [f"# Top Publication Venues{field_info.title()}\n"]
+        output.append(f"Found {len(results)} top venues by publication count:\n")
+
+        for i, venue in enumerate(results, 1):
+            venue_name = venue.get("venue", "Unknown")
+            paper_count = venue.get("paper_count", 0)
+            sample_papers = venue.get("sample_papers", [])
+
+            output.append(f"## {i}. {venue_name}")
+            output.append(f"- **Papers**: {paper_count}")
+            if sample_papers:
+                output.append(f"- **Sample Titles**:")
+                for paper in sample_papers[:3]:
+                    output.append(f"  - {paper}")
+            output.append("")
 
         return {
             "success": True,
             "mode": "venue",
-            "content": result.get("formatted_output", ""),
-            "venues_found": len(venues),
+            "content": "\n".join(output),
+            "venues_found": len(results),
             "field_filter": field or "all fields",
             "strategy": "Publication outlet ranking"
         }
@@ -474,7 +585,6 @@ def run_venue_analysis_mode(
             "error": str(e),
             "mode": "venue"
         }
-
 
 def run_comprehensive_mode(
     neo4j_client,
