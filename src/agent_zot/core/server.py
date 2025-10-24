@@ -2037,11 +2037,222 @@ def enhanced_semantic_search(
 # GRAPH TOOLS - Knowledge Graph Operations (Neo4j)
 # ============================================================================
 @mcp.tool(
-    name="zot_graph_search",
-    description="📊 MEDIUM PRIORITY - 🟢 PRIMARY for relationship/network queries. Use when query involves connections, collaborations, or \"who/what is related to X\". Neo4j knowledge graph search for finding relationships between authors, institutions, concepts, methods, or other entities.\n\n💡 Often combines with zot_semantic_search to first discover papers by content, then explore their relationships.\n\nExample queries:\n✓ \"who collaborated with [author]?\"\n✓ \"institutions working on [topic]\"\n✓ \"authors researching [concept]\"\n\nNOT for:\n✗ \"papers about [topic]\" → use zot_semantic_search\n✗ \"what is [concept]\" → use zot_ask_paper\n\nUse for: Exploring relationships like \"who collaborated with [author]?\" or \"institutions working on [topic]\"",
+    name="zot_explore_graph",
+    description="""🔥 HIGHEST PRIORITY - 🟢 RECOMMENDED DEFAULT for graph exploration and network analysis.
+
+**Use this as your primary tool for exploring relationships, networks, and connections.**
+
+Smart intent-driven graph exploration that automatically:
+- Detects exploration strategy needed (citation/collaboration/concept/temporal/influence/venue)
+- Selects optimal Neo4j traversal pattern
+- Extracts parameters from natural language queries
+- Executes multi-strategy exploration for comprehensive analysis
+
+## Seven Execution Modes (automatic selection):
+
+**Citation Chain Mode** (paper → citing papers → second-level citations)
+- For citation queries: "Find papers citing papers that cite X"
+- 2-3 hop citation network traversal
+- Returns: Extended citation chain with paper details
+
+**Influence Mode** (PageRank-based paper ranking)
+- For influential papers: "Find seminal/influential/highly-cited papers"
+- Citation graph PageRank analysis
+- Returns: Top papers ranked by citation impact
+
+**Related Papers Mode** (shared entity connections)
+- For relationship queries: "Papers related to X", "Connected work"
+- Shared authors, concepts, methods
+- Returns: Papers with shared entities
+
+**Collaboration Mode** (co-authorship networks)
+- For author queries: "Who collaborated with [author]?"
+- Multi-hop co-authorship traversal
+- Returns: Extended collaboration network
+
+**Concept Network Mode** (concept propagation)
+- For concept queries: "Concepts related to X", "What connects A and B?"
+- Multi-hop concept relationships
+- Returns: Related concepts through intermediate papers
+
+**Temporal Mode** (topic evolution over time)
+- For evolution queries: "Track how [topic] evolved from [year] to [year]"
+- Temporal analysis with yearly trends
+- Returns: Evolution timeline with emerging concepts
+
+**Venue Analysis Mode** (publication outlet ranking)
+- For venue queries: "Top journals/conferences in [field]"
+- Publication venue statistics
+- Returns: Ranked venues with paper counts
+
+**Comprehensive Mode** (multi-strategy exploration)
+- For broad exploration: "Explore everything about X"
+- Runs multiple strategies and merges results
+- Returns: Combined analysis from all relevant modes
+
+## Key Features:
+
+✅ **Intent detection** - Recognizes query type automatically
+✅ **Parameter extraction** - Extracts author names, years, concepts from query
+✅ **Smart mode selection** - Chooses optimal graph traversal strategy
+✅ **Multi-strategy execution** - Comprehensive mode combines approaches
+✅ **Quality ranking** - Uses PageRank and relevance scoring
+
+## When to use other tools:
+
+**Use specialized tools only when:**
+- `zot_search` - Finding papers by content (do this FIRST, then explore graph)
+- `zot_summarize` - Understanding paper content
+- Individual graph tools - Want manual control over specific traversal type
+
+**This tool replaces:**
+- `zot_find_citation_chain` - Citation Chain Mode
+- `zot_find_seminal_papers` - Influence Mode
+- `zot_find_related_papers` - Related Papers Mode
+- `zot_find_collaborator_network` - Collaboration Mode
+- `zot_explore_concept_network` - Concept Network Mode
+- `zot_track_topic_evolution` - Temporal Mode
+- `zot_analyze_venues` - Venue Analysis Mode
+- Manual orchestration of multiple graph queries
+
+Use for: Default choice for graph exploration - handles 95% of network analysis needs intelligently""",
     annotations={
         "readOnlyHint": True,
-        "title": "Graph Search (Graph)"
+        "title": "Smart Explore Graph (Recommended)"
+    }
+)
+def smart_explore_graph_tool(
+    query: str,
+    paper_key: Optional[str] = None,
+    author: Optional[str] = None,
+    concept: Optional[str] = None,
+    start_year: Optional[int] = None,
+    end_year: Optional[int] = None,
+    field: Optional[str] = None,
+    force_mode: Optional[str] = None,
+    limit: int = 10,
+    max_hops: int = 2,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Intelligent unified graph exploration tool.
+
+    Automatically detects intent and selects optimal graph traversal strategy.
+
+    Args:
+        query: Natural language query describing what to explore
+        paper_key: Optional paper key for citation/related paper queries
+        author: Optional author name for collaboration queries
+        concept: Optional concept for network/evolution queries
+        start_year: Optional start year for temporal queries
+        end_year: Optional end year for temporal queries
+        field: Optional field filter for influence/venue queries
+        force_mode: Optional mode override ("citation", "influence", "related", "collaboration", "concept", "temporal", "venue", "comprehensive")
+        limit: Maximum number of results (default: 10)
+        max_hops: Number of hops for multi-hop traversals (default: 2)
+        ctx: MCP context
+
+    Returns:
+        Markdown-formatted graph exploration results with mode and strategy info
+    """
+    try:
+        from agent_zot.search.semantic import create_semantic_search
+        from agent_zot.search.unified_graph import smart_explore_graph
+
+        ctx.info(f"Smart graph exploration: {query} (force_mode: {force_mode})")
+
+        # Initialize Neo4j client
+        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
+        search = create_semantic_search(str(config_path))
+
+        # Check if Neo4j is available
+        if not hasattr(search, 'neo4j_client') or search.neo4j_client is None:
+            return """❌ Neo4j graph database is not available.
+
+**Graph exploration requires Neo4j to be running.**
+
+To enable graph features:
+1. Start Neo4j: `docker start agent-zot-neo4j`
+2. Verify connection: `docker exec agent-zot-neo4j cypher-shell -u neo4j -p demodemo "MATCH (n) RETURN count(n)"`
+
+For content-based search, use `zot_search` instead."""
+
+        neo4j_client = search.neo4j_client
+
+        # Call the smart exploration function
+        result = smart_explore_graph(
+            query=query,
+            neo4j_client=neo4j_client,
+            paper_key=paper_key,
+            author=author,
+            concept=concept,
+            start_year=start_year,
+            end_year=end_year,
+            field=field,
+            force_mode=force_mode,
+            limit=limit,
+            max_hops=max_hops
+        )
+
+        # Format response
+        if not result.get("success"):
+            error_msg = result.get("error", "Unknown error")
+            suggestion = result.get("suggestion", "")
+            return f"❌ Error: {error_msg}\n\n{suggestion}"
+
+        # Build output
+        output_parts = []
+
+        # Add metadata header
+        mode = result.get("mode", "unknown")
+        strategy = result.get("strategy", "unknown")
+
+        output_parts.append(f"# Graph Exploration (Mode: {mode.upper()})\n")
+        output_parts.append(f"**Strategy:** {strategy}")
+
+        if result.get("strategies_executed"):
+            output_parts.append(f"**Strategies executed:** {result['strategies_executed']}")
+
+        if result.get("extracted_params"):
+            params = result["extracted_params"]
+            if params:
+                param_str = ", ".join(f"{k}={v}" for k, v in params.items())
+                output_parts.append(f"**Extracted parameters:** {param_str}")
+
+        if result.get("warning"):
+            output_parts.append(f"\n⚠️ {result['warning']}")
+
+        output_parts.append("\n---\n")
+
+        # Add content
+        output_parts.append(result.get("content", ""))
+
+        # Add confidence info if available
+        if "intent_confidence" in result:
+            conf = result["intent_confidence"]
+            output_parts.append(f"\n---\n\n*Intent detected with {conf:.0%} confidence*")
+
+        return "\n".join(output_parts)
+
+    except Exception as e:
+        import traceback
+        ctx.error(f"Smart graph exploration failed: {str(e)}")
+        ctx.error(f"Traceback: {traceback.format_exc()}")
+        return f"""❌ Error: {str(e)}
+
+💡 Suggestion:
+- Verify Neo4j is running: `docker ps | grep agent-zot-neo4j`
+- For content search, use `zot_search` instead
+- For specific graph operations, use individual tools like `zot_find_related_papers`"""
+
+
+@mcp.tool(
+    name="zot_graph_search",
+    description="📊 MEDIUM PRIORITY - 🔵 ADVANCED - Neo4j knowledge graph search for finding relationships between authors, institutions, concepts, methods, or other entities.\n\n⚠️ DEPRECATED: Use `zot_explore_graph` instead for most queries - it automatically detects intent and selects the right strategy.\n\n💡 Use this ONLY when you want manual control over entity-based graph search.\n\nExample queries:\n✓ \"who collaborated with [author]?\"\n✓ \"institutions working on [topic]\"\n✓ \"authors researching [concept]\"\n\nNOT for:\n✗ \"papers about [topic]\" → use zot_search\n✗ \"citation networks\" → use zot_explore_graph\n\nUse for: Manual entity-based graph queries (prefer zot_explore_graph for automatic mode selection)",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Graph Search (Manual)"
     }
 )
 def graph_search(
@@ -2114,10 +2325,10 @@ def graph_search(
 
 @mcp.tool(
     name="zot_find_related_papers",
-    description="📊 MEDIUM PRIORITY - 🟢 SECONDARY - Find papers related to a given paper via shared entities in the knowledge graph. Use when you want to discover connections through citations, authors, or concepts.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ For content-based similarity, use zot_semantic_search instead.\n\nExample use cases:\n✓ After finding key paper: \"What else cites this?\"\n✓ \"Papers by same authors or on related concepts\"\n✓ \"Follow citation trail from this paper\"\n\nNOT for:\n✗ \"papers similar to [broad concept]\" → use zot_semantic_search\n✗ \"broad topic discovery\" → use zot_semantic_search first\n\nUse for: Discovering papers connected through citations, authors, or shared concepts (relationship-based, not content-based)",
+    description="📊 MEDIUM PRIORITY - 🔵 ADVANCED - Find papers related to a given paper via shared entities in the knowledge graph.\n\n⚠️ DEPRECATED: Use `zot_explore_graph` instead - it automatically detects this need and uses Related Papers Mode.\n\n💡 Use this ONLY when you want manual control over the specific traversal.\n\nExample use cases:\n✓ After finding key paper: \"What else cites this?\"\n✓ \"Papers by same authors or on related concepts\"\n\nNOT for:\n✗ Most relationship queries → use zot_explore_graph (automatic mode detection)\n✗ Content-based similarity → use zot_search\n\nUse for: Manual related paper discovery (prefer zot_explore_graph for automatic mode selection)",
     annotations={
         "readOnlyHint": True,
-        "title": "Find Related Papers (Graph)"
+        "title": "Find Related Papers (Manual)"
     }
 )
 def find_related_papers(
@@ -2186,10 +2397,10 @@ def find_related_papers(
 
 @mcp.tool(
     name="zot_find_citation_chain",
-    description="📊 MEDIUM PRIORITY - 🟢 SECONDARY - Find papers citing papers that cite a given paper (multi-hop citation analysis). Use for discovering extended citation networks.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ Requires Neo4j knowledge graph. For content-based discovery, use zot_semantic_search instead.\n\nUse for: Tracing how ideas propagate through citation networks (relationship analysis, not content analysis)",
+    description="📊 MEDIUM PRIORITY - 🔵 ADVANCED - Find papers citing papers that cite a given paper (multi-hop citation analysis).\n\n⚠️ DEPRECATED: Use `zot_explore_graph` instead - it automatically detects citation queries and uses Citation Chain Mode.\n\n💡 Use this ONLY when you want manual control over citation traversal.\n\nUse for: Manual citation chain discovery (prefer zot_explore_graph for automatic mode selection)",
     annotations={
         "readOnlyHint": True,
-        "title": "Find Citation Chain (Graph)"
+        "title": "Find Citation Chain (Manual)"
     }
 )
 def find_citation_chain(
@@ -2259,10 +2470,10 @@ def find_citation_chain(
 
 @mcp.tool(
     name="zot_explore_concept_network",
-    description="📊 MEDIUM PRIORITY - 🟢 SECONDARY - Find concepts related through intermediate concepts (concept propagation). Discovers conceptual relationships by traversing the knowledge graph.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ Requires Neo4j knowledge graph. For content-based concept discovery, use zot_semantic_search instead.\n\nUse for: Mapping how concepts connect through shared papers (network analysis, not content analysis)",
+    description="📊 MEDIUM PRIORITY - 🔵 ADVANCED - Find concepts related through intermediate concepts (concept propagation).\n\n⚠️ DEPRECATED: Use `zot_explore_graph` instead - it automatically detects concept queries and uses Concept Network Mode.\n\n💡 Use this ONLY when you want manual control over concept traversal.\n\nUse for: Manual concept network discovery (prefer zot_explore_graph for automatic mode selection)",
     annotations={
         "readOnlyHint": True,
-        "title": "Explore Concept Network (Graph)"
+        "title": "Explore Concept Network (Manual)"
     }
 )
 def explore_concept_network(
@@ -2333,10 +2544,10 @@ def explore_concept_network(
 
 @mcp.tool(
     name="zot_find_collaborator_network",
-    description="📊 MEDIUM PRIORITY - 🟢 SECONDARY - Find collaborators of collaborators (co-authorship network). Discovers extended collaboration networks by traversing author relationships.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ Requires Neo4j knowledge graph. For simpler author queries, use zot_semantic_search with author filters instead.\n\nUse for: Analyzing multi-hop author collaboration patterns and networks (network analysis)",
+    description="📊 MEDIUM PRIORITY - 🔵 ADVANCED - Find collaborators of collaborators (co-authorship network).\n\n⚠️ DEPRECATED: Use `zot_explore_graph` instead - it automatically detects collaboration queries and uses Collaboration Mode.\n\n💡 Use this ONLY when you want manual control over collaboration traversal.\n\nUse for: Manual collaborator network discovery (prefer zot_explore_graph for automatic mode selection)",
     annotations={
         "readOnlyHint": True,
-        "title": "Find Collaborator Network (Graph)"
+        "title": "Find Collaborator Network (Manual)"
     }
 )
 def find_collaborator_network(
@@ -2407,10 +2618,10 @@ def find_collaborator_network(
 
 @mcp.tool(
     name="zot_find_seminal_papers",
-    description="📊 MEDIUM PRIORITY - 🟢 SECONDARY - Find most influential papers using citation-based analysis. Identifies highly-cited foundational papers using graph metrics.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ Requires Neo4j knowledge graph. For content-based importance, use zot_semantic_search with relevance ranking instead.\n\nUse for: Identifying papers by citation impact (citation-based ranking, not content-based relevance)",
+    description="📊 MEDIUM PRIORITY - 🔵 ADVANCED - Find most influential papers using citation-based analysis.\n\n⚠️ DEPRECATED: Use `zot_explore_graph` instead - it automatically detects influence queries and uses Influence Mode.\n\n💡 Use this ONLY when you want manual control over PageRank-based ranking.\n\nUse for: Manual influential paper discovery (prefer zot_explore_graph for automatic mode selection)",
     annotations={
         "readOnlyHint": True,
-        "title": "Find Seminal Papers (Graph)"
+        "title": "Find Seminal Papers (Manual)"
     }
 )
 def find_seminal_papers(
@@ -2477,10 +2688,10 @@ def find_seminal_papers(
 
 @mcp.tool(
     name="zot_track_topic_evolution",
-    description="📊 MEDIUM PRIORITY - 🟢 SECONDARY - Track how a research topic/concept has evolved over time using graph analysis. Shows yearly paper counts, related concepts, and trends.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ Requires Neo4j knowledge graph. For simpler temporal queries, use zot_find_recent_developments instead.\n\nUse for: Analyzing research trajectory and concept emergence over time (temporal network analysis)",
+    description="📊 MEDIUM PRIORITY - 🔵 ADVANCED - Track how a research topic/concept has evolved over time using graph analysis.\n\n⚠️ DEPRECATED: Use `zot_explore_graph` instead - it automatically detects temporal/evolution queries and uses Temporal Mode.\n\n💡 Use this ONLY when you want manual control over temporal analysis parameters.\n\nUse for: Manual topic evolution tracking (prefer zot_explore_graph for automatic mode selection)",
     annotations={
         "readOnlyHint": True,
-        "title": "Track Topic Evolution (Graph)"
+        "title": "Track Topic Evolution (Manual)"
     }
 )
 def track_topic_evolution(
@@ -2580,10 +2791,10 @@ def track_topic_evolution(
 
 @mcp.tool(
     name="zot_analyze_venues",
-    description="🔧 LOW PRIORITY - 🟢 SECONDARY - Analyze publication venues (journals/conferences) to identify top outlets using graph analysis. Shows paper counts and sample publications.\n\n💡 Best used AFTER zot_semantic_search to discover relationships between found papers.\n⚠️ Requires Neo4j knowledge graph. For content queries, use zot_semantic_search instead.\n\nUse for: Examining publication venue patterns and outlet rankings (venue analysis, not content analysis)",
+    description="🔧 LOW PRIORITY - 🔵 ADVANCED - Analyze publication venues (journals/conferences) to identify top outlets.\n\n⚠️ DEPRECATED: Use `zot_explore_graph` instead - it automatically detects venue queries and uses Venue Analysis Mode.\n\n💡 Use this ONLY when you want manual control over venue analysis parameters.\n\nUse for: Manual venue analysis (prefer zot_explore_graph for automatic mode selection)",
     annotations={
         "readOnlyHint": True,
-        "title": "Analyze Venues (Graph)"
+        "title": "Analyze Venues (Manual)"
     }
 )
 def analyze_venues(
