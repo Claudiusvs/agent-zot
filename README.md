@@ -92,8 +92,9 @@ Agent-Zot transforms your Zotero research library into an intelligent, searchabl
 ## 🎉 Recent Updates (October 2025)
 
 ### Smart Unified Search Tool
-- **🆕 `zot_search`**: New intelligent search tool that consolidates `zot_semantic_search`, `zot_unified_search`, `zot_refine_search`, and `zot_enhanced_semantic_search`
+- **🆕 `zot_search`**: New intelligent search tool that consolidates `zot_semantic_search`, `zot_unified_search`, `zot_refine_search`, `zot_enhanced_semantic_search`, and `zot_decompose_query`
 - **Intent Detection**: Automatically recognizes entity discovery, relationship, metadata, and semantic queries
+- **Automatic Decomposition**: Phase 0 pre-processing detects and decomposes multi-concept queries (AND/OR/complex patterns)
 - **Smart Mode Selection**: Chooses optimal backend combination from 5 execution modes
 - **Five Execution Modes**:
   - Fast Mode (Qdrant only, ~2s)

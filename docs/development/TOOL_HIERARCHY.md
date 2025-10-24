@@ -209,14 +209,6 @@ questions = [
 
 ## 📊 Tier 2: Specialized/Advanced Tools (MEDIUM PRIORITY)
 
-### Query Decomposition
-
-| Tool | Priority | Purpose | Use When |
-|------|----------|---------|----------|
-| **`zot_decompose_query`** | 📊 MEDIUM | Multi-concept boolean queries | Query has AND/OR operators, multiple concepts |
-
-**Example**: "fMRI studies of working memory AND aging"
-
 ### Metadata & Organization
 
 | Tool | Priority | Purpose |
@@ -259,10 +251,9 @@ questions = [
 User Query
     ↓
 ┌─────────────────────────────────────────┐
-│ Is it about FINDING papers?             │ → zot_search (auto-detects mode)
+│ Is it about FINDING papers?             │ → zot_search (auto-detects mode, includes multi-concept decomposition)
 │ Is it about UNDERSTANDING a paper?      │ → zot_summarize (auto-detects depth)
 │ Is it about EXPLORING connections?      │ → zot_explore_graph (auto-detects intent)
-│ Is it a MULTI-CONCEPT boolean query?    │ → zot_decompose_query
 │ Is it about METADATA/ORGANIZATION?      │ → Specialized metadata tools
 │ Is it about MAINTENANCE?                │ → Utility tools
 └─────────────────────────────────────────┘
@@ -272,7 +263,7 @@ User Query
 
 ## 📈 Migration Summary
 
-### Before (15+ tools)
+### Before (16 tools)
 
 ```
 Search Tools (6):
@@ -281,7 +272,7 @@ Search Tools (6):
 - zot_refine_search
 - zot_enhanced_semantic_search
 - zot_hybrid_vector_graph_search
-- zot_decompose_query
+- zot_decompose_query (now integrated into zot_search as Phase 0)
 
 Summarization Tools (3):
 - zot_ask_paper
@@ -314,12 +305,14 @@ Exploring Connections (1):
 
 ### Benefits
 
-- ✅ **95% reduction in tool count** (15 → 3 for core workflows)
+- ✅ **94% reduction in tool count** (16 → 3 for core workflows)
+- ✅ **Complete query-based consolidation** (all search variants now in zot_search)
 - ✅ **Automatic intent detection** (no manual backend selection)
+- ✅ **Automatic decomposition** (Phase 0 pre-processing for multi-concept queries)
 - ✅ **Smart mode selection** (optimal strategy for each query)
 - ✅ **Built-in quality optimization** (escalates when needed)
 - ✅ **Consistent interface** (same query → consistent routing)
-- ✅ **Reduced cognitive load** (LLM doesn't choose from 15+ options)
+- ✅ **Reduced cognitive load** (LLM doesn't choose from 16+ options)
 - ✅ **Cost optimization** (uses cheapest/fastest mode that works)
 
 ---
@@ -342,19 +335,20 @@ Current tool distribution (post-migration):
 ## 📝 Summary
 
 **New Architecture**:
-- **3 unified intelligent tools** handle 95% of research workflows
+- **3 unified intelligent tools** handle 99% of research workflows
+- **Complete consolidation** - All query-based search in zot_search (including decomposition)
 - **Automatic routing** based on query intent
 - **Smart mode selection** with built-in escalation
 - **Quality optimization** uses cheapest/fastest mode that works
 
 **Tool Selection**:
 - **Query-driven** - Choose based on what the query asks for
-- **Automatic** - The 3 unified tools handle most complexity internally
+- **Automatic** - The 3 unified tools handle all complexity internally
 - **Direct when needed** - Can still use specialized tools for specific tasks
 
 **Benefits**:
-- **Simpler** - 95% fewer tools for core workflows (15 → 3)
-- **Smarter** - Automatic intent detection and mode selection
+- **Simpler** - 94% fewer tools for core workflows (16 → 3)
+- **Smarter** - Automatic intent detection, decomposition, and mode selection
 - **Faster** - Uses optimal backend combination for each query
 - **Better** - Quality assessment and automatic escalation
 
