@@ -91,6 +91,7 @@ def reformulate_query(
     2. Expanding with related terms
     3. Narrowing focus if results are too broad
     4. Broadening scope if results are too sparse
+    5. Domain-specific query expansion (cognitive neuroscience/psychology)
 
     Args:
         original_query: The original search query
@@ -100,14 +101,36 @@ def reformulate_query(
     Returns:
         List of reformulated query strings
     """
+    from agent_zot.utils.query_expansion import expand_query_smart
+
     if not initial_results:
-        # No results - broaden query by making it more general
-        # Remove specific modifiers and qualifiers
+        # No results - try domain-specific expansion first
+        expanded_query, added_terms, was_expanded = expand_query_smart(
+            original_query,
+            quality_metrics={"confidence": "low", "coverage": 0.0}
+        )
+
+        if was_expanded:
+            logger.info(f"Applying domain-specific expansion for zero results: {added_terms}")
+            return [expanded_query]
+
+        # If no expansion available, broaden query by making it more general
         broader_query = re.sub(r'\b(specific|particular|exact|precise)\b', '', original_query, flags=re.IGNORECASE)
         broader_query = re.sub(r'\s+', ' ', broader_query).strip()
         return [broader_query] if broader_query != original_query else [original_query]
 
     reformulated_queries = []
+
+    # Strategy 0: Domain-specific expansion (NEW - most powerful)
+    # Try this first as it's based on curated domain knowledge
+    expanded_query, added_terms, was_expanded = expand_query_smart(
+        original_query,
+        quality_metrics=quality_metrics
+    )
+
+    if was_expanded:
+        logger.info(f"Applied domain-specific expansion: added {added_terms}")
+        reformulated_queries.append(expanded_query)
 
     # Extract key concepts from top results
     key_concepts = extract_key_concepts(initial_results, top_n=3)

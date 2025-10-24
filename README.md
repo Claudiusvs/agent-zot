@@ -174,7 +174,7 @@ Agent-Zot uses a single JSON config at `~/.config/agent-zot/config.json`. Here a
 ```json
 {
   "client_env": {
-    "ZOTERO_LOCAL": "true",              // Use local DB (faster)
+    "ZOTERO_LOCAL": "true",              // Connect to local Zotero API (requires Zotero running)
     "ZOTERO_API_KEY": "your-key-here",
     "ZOTERO_LIBRARY_ID": "your-id",
     "OPENAI_API_KEY": "sk-..."           // For embeddings
@@ -192,6 +192,19 @@ Agent-Zot uses a single JSON config at `~/.config/agent-zot/config.json`. Here a
   }
 }
 ```
+
+**⚠️ Important: ZOTERO_LOCAL Configuration**
+
+When using `ZOTERO_LOCAL="true"`:
+- ✅ **Zotero application must be running** - Agent-Zot connects to Zotero's local HTTP API server
+- ✅ **Faster performance** - Direct access to local database via Zotero's API
+- ❌ **Connection errors if Zotero closed** - You'll see "Connection refused" errors
+
+When using `ZOTERO_LOCAL="false"`:
+- ✅ **Works without Zotero running** - Uses Zotero's web API
+- ✅ **Access from anywhere** - No local Zotero installation needed
+- ❌ **Slower performance** - Network requests to Zotero servers
+- ❌ **Requires API key** - Must have valid ZOTERO_API_KEY
 
 ### 📚 Advanced Configuration
 

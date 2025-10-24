@@ -804,16 +804,8 @@ class ZoteroSemanticSearch:
             try:
                 items = self.zotero_client.items(**batch_params)
             except Exception as e:
-                if "Connection refused" in str(e):
-                    error_msg = (
-                        "Cannot connect to Zotero local API. Please ensure:\n"
-                        "1. Zotero is running\n"
-                        "2. Local API is enabled in Zotero Preferences > Advanced > Enable HTTP server\n"
-                        "3. The local API port (default 23119) is not blocked"
-                    )
-                    raise Exception(error_msg) from e
-                else:
-                    raise Exception(f"Zotero API connection error: {e}") from e
+                from agent_zot.utils.connection_validator import validate_connection
+                validate_connection(e)  # This will raise with friendly message or re-raise original
             if not items:
                 break
             

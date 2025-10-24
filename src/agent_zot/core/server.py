@@ -699,6 +699,8 @@ def refine_search_tool(
 
         if iterations > 1:
             output.append("✅ **Query refinement was applied** to improve result quality.")
+        elif results.get("final_result_count", 0) == 0:
+            output.append("⚠️ **No results found** - Consider using broader query terms or alternative search backends.")
         else:
             output.append("ℹ️ **No refinement needed** - initial results were sufficient.")
 
