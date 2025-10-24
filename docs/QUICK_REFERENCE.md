@@ -120,6 +120,8 @@ python populate_neo4j_from_qdrant.py
 - ~~`zot_enhanced_semantic_search(query, limit, include_chunk_entities, filters)`~~ - DEPRECATED: Use `zot_search` (Entity-enriched Mode)
 - ~~`zot_hybrid_vector_graph_search(query, limit, vector_weight)`~~ - DEPRECATED: Use `zot_search` (Graph-enriched Mode)
 - ~~`zot_decompose_query(query, limit)`~~ - DEPRECATED: Use `zot_search` (automatic multi-concept decomposition as Phase 0)
+- ~~`zot_search_items(query, limit)`~~ - DEPRECATED: Use `zot_search` (Metadata-enriched Mode)
+- ~~`zot_get_item(item_key)`~~ - DEPRECATED: Use `zot_summarize` (Quick Mode)
 
 ### Advanced Graph Analysis (Legacy - use `zot_explore_graph` instead)
 - ~~`zot_graph_search(query, entity_types, limit)`~~ - DEPRECATED: Use `zot_explore_graph` (automatic mode selection)
@@ -132,8 +134,7 @@ python populate_neo4j_from_qdrant.py
 - ~~`zot_find_seminal_papers(field, top_n)`~~ - DEPRECATED: Use `zot_explore_graph` (Influence Mode)
 
 ### Fallback Tools
-- `zot_search_items(query, limit)` - Keyword search via Zotero API
-- `zot_get_item(item_key)` - Metadata retrieval
+- None - All query/retrieval operations consolidated into 3 smart tools
 
 ---
 

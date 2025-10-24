@@ -285,8 +285,6 @@ Choose tools based on what the query asks for, not hierarchical ordering.
 
 ### Metadata/Collections/Tags
 **Tools:** Zotero API tools
-- `zot_search_items` - Keyword-based metadata search
-- `zot_get_item` - Retrieve paper metadata
 - Collection management (create/add/remove)
 - Tag management (get/update)
 - Notes and annotations (get/create/search)
@@ -340,10 +338,8 @@ Choose tools based on what the query asks for, not hierarchical ordering.
 
 ## Anti-Patterns to Avoid
 
-❌ **DON'T:** Use zot_search_items after zot_search (redundant - you already have item keys)
-❌ **DON'T:** Use zot_get_item for paper content (use zot_summarize instead)
 ❌ **DON'T:** Request full text unless absolutely necessary (use zot_summarize Targeted Mode)
-❌ **DON'T:** Use advanced tools when unified tools handle it automatically
+❌ **DON'T:** Use deprecated tools when unified smart tools handle it automatically
 
 ## Efficient Patterns
 
@@ -423,18 +419,20 @@ Smart intent-driven search that automatically:
 
 ## When to use other tools:
 
-**Use specialized tools only when:**
-- `zot_ask_paper` - Need to read paper content (always use after finding papers)
-- `zot_graph_search` - Pure graph queries (rare - usually zot_search handles it)
-- `zot_decompose_query` - Complex multi-concept boolean queries
-- `zot_get_item` - Need metadata for specific paper you already know
+**Still use specialized tools for:**
+- `zot_summarize` - Understanding paper content (do this AFTER finding papers)
+- `zot_explore_graph` - Exploring relationships and connections
 
-**Legacy tools (deprecated):**
-- `zot_semantic_search` - Use zot_search instead (Fast Mode)
-- `zot_unified_search` - Use zot_search instead (Comprehensive Mode)
-- `zot_refine_search` - Use zot_search instead (has built-in refinement)
+**This tool replaces:**
+- `zot_semantic_search` - Fast Mode
+- `zot_unified_search` - Comprehensive Mode
+- `zot_refine_search` - Built-in refinement
+- `zot_enhanced_semantic_search` - Entity-enriched Mode
+- `zot_decompose_query` - Automatic Phase 0 decomposition
+- `zot_search_items` - Metadata-enriched Mode
+- `zot_get_item` - Use zot_summarize Quick Mode instead
 
-Use for: Default choice for research discovery - handles 95% of queries intelligently""",
+Use for: Default choice for ALL paper discovery - handles 99% of search queries intelligently""",
     annotations={
         "readOnlyHint": True,
         "title": "Smart Search (Recommended)"
@@ -1599,15 +1597,17 @@ Smart intent-driven summarization that automatically:
 
 **Still use specialized tools for:**
 - `zot_search` - Finding papers (do this FIRST, then summarize)
-- `zot_get_item` - Just need metadata without reading content
 - `zot_explore_graph` - Exploring relationships and connections
 
 **This tool replaces:**
+- `zot_ask_paper` - Targeted Mode provides semantic Q&A
+- `zot_get_item` - Quick Mode provides metadata + abstract
+- `zot_get_item_fulltext` - Full Mode provides complete text
 - Manual orchestration of multiple questions for comprehensive summaries
 - Deciding between metadata vs content vs full text extraction
 - Guessing optimal summarization depth
 
-Use for: Default choice for understanding paper content - handles 90% of summarization needs intelligently""",
+Use for: Default choice for ALL paper understanding - handles 99% of summarization needs intelligently""",
     annotations={
         "readOnlyHint": True,
         "title": "Smart Summarize (Recommended)"
@@ -2961,101 +2961,104 @@ For content-based search, use `zot_search` instead."""
 # # ============================================================================
 # ========== END DISABLED: zot_analyze_venues ==========
 
-@mcp.tool(
-    name="zot_search_items",
-    description="📊 MEDIUM PRIORITY - ⚪ FALLBACK - Direct Zotero API keyword-based metadata search. Use ONLY for exact title/author/year lookups when you don't have item keys yet.\n\n⚠️ DO NOT use after zot_search - you already have item keys! Use zot_get_item() for metadata or zot_summarize() for content instead.\n\n⚠️ This is literal keyword matching, NOT semantic. Always try zot_search first for research queries.\n\nUse for: Finding papers when you know exact author name/title phrase but don't have item key yet",
-    annotations={
-        "readOnlyHint": True,
-        "title": "Search Items (Zotero)"
-    }
-)
-def search_items(
-    query: str,
-    qmode: str = "titleCreatorYear",
-    item_type: str = "-attachment",  # Exclude attachments by default
-    limit: int = 10,
-    tag: Optional[List[str]] = None,
-    *,
-    ctx: Context
-) -> str:
-    """
-    Search for items in your Zotero library.
-
-    Args:
-        query: Search query string
-        qmode: Query mode - must be "titleCreatorYear" or "everything" (default: "titleCreatorYear")
-        item_type: Type of items to search for. Use "-attachment" to exclude attachments.
-        limit: Maximum number of results to return
-        tag: List of tags conditions to filter by
-        ctx: MCP context
-
-    Returns:
-        Markdown-formatted search results
-    """
-    try:
-        if not query.strip():
-            return "Error: Search query cannot be empty"
-
-        # Validate qmode parameter
-        if qmode not in ["titleCreatorYear", "everything"]:
-            return f"Error: Invalid qmode '{qmode}'. Must be 'titleCreatorYear' or 'everything'"
-        
-        tag_condition_str = ""
-        if tag:
-            tag_condition_str = f" with tags: '{', '.join(tag)}'"    
-        else :
-            tag = []
-
-        ctx.info(f"Searching Zotero for '{query}'{tag_condition_str}")
-        zot = get_zotero_client()
-
-        # Search using the query parameters
-        zot.add_parameters(q=query, qmode=qmode, itemType=item_type, limit=limit, tag=tag)
-        results = zot.items()
-
-        if not results:
-            return f"No items found matching query: '{query}'{tag_condition_str}"
-        
-        # Format results as markdown
-        output = [f"# Search Results for '{query}'", f"{tag_condition_str}", ""]
-        
-        for i, item in enumerate(results, 1):
-            data = item.get("data", {})
-            title = data.get("title", "Untitled")
-            item_type = data.get("itemType", "unknown")
-            date = data.get("date", "No date")
-            key = item.get("key", "")
-            
-            # Format creators
-            creators = data.get("creators", [])
-            creators_str = format_creators(creators)
-            
-            # Build the formatted entry
-            output.append(f"## {i}. {title}")
-            output.append(f"**Type:** {item_type}")
-            output.append(f"**Item Key:** {key}")
-            output.append(f"**Date:** {date}")
-            output.append(f"**Authors:** {creators_str}")
-            
-            # Add abstract snippet if present
-            if abstract := data.get("abstractNote"):
-                # Limit abstract length for search results
-                abstract_snippet = abstract[:200] + "..." if len(abstract) > 200 else abstract
-                output.append(f"**Abstract:** {abstract_snippet}")
-            
-            # Add tags if present
-            if tags := data.get("tags"):
-                tag_list = [f"`{tag['tag']}`" for tag in tags]
-                if tag_list:
-                    output.append(f"**Tags:** {' '.join(tag_list)}")
-            
-            output.append("")  # Empty line between items
-        
-        return "\n".join(output)
-    
-    except Exception as e:
-        ctx.error(f"Error searching Zotero: {str(e)}")
-        return f"Error searching Zotero: {str(e)}"
+# ========== DISABLED: zot_search_items ==========
+# @mcp.tool(
+#     name="zot_search_items",
+#     description="⚠️ DEPRECATED - Use `zot_search` instead (Metadata-enriched Mode)\n\n⚪ LEGACY TOOL - Direct Zotero API keyword-based metadata search.\n\n**Recommendation**: Use `zot_search` instead, which provides:\n- Automatic metadata intent detection (\"papers by [Author]\", \"published in [Year]\")\n- Metadata-enriched Mode (Qdrant + Zotero API)\n- Semantic search combined with exact metadata matching\n- Query expansion for better author name matching\n- Integrated with all 5 execution modes and escalation\n- Quality assessment and provenance tracking\n\n💡 Only use this tool if:\n✓ Explicitly need raw Zotero API literal matching\n✓ Bypassing semantic search for testing\n✓ Debugging Zotero API directly\n\n⚠️ Limitations:\n✗ No semantic understanding\n✗ No integration with smart backend selection\n✗ No quality assessment or escalation\n✗ Literal keyword matching only (misses related papers)\n\nUse for: Legacy support only - prefer zot_search for all paper discovery",
+#     annotations={
+#         "readOnlyHint": True,
+#         "title": "Search Items (Zotero)"
+#     }
+# )
+# def search_items(
+#     query: str,
+#     qmode: str = "titleCreatorYear",
+#     item_type: str = "-attachment",  # Exclude attachments by default
+#     limit: int = 10,
+#     tag: Optional[List[str]] = None,
+#     *,
+#     ctx: Context
+# ) -> str:
+#     """
+#     Search for items in your Zotero library.
+#
+#     Args:
+#         query: Search query string
+#         qmode: Query mode - must be "titleCreatorYear" or "everything" (default: "titleCreatorYear")
+#         item_type: Type of items to search for. Use "-attachment" to exclude attachments.
+#         limit: Maximum number of results to return
+#         tag: List of tags conditions to filter by
+#         ctx: MCP context
+#
+#     Returns:
+#         Markdown-formatted search results
+#     """
+#     try:
+#         if not query.strip():
+#             return "Error: Search query cannot be empty"
+#
+#         # Validate qmode parameter
+#         if qmode not in ["titleCreatorYear", "everything"]:
+#             return f"Error: Invalid qmode '{qmode}'. Must be 'titleCreatorYear' or 'everything'"
+#
+#         tag_condition_str = ""
+#         if tag:
+#             tag_condition_str = f" with tags: '{', '.join(tag)}'"
+#         else :
+#             tag = []
+#
+#         ctx.info(f"Searching Zotero for '{query}'{tag_condition_str}")
+#         zot = get_zotero_client()
+#
+#         # Search using the query parameters
+#         zot.add_parameters(q=query, qmode=qmode, itemType=item_type, limit=limit, tag=tag)
+#         results = zot.items()
+#
+#         if not results:
+#             return f"No items found matching query: '{query}'{tag_condition_str}"
+#
+#         # Format results as markdown
+#         output = [f"# Search Results for '{query}'", f"{tag_condition_str}", ""]
+#
+#         for i, item in enumerate(results, 1):
+#             data = item.get("data", {})
+#             title = data.get("title", "Untitled")
+#             item_type = data.get("itemType", "unknown")
+#             date = data.get("date", "No date")
+#             key = item.get("key", "")
+#
+#             # Format creators
+#             creators = data.get("creators", [])
+#             creators_str = format_creators(creators)
+#
+#             # Build the formatted entry
+#             output.append(f"## {i}. {title}")
+#             output.append(f"**Type:** {item_type}")
+#             output.append(f"**Item Key:** {key}")
+#             output.append(f"**Date:** {date}")
+#             output.append(f"**Authors:** {creators_str}")
+#
+#             # Add abstract snippet if present
+#             if abstract := data.get("abstractNote"):
+#                 # Limit abstract length for search results
+#                 abstract_snippet = abstract[:200] + "..." if len(abstract) > 200 else abstract
+#                 output.append(f"**Abstract:** {abstract_snippet}")
+#
+#             # Add tags if present
+#             if tags := data.get("tags"):
+#                 tag_list = [f"`{tag['tag']}`" for tag in tags]
+#                 if tag_list:
+#                     output.append(f"**Tags:** {' '.join(tag_list)}")
+#
+#             output.append("")  # Empty line between items
+#
+#         return "\n".join(output)
+#
+#     except Exception as e:
+#         ctx.error(f"Error searching Zotero: {str(e)}")
+#         return f"Error searching Zotero: {str(e)}"
+#
+# ========== END DISABLED: zot_search_items ==========
 
 @mcp.tool(
     name="zot_search_by_tag",
@@ -3511,125 +3514,138 @@ def remove_from_collection(
 # )
 
 
-@mcp.tool(
-    name="zot_get_item",
-    description="""🔥 HIGH PRIORITY - 🔵 PRIMARY - Get bibliographic metadata for a Zotero item (title, authors, journal, abstract, DOI, etc.) plus list of child items (attachments, notes).
-
-⚠️ For paper CONTENT analysis, use zot_summarize instead (intelligent depth detection and cost optimization).
-⚠️ For raw full PDF text, use zot_summarize with force_mode='full' (expensive operation, 10k-100k tokens).
-
-Returns:
-- Bibliographic metadata (title, authors, year, journal, DOI)
-- Abstract (if available)
-- List of child items (attachments, notes)
-- Tags, collections
-
-~500-800 tokens, fast.
-
-Use for: Bibliographic information, citations, checking what attachments exist""",
-    annotations={
-        "readOnlyHint": True,
-        "title": "Get Item (Zotero)"
-    }
-)
-def get_item(
-    item_key: str,
-    include_children: bool = True,
-    include_abstract: bool = True,
-    format: str = "markdown",
-    *,
-    ctx: Context
-) -> str:
-    """
-    Get bibliographic metadata for a Zotero item.
-
-    Args:
-        item_key: Zotero item key/ID
-        include_children: Whether to include child items like attachments and notes (default: True)
-        include_abstract: Whether to include abstract in metadata (default: True)
-        format: Output format - "markdown" or "bibtex" (default: "markdown")
-        ctx: MCP context
-
-    Returns:
-        Comprehensive item metadata with child items list
-    """
-    try:
-        # Validate format parameter
-        if format not in ["markdown", "bibtex"]:
-            return f"Error: Invalid format '{format}'. Must be 'markdown' or 'bibtex'"
-
-        ctx.info(f"Fetching complete item data for {item_key}")
-        zot = get_zotero_client()
-
-        # Get the main item
-        item = get_item_with_fallback(zot, item_key)
-        if not item:
-            return f"No item found with key: {item_key}"
-
-        # For BibTeX format, just return BibTeX (no other sections)
-        if format == "bibtex":
-            return generate_bibtex(item)
-
-        # Build comprehensive markdown output
-        output_parts = []
-
-        # 1. Metadata section
-        metadata = format_item_metadata(item, include_abstract)
-        output_parts.append(metadata)
-
-        # 2. Children section (if requested)
-        if include_children:
-            try:
-                children = zot.children(item_key)
-                if children:
-                    output_parts.append("\n---\n\n## Attachments & Notes")
-
-                    # Group children by type
-                    attachments = [c for c in children if c.get("data", {}).get("itemType") == "attachment"]
-                    notes = [c for c in children if c.get("data", {}).get("itemType") == "note"]
-
-                    # Format attachments
-                    if attachments:
-                        output_parts.append("\n### Attachments")
-                        for i, att in enumerate(attachments, 1):
-                            data = att.get("data", {})
-                            title = data.get("title", "Untitled")
-                            key = att.get("key", "")
-                            content_type = data.get("contentType", "Unknown")
-                            filename = data.get("filename", "")
-
-                            output_parts.append(f"\n{i}. **{title}**")
-                            output_parts.append(f"   - Key: {key}")
-                            output_parts.append(f"   - Type: {content_type}")
-                            if filename:
-                                output_parts.append(f"   - Filename: {filename}")
-
-                    # Format notes
-                    if notes:
-                        output_parts.append("\n### Notes")
-                        for i, note in enumerate(notes, 1):
-                            data = note.get("data", {})
-                            key = note.get("key", "")
-                            note_text = data.get("note", "")
-
-                            # Clean up HTML in notes
-                            note_text = note_text.replace("<p>", "").replace("</p>", "\n\n")
-                            note_text = note_text.replace("<br/>", "\n").replace("<br>", "\n")
-
-                            # Limit note length for display
-                            if len(note_text) > 500:
-                                note_text = note_text[:500] + "...\n\n(Note truncated)"
-
-                            output_parts.append(f"\n{i}. Note (Key: {key})")
-                            output_parts.append(f"```\n{note_text}\n```")
-            except Exception as children_error:
-                ctx.info(f"Could not fetch children: {str(children_error)}")
-
-        return "\n".join(output_parts)
-
-    except Exception as e:
-        ctx.error(f"Error fetching item: {str(e)}")
-        return f"Error fetching item: {str(e)}"
+# ========== DISABLED: zot_get_item ==========
+# @mcp.tool(
+#     name="zot_get_item",
+#     description="""⚠️ DEPRECATED - Use `zot_summarize` instead (Quick Mode)
+#
+# 🔵 LEGACY TOOL - Get bibliographic metadata for a Zotero item (title, authors, journal, abstract, DOI, etc.) plus list of child items (attachments, notes).
+#
+# **Recommendation**: Use `zot_summarize` instead, which provides:
+# - Quick Mode: metadata + abstract (~500-800 tokens, same as this tool)
+# - Targeted Mode: specific questions about the paper (~2k-5k tokens)
+# - Comprehensive Mode: full understanding of all aspects (~8k-15k tokens)
+# - Full Mode: complete PDF text extraction (10k-100k tokens)
+# - Automatic depth detection based on your query
+# - Cost optimization (prevents unnecessary extraction)
+#
+# 💡 Only use this tool if:
+# ✓ Explicitly need raw Zotero metadata format
+# ✓ Need to check attachments/notes list specifically
+# ✓ Bypassing zot_summarize for testing
+#
+# ⚠️ Limitations:
+# ✗ No content analysis capabilities
+# ✗ No intelligent depth selection
+# ✗ Fixed format (no customization)
+# ✗ Doesn't integrate with smart tools
+#
+# Use for: Legacy support only - prefer zot_summarize for all paper understanding""",
+#     annotations={
+#         "readOnlyHint": True,
+#         "title": "Get Item (Zotero)"
+#     }
+# )
+# def get_item(
+#     item_key: str,
+#     include_children: bool = True,
+#     include_abstract: bool = True,
+#     format: str = "markdown",
+#     *,
+#     ctx: Context
+# ) -> str:
+#     """
+#     Get bibliographic metadata for a Zotero item.
+#
+#     Args:
+#         item_key: Zotero item key/ID
+#         include_children: Whether to include child items like attachments and notes (default: True)
+#         include_abstract: Whether to include abstract in metadata (default: True)
+#         format: Output format - "markdown" or "bibtex" (default: "markdown")
+#         ctx: MCP context
+#
+#     Returns:
+#         Comprehensive item metadata with child items list
+#     """
+#     try:
+#         # Validate format parameter
+#         if format not in ["markdown", "bibtex"]:
+#             return f"Error: Invalid format '{format}'. Must be 'markdown' or 'bibtex'"
+#
+#         ctx.info(f"Fetching complete item data for {item_key}")
+#         zot = get_zotero_client()
+#
+#         # Get the main item
+#         item = get_item_with_fallback(zot, item_key)
+#         if not item:
+#             return f"No item found with key: {item_key}"
+#
+#         # For BibTeX format, just return BibTeX (no other sections)
+#         if format == "bibtex":
+#             return generate_bibtex(item)
+#
+#         # Build comprehensive markdown output
+#         output_parts = []
+#
+#         # 1. Metadata section
+#         metadata = format_item_metadata(item, include_abstract)
+#         output_parts.append(metadata)
+#
+#         # 2. Children section (if requested)
+#         if include_children:
+#             try:
+#                 children = zot.children(item_key)
+#                 if children:
+#                     output_parts.append("\n---\n\n## Attachments & Notes")
+#
+#                     # Group children by type
+#                     attachments = [c for c in children if c.get("data", {}).get("itemType") == "attachment"]
+#                     notes = [c for c in children if c.get("data", {}).get("itemType") == "note"]
+#
+#                     # Format attachments
+#                     if attachments:
+#                         output_parts.append("\n### Attachments")
+#                         for i, att in enumerate(attachments, 1):
+#                             data = att.get("data", {})
+#                             title = data.get("title", "Untitled")
+#                             key = att.get("key", "")
+#                             content_type = data.get("contentType", "Unknown")
+#                             filename = data.get("filename", "")
+#
+#                             output_parts.append(f"\n{i}. **{title}**")
+#                             output_parts.append(f"   - Key: {key}")
+#                             output_parts.append(f"   - Type: {content_type}")
+#                             if filename:
+#                                 output_parts.append(f"   - Filename: {filename}")
+#
+#                     # Format notes
+#                     if notes:
+#                         output_parts.append("\n### Notes")
+#                         for i, note in enumerate(notes, 1):
+#                             data = note.get("data", {})
+#                             key = note.get("key", "")
+#                             note_text = data.get("note", "")
+#
+#                             # Clean up HTML in notes
+#                             note_text = note_text.replace("<p>", "").replace("</p>", "\n\n")
+#                             note_text = note_text.replace("<br/>", "\n").replace("<br>", "\n")
+#
+#                             # Limit note length for display
+#                             if len(note_text) > 500:
+#                                 note_text = note_text[:500] + "...\n\n(Note truncated)"
+#
+#                             output_parts.append(f"\n{i}. Note (Key: {key})")
+#                             output_parts.append(f"```\n{note_text}\n```")
+#             except Exception as children_error:
+#                 ctx.info(f"Could not fetch children: {str(children_error)}")
+#
+#         return "\n".join(output_parts)
+#
+#     except Exception as e:
+#         ctx.error(f"Error fetching item: {str(e)}")
+#         return f"Error fetching item: {str(e)}"
+#
+# ========== END DISABLED: zot_get_item ==========
 
 
 

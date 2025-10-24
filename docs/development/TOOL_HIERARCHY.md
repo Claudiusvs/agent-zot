@@ -263,20 +263,21 @@ User Query
 
 ## 📈 Migration Summary
 
-### Before (16 tools)
+### Before (18 tools)
 
 ```
-Search Tools (6):
+Search/Discovery Tools (8):
 - zot_semantic_search
 - zot_unified_search
 - zot_refine_search
 - zot_enhanced_semantic_search
 - zot_hybrid_vector_graph_search
 - zot_decompose_query (now integrated into zot_search as Phase 0)
+- zot_search_items (now integrated into zot_search as Metadata-enriched Mode)
+- zot_get_item (now integrated into zot_summarize as Quick Mode)
 
-Summarization Tools (3):
+Summarization Tools (2):
 - zot_ask_paper
-- zot_get_item
 - zot_get_item_fulltext
 
 Graph Tools (7):
@@ -305,14 +306,14 @@ Exploring Connections (1):
 
 ### Benefits
 
-- ✅ **94% reduction in tool count** (16 → 3 for core workflows)
-- ✅ **Complete query-based consolidation** (all search variants now in zot_search)
-- ✅ **Automatic intent detection** (no manual backend selection)
+- ✅ **83% reduction in tool count** (18 → 3 for core workflows)
+- ✅ **Complete query/retrieval consolidation** (all search and metadata retrieval in smart tools)
+- ✅ **Automatic intent detection** (no manual backend or mode selection)
 - ✅ **Automatic decomposition** (Phase 0 pre-processing for multi-concept queries)
 - ✅ **Smart mode selection** (optimal strategy for each query)
 - ✅ **Built-in quality optimization** (escalates when needed)
 - ✅ **Consistent interface** (same query → consistent routing)
-- ✅ **Reduced cognitive load** (LLM doesn't choose from 16+ options)
+- ✅ **Reduced cognitive load** (LLM doesn't choose from 18+ options)
 - ✅ **Cost optimization** (uses cheapest/fastest mode that works)
 
 ---
@@ -347,7 +348,7 @@ Current tool distribution (post-migration):
 - **Direct when needed** - Can still use specialized tools for specific tasks
 
 **Benefits**:
-- **Simpler** - 94% fewer tools for core workflows (16 → 3)
+- **Simpler** - 83% fewer tools for core workflows (18 → 3)
 - **Smarter** - Automatic intent detection, decomposition, and mode selection
 - **Faster** - Uses optimal backend combination for each query
 - **Better** - Quality assessment and automatic escalation
