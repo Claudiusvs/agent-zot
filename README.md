@@ -47,16 +47,17 @@ Agent-Zot transforms your Zotero research library into an intelligent, searchabl
 
 ### 🎯 **Advanced Search Capabilities**
 - **🆕 Smart Unified Search (`zot_search`)**: Single tool that automatically:
-  - Detects query intent (relationship/metadata/semantic)
-  - Selects optimal backend combination (Fast/Graph-enriched/Metadata-enriched/Comprehensive modes)
+  - Detects query intent (entity/relationship/metadata/semantic)
+  - Selects optimal backend combination (Fast/Entity-enriched/Graph-enriched/Metadata-enriched/Comprehensive modes)
   - Expands vague queries with domain-specific terms
   - Escalates to comprehensive search when quality is inadequate
   - Provides result provenance (shows which backends found each paper)
-- **Intelligent Backend Selection**:
+- **Intelligent Backend Selection (5 Modes)**:
   - Fast Mode (Qdrant only) for simple semantic queries (~2 seconds)
+  - Entity-enriched Mode (Qdrant chunks + Neo4j entities) for entity discovery (~4 seconds)
   - Graph-enriched Mode (Qdrant + Neo4j) for relationship queries (~4 seconds)
   - Metadata-enriched Mode (Qdrant + Zotero API) for author/year queries (~4 seconds)
-  - Comprehensive Mode (all 3 backends) automatic fallback (~6-8 seconds, sequential execution)
+  - Comprehensive Mode (all backends) automatic fallback (~6-8 seconds, sequential execution)
 - **Quality Assessment**: Real-time confidence scoring, coverage metrics, and adaptive recommendations
 - **Query Decomposition**: Handles complex multi-concept queries (AND/OR logic, comma-separated)
 
@@ -91,9 +92,15 @@ Agent-Zot transforms your Zotero research library into an intelligent, searchabl
 ## 🎉 Recent Updates (October 2025)
 
 ### Smart Unified Search Tool
-- **🆕 `zot_search`**: New intelligent search tool that consolidates `zot_semantic_search`, `zot_unified_search`, and `zot_refine_search`
-- **Intent Detection**: Automatically recognizes relationship, metadata, and semantic queries
-- **Smart Mode Selection**: Chooses optimal backend combination based on query type
+- **🆕 `zot_search`**: New intelligent search tool that consolidates `zot_semantic_search`, `zot_unified_search`, `zot_refine_search`, and `zot_enhanced_semantic_search`
+- **Intent Detection**: Automatically recognizes entity discovery, relationship, metadata, and semantic queries
+- **Smart Mode Selection**: Chooses optimal backend combination from 5 execution modes
+- **Five Execution Modes**:
+  - Fast Mode (Qdrant only, ~2s)
+  - Entity-enriched Mode (Qdrant chunks + Neo4j entities, ~4s) - 🆕 Entity discovery
+  - Graph-enriched Mode (Qdrant + Neo4j, ~4s)
+  - Metadata-enriched Mode (Qdrant + Zotero API, ~4s)
+  - Comprehensive Mode (all backends, ~6-8s)
 - **Query Expansion**: Refines vague queries with domain-specific terms
 - **Automatic Escalation**: Upgrades to comprehensive search when results are inadequate
 - **Provenance Tracking**: Shows which backends found each paper
