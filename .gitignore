@@ -37,3 +37,4 @@ config.json
 .vscode/
 .idea/
 .mcp.json.backup
+*.backup
