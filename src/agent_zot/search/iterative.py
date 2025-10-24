@@ -361,6 +361,7 @@ def iterative_search(
 
             # Use ORIGINAL query for fallback (expansions were too specific for semantic search)
             logger.info(f"Fallback: trying unified search with ORIGINAL query: '{query}'")
+
             unified_results = unified_search(
                 semantic_search_instance,
                 query,

@@ -593,14 +593,11 @@ def refine_search_tool(
         from agent_zot.search.iterative import iterative_search
         from pathlib import Path
 
-        # Determine config path
-        config_path = Path.home() / ".config" / "agent-zot" / "config.toml"
-        if not config_path.exists():
-            # Fallback to ~/.agent-zot/config.toml
-            config_path = Path.home() / ".agent-zot" / "config.toml"
+        # Determine config path (must match unified_search tool)
+        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
 
         # Create semantic search instance
-        search = create_semantic_search(config_path=str(config_path))
+        search = create_semantic_search(str(config_path))
 
         # Perform iterative search
         results = iterative_search(
@@ -756,14 +753,11 @@ def decompose_query_tool(query: str, limit: int = 10, *, ctx: Context) -> str:
         from agent_zot.search.decomposition import decomposed_search
         from pathlib import Path
 
-        # Determine config path
-        config_path = Path.home() / ".config" / "agent-zot" / "config.toml"
-        if not config_path.exists():
-            # Fallback to ~/.agent-zot/config.toml
-            config_path = Path.home() / ".agent-zot" / "config.toml"
+        # Determine config path (must match unified_search tool)
+        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
 
         # Create semantic search instance
-        search = create_semantic_search(config_path=str(config_path))
+        search = create_semantic_search(str(config_path))
 
         # Perform decomposed search
         results = decomposed_search(
