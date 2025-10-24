@@ -56,9 +56,10 @@ def detect_query_intent(query: str) -> Tuple[str, float]:
             return ("relationship", 0.9)
 
     # Metadata intent patterns (medium priority)
+    # Name pattern handles: Smith, McDonald, DePrince, O'Brien, van der Waals
     metadata_patterns = [
-        r'\bby\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)?\b',  # "by Smith" or "by John Smith"
-        r'\b[A-Z][a-z]+\'s\s+(work|papers|research)\b',  # "Smith's work"
+        r'\bby\s+[A-Z][a-zA-Z\'\-]+(\s+[A-Z][a-zA-Z\'\-]+)*\b',  # "by [Author Name]"
+        r'\b[A-Z][a-zA-Z\'\-]+\'s\s+(work|papers|research|study|studies)\b',  # "[Author]'s work"
         r'\bpublished in\s+\d{4}\b',  # "published in 2023"
         r'\bpublished in\s+[A-Z]',  # "published in Journal"
         r'\bin\s+\d{4}\b',  # "in 2023"
