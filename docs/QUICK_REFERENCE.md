@@ -86,14 +86,22 @@ python populate_neo4j_from_qdrant.py
 
 ## MCP Tool Usage
 
-### Primary Discovery
-- `zot_semantic_search(query, limit)` - Semantic search via Qdrant/BGE-M3
-- `zot_ask_paper(item_key, question, top_k)` - Read paper content
+### 🆕 Primary Search (Recommended)
+- **`zot_search(query, limit, force_mode)`** - **Smart unified search (RECOMMENDED DEFAULT)**
+  - Automatic intent detection (relationship/metadata/semantic)
+  - Smart backend selection (Fast/Graph-enriched/Metadata-enriched/Comprehensive modes)
+  - Query expansion for vague queries
+  - Automatic escalation when quality is inadequate
+  - Result provenance tracking
 
-### Advanced Search
-- `zot_unified_search(query, limit)` - Multi-backend RRF fusion (Qdrant + Neo4j + API)
-- `zot_refine_search(query, limit, max_iterations)` - Iterative query refinement
-- `zot_decompose_query(query, limit)` - Multi-concept query decomposition
+### Content Analysis
+- `zot_ask_paper(item_key, question, top_k)` - Read and analyze paper content
+
+### Advanced Search (Legacy - use `zot_search` instead)
+- ~~`zot_semantic_search(query, limit)`~~ - DEPRECATED: Use `zot_search` (Fast Mode)
+- ~~`zot_unified_search(query, limit)`~~ - DEPRECATED: Use `zot_search` (Comprehensive Mode)
+- ~~`zot_refine_search(query, limit, max_iterations)`~~ - DEPRECATED: Use `zot_search` (has built-in refinement)
+- `zot_decompose_query(query, limit)` - Multi-concept query decomposition (still useful for complex AND/OR queries)
 
 ### Relationship Analysis
 - `zot_graph_search(query, entity_types, limit)` - Neo4j graph search

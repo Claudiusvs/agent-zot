@@ -2,6 +2,16 @@
 
 This guide demonstrates common research workflows using Agent-Zot's advanced query capabilities.
 
+## 🆕 Recommended: Use `zot_search` for Most Queries
+
+**As of October 2025**, the new `zot_search` tool is the **recommended default** for literature discovery. It automatically:
+- Detects query intent (relationship/metadata/semantic)
+- Selects optimal backend combination
+- Expands vague queries
+- Escalates when quality is inadequate
+
+**Use specialized tools** (listed below) for specific graph analysis tasks like citation networks, concept evolution, and collaboration analysis.
+
 ## Table of Contents
 
 1. [Literature Review Workflows](#literature-review-workflows)

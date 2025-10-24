@@ -46,9 +46,18 @@ Agent-Zot transforms your Zotero research library into an intelligent, searchabl
 - **Memory Efficient**: INT8 quantization saves 75% RAM
 
 ### 🎯 **Advanced Search Capabilities**
+- **🆕 Smart Unified Search (`zot_search`)**: Single tool that automatically:
+  - Detects query intent (relationship/metadata/semantic)
+  - Selects optimal backend combination (Fast/Graph-enriched/Metadata-enriched/Comprehensive modes)
+  - Expands vague queries with domain-specific terms
+  - Escalates to comprehensive search when quality is inadequate
+  - Provides result provenance (shows which backends found each paper)
+- **Intelligent Backend Selection**:
+  - Fast Mode (Qdrant only) for simple semantic queries (~2 seconds)
+  - Graph-enriched Mode (Qdrant + Neo4j) for relationship queries (~4 seconds)
+  - Metadata-enriched Mode (Qdrant + Zotero API) for author/year queries (~4 seconds)
+  - Comprehensive Mode (all 3 backends) automatic fallback (~6-8 seconds, sequential execution)
 - **Quality Assessment**: Real-time confidence scoring, coverage metrics, and adaptive recommendations
-- **Unified Multi-Backend**: RRF fusion merges results from Qdrant, Neo4j, and Zotero API
-- **Iterative Refinement**: Automatic query reformulation improves low-quality searches
 - **Query Decomposition**: Handles complex multi-concept queries (AND/OR logic, comma-separated)
 
 ### 📄 **Intelligent Document Processing**
@@ -69,9 +78,37 @@ Agent-Zot transforms your Zotero research library into an intelligent, searchabl
 ### 🎛️ **Production-Grade Infrastructure**
 - **Vector Database**: Qdrant with HNSW indexing (sub-100ms searches)
 - **Graph Database**: Neo4j for relationship exploration
+- **Resource Management**:
+  - Sequential backend execution prevents memory exhaustion (Comprehensive Mode)
+  - Automatic orphaned process cleanup on startup
+  - Safe concurrent sessions (multiple Claude Code instances)
 - **Config-Driven**: Sensible defaults, fully customizable
 - **Incremental Updates**: Smart deduplication for restart-safe indexing
 - **Comprehensive Logging**: Track progress, debug issues easily
+
+---
+
+## 🎉 Recent Updates (October 2025)
+
+### Smart Unified Search Tool
+- **🆕 `zot_search`**: New intelligent search tool that consolidates `zot_semantic_search`, `zot_unified_search`, and `zot_refine_search`
+- **Intent Detection**: Automatically recognizes relationship, metadata, and semantic queries
+- **Smart Mode Selection**: Chooses optimal backend combination based on query type
+- **Query Expansion**: Refines vague queries with domain-specific terms
+- **Automatic Escalation**: Upgrades to comprehensive search when results are inadequate
+- **Provenance Tracking**: Shows which backends found each paper
+
+### Resource Management & Stability
+- **Sequential Execution**: Comprehensive Mode (3 backends) runs sequentially instead of parallel to prevent memory exhaustion and system freezes
+- **Parallel Optimization**: Fast/Graph-enriched/Metadata-enriched modes (1-2 backends) still run in parallel for speed
+- **Orphaned Process Cleanup**: Automatic cleanup of abandoned processes on server startup
+- **Concurrent Sessions**: Safe to run multiple Claude Code sessions simultaneously
+
+### Bug Fixes
+- **Neo4j Availability**: Fixed detection using correct `get_graph_statistics()` method
+- **Collaboration Patterns**: Fixed regex to match "collaborated", "collaboration", "collaborating" (not just "collaborat")
+- **Complex Author Names**: Support for names with apostrophes (O'Brien), hyphens (Smith-Jones), internal capitals (DePrince, McDonald)
+- **Provenance Deduplication**: Fixed duplicate backend names in search results
 
 ---
 
