@@ -142,8 +142,8 @@ def detect_graph_intent(query: str) -> Tuple[str, float, Dict[str, Any]]:
             if len(years) >= 2:
                 extracted_params["start_year"] = int(years[0])
                 extracted_params["end_year"] = int(years[-1])
-            # Try to extract concept
-            concept_match = re.search(r'(?:of|on|about|for)\s+([a-zA-Z\s]{3,30}?)\s+(?:from|since|over|between)', query)
+            # Try to extract concept - stop before evolution verbs
+            concept_match = re.search(r'(?:of|on|about|for)\s+([a-zA-Z\s]{3,30}?)\s+(?:evolv|chang|develop|progress|emerg|from|since|over|between)', query)
             if concept_match:
                 extracted_params["concept"] = concept_match.group(1).strip()
             return ("temporal", 0.85, extracted_params)
