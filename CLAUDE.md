@@ -791,17 +791,26 @@ All legacy tools now include deprecation notice in description:
 
 **All three intelligent consolidation tools now implemented:**
 
-1. ✅ **`zot_search`** - Finding papers (Oct 24)
-   - 3 legacy tools → 1 intelligent tool
-   - 4 execution modes (Fast, Graph-enriched, Metadata-enriched, Comprehensive)
+1. ✅ **`zot_search`** - Finding papers (Oct 24-25)
+   - **7 legacy tools** → 1 intelligent tool (88% reduction)
+   - 5 execution modes (Fast, Entity-enriched, Graph-enriched, Metadata-enriched, Comprehensive)
+   - Phase 0 automatic decomposition (multi-concept queries)
+   - **Consolidates:** zot_semantic_search, zot_unified_search, zot_refine_search, zot_enhanced_semantic_search, zot_decompose_query, zot_search_items, zot_get_item (metadata retrieval)
 
 2. ✅ **`zot_summarize`** - Understanding papers (Oct 24)
-   - 3 legacy tools → 1 intelligent tool
+   - **3 legacy tools** → 1 intelligent tool (67% reduction)
    - 4 execution modes (Quick, Targeted, Comprehensive, Full)
+   - **Consolidates:** zot_ask_paper, zot_get_item (content retrieval), zot_get_item_fulltext
 
 3. ✅ **`zot_explore_graph`** - Exploring connections (Oct 24)
-   - 7 legacy tools → 1 intelligent tool
-   - 7 execution modes + Comprehensive
+   - **8 legacy tools** → 1 intelligent tool (88% reduction)
+   - 8 execution modes (7 strategies + Comprehensive)
+   - **Consolidates:** zot_graph_search, zot_find_related_papers, zot_find_citation_chain, zot_find_collaborator_network, zot_explore_concept_network, zot_track_topic_evolution, zot_analyze_venues, zot_find_seminal_papers
+
+**Overall Consolidation Achievement:**
+- **18 legacy tools** → **3 intelligent tools** (**83% reduction**)
+- Complete query/retrieval consolidation - ALL search and metadata operations in smart tools
+- Single entry point for each major workflow (find → understand → explore)
 
 **User Experience Improvements:**
 - Single tool for each major workflow (find → understand → explore)
@@ -810,12 +819,14 @@ All legacy tools now include deprecation notice in description:
 - Consistent return structures across all tools
 - Cost optimization (prevents over-fetching)
 - Quality assessment and smart escalation
+- Automatic multi-concept query decomposition
 
 **Legacy Tool Strategy:**
-- Marked as DEPRECATED/ADVANCED in tool descriptions
+- 18 tools marked as DEPRECATED/ADVANCED in tool descriptions
 - Still available for manual control when needed
 - Recommendation to use smart tools instead
 - Documentation updated across all files
+- Tool Coordination Guide updated with intelligent tool workflow
 
 ### Commits
 
@@ -823,6 +834,252 @@ All legacy tools now include deprecation notice in description:
 - **`1b3dcdf`** - Fix Neo4j client return value handling in all graph mode functions
 - **`477a85b`** - Fix year extraction regex in temporal mode detection
 - **`9dc590c`** - Fix concept extraction to exclude evolution verbs
+
+---
+
+## Final Tool Consolidation: Phase 0 Decomposition & Complete Query/Retrieval Integration (Completed 2025-10-25)
+
+### Overview
+Achieved complete tool consolidation by integrating query decomposition as Phase 0 pre-processing in `zot_search` and disabling final redundant tools (`zot_decompose_query`, `zot_search_items`, `zot_get_item`). This completes the vision of **18 legacy tools → 3 intelligent tools (83% reduction)**.
+
+### Query Decomposition Integration (Phase 0)
+
+**Problem:** Multi-concept queries like "fMRI studies of working memory AND aging" required users to manually call `zot_decompose_query` as a separate step.
+
+**Solution:** Integrated decomposition as automatic Phase 0 pre-processing in `smart_search()`.
+
+**Implementation:** `src/agent_zot/search/unified_smart.py:488-544`
+
+```python
+# Phase 0: Query Decomposition (if multi-concept)
+logger.info("Phase 0: Checking if query should be decomposed")
+
+sub_queries = decompose_query(query)
+
+if len(sub_queries) > 1:
+    logger.info(f"Query decomposed into {len(sub_queries)} sub-queries")
+
+    # Execute sub-queries recursively (each gets full smart_search treatment)
+    results_by_subquery = {}
+    with ThreadPoolExecutor(max_workers=min(len(sub_queries), 5)) as executor:
+        futures = {}
+        for sq in sub_queries:
+            subquery_text = sq["query"]
+            future = executor.submit(
+                smart_search,  # Recursive call - each sub-query gets intent detection, etc.
+                semantic_search_instance,
+                subquery_text,
+                limit * 2,
+                force_mode
+            )
+            futures[future] = subquery_text
+
+        # Collect results
+        for future in as_completed(futures):
+            subquery_text = futures[future]
+            result = future.result()
+            results_by_subquery[subquery_text] = result.get("results", [])
+
+    # Merge with weighted scoring
+    merged_results = merge_decomposed_results(
+        results_by_subquery,
+        sub_queries,
+        limit
+    )
+
+    return {
+        "query": query,
+        "decomposed": True,
+        "sub_queries": sub_queries,
+        "results": merged_results,
+        "total_found": len(merged_results),
+        "mode": "Decomposed Multi-Concept Search"
+    }
+
+# If not decomposed, continue with normal single-query flow
+```
+
+**Key Features:**
+- **Automatic detection** - Uses 5 decomposition patterns (AND/OR, conjunctions, prepositions, commas, noun phrases)
+- **Recursive smart_search** - Each sub-query gets full intent detection, backend selection, escalation
+- **Parallel execution** - ThreadPoolExecutor with max 5 workers
+- **Weighted merging** - Importance scoring (1.0 for required, 0.7 for optional, 0.4-0.6 for supporting)
+- **Early return** - Returns immediately if decomposed, prevents double processing
+
+**Benefits:**
+- Users no longer need to manually identify multi-concept queries
+- Each sub-query benefits from all 5 execution modes
+- Consistent with smart tool philosophy (automatic intent detection)
+
+### Tool Disablement: zot_decompose_query
+
+**Disabled:** `src/agent_zot/core/server.py:1068-1227` (157 lines commented)
+
+**Rationale:** Redundant with Phase 0 in `zot_search`
+- Same decomposition logic
+- Same weighted merging
+- But zot_search adds: intent detection, backend selection, quality assessment, escalation
+
+**Deprecation notice:**
+```python
+# @mcp.tool(
+#     name="zot_decompose_query",
+#     description="⚠️ DEPRECATED - Use `zot_search` instead (automatic multi-concept decomposition)
+#
+# **Recommendation**: Use `zot_search` instead, which provides:
+# - Automatic decomposition detection (AND/OR/multi-concept patterns)
+# - Same query decomposition logic as Phase 0 pre-processing
+# - Recursive smart_search for each sub-query (benefits from all 5 modes)
+# - Weighted result merging with importance scoring
+# - Integrated with intent detection, backend selection, and escalation
+```
+
+### Final Tool Consolidation: Complete Query/Retrieval Integration
+
+**Critical User Feedback (2025-10-25):**
+
+User challenged: "isn't Get Item as well as Search Items already included in the logic of Smart Search and/or Smart Summarize? Thus aren't these then redundant with those smart tools? And shouldn't they then also be disabled and deprecated?"
+
+**Analysis confirmed redundancy:**
+
+1. **`zot_search_items`** (Zotero API keyword search) → Redundant with `zot_search` Metadata-enriched Mode
+   - `zot_search` automatically detects metadata queries ("papers by [Author]")
+   - Metadata-enriched Mode combines Qdrant semantic + Zotero API exact matching
+   - Query expansion for better author name matching
+   - Quality assessment and escalation
+
+2. **`zot_get_item`** (bibliographic metadata) → Redundant with `zot_summarize` Quick Mode
+   - `zot_summarize` automatically detects overview queries ("What is this paper about?")
+   - Quick Mode returns metadata + abstract (~500-800 tokens, same as zot_get_item)
+   - Automatic depth detection for when more detail needed
+
+### Tool Disablement: zot_search_items
+
+**Disabled:** `src/agent_zot/core/server.py:2964-3061` (98 lines commented)
+
+**Rationale:** Redundant with `zot_search` Metadata-enriched Mode
+- Same Zotero API backend
+- But zot_search adds: semantic search, query expansion, quality assessment, escalation
+
+**Deprecation notice:**
+```python
+# @mcp.tool(
+#     name="zot_search_items",
+#     description="⚠️ DEPRECATED - Use `zot_search` instead (Metadata-enriched Mode)
+#
+# **Recommendation**: Use `zot_search` instead, which provides:
+# - Automatic metadata intent detection ("papers by [Author]", "published in [Year]")
+# - Metadata-enriched Mode (Qdrant + Zotero API)
+# - Semantic search combined with exact metadata matching
+# - Query expansion for better author name matching
+# - Integrated with all 5 execution modes and escalation
+```
+
+### Tool Disablement: zot_get_item
+
+**Disabled:** `src/agent_zot/core/server.py:3517-3648` (133 lines commented)
+
+**Rationale:** Redundant with `zot_summarize` Quick Mode
+- Same metadata retrieval
+- But zot_summarize adds: automatic depth detection, content analysis capability
+
+**Deprecation notice:**
+```python
+# @mcp.tool(
+#     name="zot_get_item",
+#     description="⚠️ DEPRECATED - Use `zot_summarize` instead (Quick Mode)
+#
+# **Recommendation**: Use `zot_summarize` instead, which provides:
+# - Quick Mode: metadata + abstract (~500-800 tokens, same as this tool)
+# - Targeted Mode: specific questions about the paper (~2k-5k tokens)
+# - Comprehensive Mode: full understanding of all aspects (~8k-15k tokens)
+# - Full Mode: complete PDF text extraction (10k-100k tokens)
+# - Automatic depth detection based on your query
+```
+
+### Documentation Updates
+
+**Files Updated:**
+1. **`src/agent_zot/search/unified_smart.py`**
+   - Added Phase 0 decomposition (lines 488-544)
+   - Updated docstring to include zot_decompose_query in replacements
+
+2. **`src/agent_zot/core/server.py`**
+   - Disabled 3 tools (388 lines commented total)
+   - Updated Tool Coordination Guide:
+     - Removed "Multi-Concept Boolean Queries" section
+     - Updated Example 3 to show automatic decomposition
+     - Updated Anti-Patterns section (simplified to 2 patterns)
+     - Updated zot_search "This tool replaces" section (now 7 tools)
+     - Updated zot_summarize "This tool replaces" section (now 3 tools)
+
+3. **`README.md`**
+   - Added zot_decompose_query, zot_search_items, zot_get_item to consolidated tools list
+   - Updated zot_search description to mention Phase 0 decomposition
+   - Updated zot_summarize description to mention all content/metadata retrieval
+
+4. **`docs/development/TOOL_HIERARCHY.md`**
+   - Updated migration summary: 18 → 3 tools (83% reduction)
+   - Updated benefits section (added "Complete query/retrieval consolidation", "Automatic decomposition")
+   - Updated decision tree to mention multi-concept decomposition
+
+5. **`docs/QUICK_REFERENCE.md`**
+   - Moved 3 tools to deprecated list with appropriate mode recommendations
+   - Updated Fallback Tools section: "None - All query/retrieval operations consolidated into 3 smart tools"
+
+### Final Consolidation Achievement
+
+**Complete Query/Retrieval Consolidation:**
+- ALL search operations → `zot_search` (5 modes including decomposition)
+- ALL metadata retrieval → `zot_search` (Metadata-enriched Mode) or `zot_summarize` (Quick Mode)
+- ALL content retrieval → `zot_summarize` (4 depth modes)
+- ALL graph exploration → `zot_explore_graph` (8 execution modes)
+
+**18 Legacy Tools → 3 Intelligent Tools (83% Reduction):**
+
+**Consolidated into zot_search (7 tools):**
+1. zot_semantic_search → Fast Mode
+2. zot_unified_search → Comprehensive Mode
+3. zot_refine_search → Built-in refinement + escalation
+4. zot_enhanced_semantic_search → Entity-enriched Mode
+5. zot_decompose_query → Phase 0 automatic decomposition
+6. zot_search_items → Metadata-enriched Mode
+7. zot_get_item (metadata only) → Metadata-enriched Mode
+
+**Consolidated into zot_summarize (3 tools):**
+1. zot_ask_paper → Targeted Mode
+2. zot_get_item (content) → Quick Mode
+3. zot_get_item_fulltext → Full Mode
+
+**Consolidated into zot_explore_graph (8 tools):**
+1. zot_graph_search → Automatic mode selection
+2. zot_find_related_papers → Related Papers Mode
+3. zot_find_citation_chain → Citation Chain Mode
+4. zot_find_collaborator_network → Collaboration Mode
+5. zot_explore_concept_network → Concept Network Mode
+6. zot_track_topic_evolution → Temporal Mode
+7. zot_analyze_venues → Venue Analysis Mode
+8. zot_find_seminal_papers → Influence Mode
+
+### User Experience Impact
+
+**Before (18 tools):**
+- Users had to choose between semantic_search, unified_search, refine_search, decompose_query
+- Had to manually identify multi-concept queries
+- Had to manually choose between get_item (metadata) vs ask_paper (content) vs get_item_fulltext (full text)
+- Had to manually select graph traversal strategy
+
+**After (3 tools):**
+- `zot_search` - Single entry point, automatic mode selection including decomposition
+- `zot_summarize` - Single entry point, automatic depth selection
+- `zot_explore_graph` - Single entry point, automatic strategy selection
+- No manual decision-making required
+- All complexity handled automatically
+
+### Commits
+
+- **`d281cc5`** (2025-10-25) - Integrate query decomposition as Phase 0, disable zot_decompose_query
+- **`5ec0b00`** (2025-10-25) - Disable zot_search_items and zot_get_item, achieve complete consolidation
 
 ---
 
