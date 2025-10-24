@@ -23,6 +23,7 @@ def detect_query_intent(query: str) -> Tuple[str, float]:
     Detect the primary intent of a search query.
 
     Analyzes query patterns to determine whether the user is asking about:
+    - Entity discovery (which/what entities appear in passages)
     - Relationships (citations, collaborations, networks)
     - Metadata (specific authors, journals, years)
     - Semantic content (concepts, topics, findings)
@@ -32,13 +33,28 @@ def detect_query_intent(query: str) -> Tuple[str, float]:
 
     Returns:
         Tuple of (intent_type, confidence) where intent_type is one of:
+        - "entity": Query asking which/what entities appear in relevant passages
         - "relationship": Query about connections, networks, citations
         - "metadata": Query about specific papers, authors, journals
         - "semantic": Query about content, concepts, topics (default)
     """
     query_lower = query.lower()
 
-    # Relationship intent patterns (highest priority)
+    # Entity intent patterns (highest priority - very specific)
+    # Matches "which/what [entity_type] in/appears/discussed/used in [topic]"
+    entity_patterns = [
+        r'\b(which|what)\s+(concepts?|methods?|theories|techniques?|approaches?|models?)\s+(appear|discussed|used|employed|applied|mentioned)\s+in\b',
+        r'\b(which|what)\s+(concepts?|methods?|theories|techniques?|approaches?|models?)\s+(in|about)\s+(papers?|research|literature|studies)\b',
+        r'\bwhich\s+(concepts?|methods?|theories|techniques?|approaches?|models?)\b',
+        r'\bwhat\s+(concepts?|methods?|theories|techniques?|approaches?|models?)\s+(are|appear)\b',
+    ]
+
+    for pattern in entity_patterns:
+        if re.search(pattern, query_lower):
+            logger.info(f"Detected entity intent: '{query}' (pattern: {pattern})")
+            return ("entity", 0.95)
+
+    # Relationship intent patterns (high priority)
     relationship_patterns = [
         r'\bcollaborat\w*\b',  # collaborate, collaborated, collaboration, collaborating, etc.
         r'\bco-author\b',  # co-author (hyphenated)
@@ -120,12 +136,20 @@ def get_backend_weights(intent: str) -> Dict[str, float]:
     Get RRF weighting for backends based on query intent.
 
     Args:
-        intent: Query intent type ("relationship", "metadata", "semantic")
+        intent: Query intent type ("entity", "relationship", "metadata", "semantic")
 
     Returns:
         Dict with weights for each backend
     """
-    if intent == "relationship":
+    if intent == "entity":
+        # Boost entity search for entity discovery queries
+        return {
+            "semantic": 0.4,
+            "graph": 0.3,
+            "metadata": 0.2,
+            "entity": 1.0
+        }
+    elif intent == "relationship":
         # Boost graph search for relationship queries
         return {
             "semantic": 0.6,
@@ -273,7 +297,7 @@ def run_parallel_backends(
     Args:
         semantic_search_instance: ZoteroSemanticSearch instance
         query: Search query
-        backends: List of backend names to run ("semantic", "graph", "metadata")
+        backends: List of backend names to run ("semantic", "graph", "metadata", "entity")
         limit: Result limit per backend
 
     Returns:
@@ -284,7 +308,7 @@ def run_parallel_backends(
     results_by_backend = {}
     errors_by_backend = {}
 
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    with ThreadPoolExecutor(max_workers=4) as executor:
         futures = {}
 
         # Submit backend tasks
@@ -312,6 +336,15 @@ def run_parallel_backends(
                 ),
             )] = "metadata"
 
+        if "entity" in backends:
+            futures[executor.submit(
+                semantic_search_instance.enhanced_semantic_search,
+                query,
+                limit,
+                None,  # filters
+                True   # include_chunk_entities
+            )] = "entity"
+
         # Collect results
         for future in as_completed(futures):
             backend = futures[future]
@@ -325,6 +358,8 @@ def run_parallel_backends(
                     results_by_backend[backend] = convert_graph_entities_to_papers(result.get("results", []))
                 elif backend == "metadata":
                     results_by_backend[backend] = convert_metadata_search_to_papers(result)
+                elif backend == "entity":
+                    results_by_backend[backend] = result.get("results", [])
 
                 logger.info(f"{backend} search completed: {len(results_by_backend[backend])} results")
             except Exception as e:
@@ -344,12 +379,12 @@ def run_sequential_backends(
     Run multiple search backends sequentially (one at a time).
 
     Used for Comprehensive Mode to prevent resource exhaustion from
-    running 3 heavy backends (Qdrant + Neo4j + Zotero) in parallel.
+    running 3+ heavy backends (Qdrant + Neo4j + Zotero) in parallel.
 
     Args:
         semantic_search_instance: ZoteroSemanticSearch instance
         query: Search query
-        backends: List of backend names to run ("semantic", "graph", "metadata")
+        backends: List of backend names to run ("semantic", "graph", "metadata", "entity")
         limit: Result limit per backend
 
     Returns:
@@ -382,6 +417,16 @@ def run_sequential_backends(
                 )
                 results_by_backend[backend] = convert_metadata_search_to_papers(result)
 
+            elif backend == "entity":
+                logger.info("Running entity-enriched search...")
+                result = semantic_search_instance.enhanced_semantic_search(
+                    query,
+                    limit,
+                    None,  # filters
+                    True   # include_chunk_entities
+                )
+                results_by_backend[backend] = result.get("results", [])
+
             logger.info(f"{backend} search completed: {len(results_by_backend[backend])} results")
 
         except Exception as e:
@@ -405,15 +450,17 @@ def smart_search(
     - zot_semantic_search (Fast Mode)
     - zot_unified_search (Comprehensive Mode)
     - zot_refine_search (with refinement + escalation)
+    - zot_enhanced_semantic_search (Entity-enriched Mode)
 
     Execution flow:
-    1. Detect query intent (relationship/metadata/semantic)
+    1. Detect query intent (entity/relationship/metadata/semantic)
     2. Apply query refinement if query is vague
     3. Select backends based on intent:
        - Fast Mode: Qdrant only (semantic queries)
+       - Entity-enriched Mode: Qdrant chunks + Neo4j entities (entity discovery)
        - Graph-enriched Mode: Qdrant + Neo4j (relationship queries)
        - Metadata-enriched Mode: Qdrant + Zotero API (metadata queries)
-       - Comprehensive Mode: All three (fallback only)
+       - Comprehensive Mode: All backends (fallback only)
     4. Execute search with appropriate backends
     5. Assess result quality
     6. Escalate to comprehensive if needed
@@ -462,6 +509,9 @@ def smart_search(
     elif force_mode == "comprehensive":
         backends = ["semantic", "graph", "metadata"] if neo4j_available else ["semantic", "metadata"]
         mode_description = "Comprehensive Mode (forced)"
+    elif intent == "entity" and neo4j_available:
+        backends = ["entity"]
+        mode_description = "Entity-enriched Mode"
     elif intent == "relationship" and neo4j_available:
         backends = ["semantic", "graph"]
         mode_description = "Graph-enriched Mode"

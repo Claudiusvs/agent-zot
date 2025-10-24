@@ -210,8 +210,8 @@ mcp = FastMCP(
 
 ### 1. `zot_search` - Finding Papers
 Smart intent-driven search with automatic:
-- Intent detection (relationship/metadata/semantic)
-- Backend selection (Fast/Graph-enriched/Metadata-enriched/Comprehensive)
+- Intent detection (entity/relationship/metadata/semantic)
+- Backend selection (Fast/Entity-enriched/Graph-enriched/Metadata-enriched/Comprehensive)
 - Query expansion for vague queries
 - Quality-based escalation
 - Result provenance tracking
@@ -254,6 +254,14 @@ Choose tools based on what the query asks for, not hierarchical ordering.
 
 **For deep exploration:** `zot_explore_graph` with specific modes
 
+### Entity Discovery Queries
+**Examples:** "which methods appear in papers about attention?", "what concepts are discussed in [field]?"
+
+**Primary Tool:** `zot_search` (Entity-enriched Mode - Qdrant chunks + Neo4j entities)
+- Automatic chunk-level entity discovery
+- ~4 seconds, moderate cost
+- Implements Figure 3 pattern from Qdrant GraphRAG
+
 ### Understanding Paper Content
 **Examples:** "Summarize this paper", "What methodology did they use?"
 
@@ -280,15 +288,11 @@ Choose tools based on what the query asks for, not hierarchical ordering.
 **When:** Query has multiple concepts with AND/OR operators
 **Example:** "fMRI studies of working memory AND aging"
 
-### Entity-Enriched Semantic Search
+### Entity-Enriched Semantic Search (Manual Control)
 **Tool:** `zot_enhanced_semantic_search`
-**When:** Need chunk-level entity discovery (requires Neo4j populated)
-**Example:** "Which methods appear in papers about attention?"
-
-### Hybrid Vector+Graph Search
-**Tool:** `zot_hybrid_vector_graph_search`
-**When:** Need both semantic similarity AND graph relationships
-**Example:** "Papers similar to X with shared authors"
+**When:** Need manual control over entity-enriched search (automatically used by `zot_search` Entity-enriched Mode)
+**Note:** `zot_search` now automatically triggers this when detecting entity discovery queries
+**Example:** "Which methods appear in papers about attention?" (use `zot_search` instead)
 
 ### Metadata/Collections/Tags
 **Tools:** Zotero API tools
@@ -385,18 +389,23 @@ Choose tools based on what the query asks for, not hierarchical ordering.
 **Use this as your primary search tool for almost all queries.**
 
 Smart intent-driven search that automatically:
-- Detects query intent (relationship/metadata/semantic)
+- Detects query intent (entity/relationship/metadata/semantic)
 - Expands vague queries with domain-specific terms
 - Selects optimal backend combination
 - Escalates to comprehensive search if results are inadequate
 - Provides result provenance (which backends found each paper)
 
-## Four Execution Modes (automatic selection):
+## Five Execution Modes (automatic selection):
 
 **Fast Mode** (Qdrant only)
 - For simple semantic queries about concepts/topics
 - ~2 seconds, minimal cost
 - Example: "papers about [concept/topic]"
+
+**Entity-enriched Mode** (Qdrant chunks + Neo4j entities)
+- For entity discovery queries
+- ~4 seconds, moderate cost
+- Example: "which methods appear in papers about attention?"
 
 **Graph-enriched Mode** (Qdrant + Neo4j)
 - For relationship/network queries
@@ -408,7 +417,7 @@ Smart intent-driven search that automatically:
 - ~4 seconds, moderate cost
 - Example: "papers by [author] published in [journal/year]"
 
-**Comprehensive Mode** (All three backends)
+**Comprehensive Mode** (All backends)
 - Automatic fallback when quality is inadequate
 - ~5 seconds, higher cost (Zotero API)
 - Example: Escalation from low-quality Fast Mode results
@@ -1934,7 +1943,7 @@ def find_similar_papers(
 
 @mcp.tool(
     name="zot_enhanced_semantic_search",
-    description="🔥 HIGH PRIORITY - 🔵 ADVANCED - Implements Figure 3 pattern from Qdrant GraphRAG documentation.\n\nHow it works (4 steps):\n1. Semantic search in Qdrant finds relevant chunks\n2. Extracts chunk IDs (e.g., 'ABCD1234_chunk_5')\n3. Queries Neo4j for entities in those EXACT chunks  \n4. Returns papers + matched text + entities from that text\n\n💡 Most precise search available. Use when you need to know:\n- 'Which concepts appear in papers about [topic]?'\n- 'What methods are used for [purpose] in the literature?'\n- 'Which theories are discussed alongside [concept]?'\n\nExample queries:\n✓ \"which methods appear in papers about [topic]?\"\n✓ \"what theories are discussed in [field] research?\"\n✓ \"which techniques are used for [purpose]?\"\n\nNOT for:\n✗ \"just find papers about [topic]\" → use zot_search (faster)\n✗ \"who worked with [author]\" → use zot_explore_graph (Collaboration Mode)\n\n⚠️ Requires Neo4j population. Graph is 98% populated with ~138k relationships across 23k+ entities.\n\nUse for: Entity-aware semantic search, discovering what concepts/methods/theories appear in relevant passages",
+    description="📊 MEDIUM PRIORITY - 🔵 ADVANCED - Manual control for entity-enriched search.\n\n⚠️ **RECOMMENDATION**: Use `zot_search` instead - it automatically triggers this tool when detecting entity discovery queries.\n\n`zot_search` Entity-enriched Mode provides:\n- Automatic intent detection (\"which methods/concepts appear in...\")\n- Same Figure 3 pattern from Qdrant GraphRAG\n- Integrated with smart mode selection and escalation\n- Result provenance and quality assessment\n\nThis tool is available for manual control when you need to:\n- Bypass automatic intent detection\n- Fine-tune entity search parameters\n- Test/debug entity enrichment directly\n\nHow it works (4 steps):\n1. Semantic search in Qdrant finds relevant chunks\n2. Extracts chunk IDs (e.g., 'ABCD1234_chunk_5')\n3. Queries Neo4j for entities in those EXACT chunks  \n4. Returns papers + matched text + entities from that text\n\nExample queries (use `zot_search` instead):\n✓ \"which methods appear in papers about [topic]?\"\n✓ \"what theories are discussed in [field] research?\"\n✓ \"which techniques are used for [purpose]?\"\n\n⚠️ Requires Neo4j population. Graph is 98% populated with ~138k relationships across 23k+ entities.\n\nUse for: Manual control over entity-enriched search when `zot_search` automatic detection is insufficient",
     annotations={
         "readOnlyHint": True,
         "title": "Enhanced Semantic Search (Vector)"
