@@ -214,7 +214,7 @@ def run_targeted_mode(
 
         for i, result in enumerate(results["results"], 1):
             score = result.get("score", 0)
-            content = result.get("content", "")
+            content = result.get("matched_text", result.get("content", ""))
             chunk_id = result.get("chunk_id", "unknown")
 
             output_parts.append(f"\n## Chunk {i} (relevance: {score:.2f})")
@@ -311,7 +311,7 @@ def run_comprehensive_mode(
 
             # Add top chunks for this aspect
             for i, result in enumerate(results["results"][:3], 1):  # Limit to top 3 per aspect
-                content = result.get("content", "")
+                content = result.get("matched_text", result.get("content", ""))
                 score = result.get("score", 0)
 
                 if i == 1:  # Only add header for first chunk
