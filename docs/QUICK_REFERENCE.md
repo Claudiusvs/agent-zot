@@ -94,8 +94,17 @@ python populate_neo4j_from_qdrant.py
   - Automatic escalation when quality is inadequate
   - Result provenance tracking
 
-### Content Analysis
-- `zot_ask_paper(item_key, question, top_k)` - Read and analyze paper content
+### 🆕 Primary Summarization (Recommended)
+- **`zot_summarize(item_key, query, force_mode, top_k)`** - **Smart unified summarization (RECOMMENDED DEFAULT)**
+  - Automatic depth detection (quick/targeted/comprehensive/full)
+  - Cost optimization (prevents unnecessary full-text extraction)
+  - Multi-aspect orchestration (4 key questions for comprehensive mode)
+  - Four modes: Quick (~500-800 tokens), Targeted (~2k-5k tokens), Comprehensive (~8k-15k tokens), Full (10k-100k tokens)
+
+### Content Analysis (Advanced)
+- `zot_ask_paper(item_key, question, top_k)` - Direct chunk retrieval (manual control)
+- `zot_get_item(item_key)` - Metadata only
+- `zot_get_item_fulltext(item_key)` - Complete text (expensive - use zot_summarize instead)
 
 ### Advanced Search (Legacy - use `zot_search` instead)
 - ~~`zot_semantic_search(query, limit)`~~ - DEPRECATED: Use `zot_search` (Fast Mode)

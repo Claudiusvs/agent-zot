@@ -98,6 +98,14 @@ Agent-Zot transforms your Zotero research library into an intelligent, searchabl
 - **Automatic Escalation**: Upgrades to comprehensive search when results are inadequate
 - **Provenance Tracking**: Shows which backends found each paper
 
+### Smart Unified Summarization Tool
+- **🆕 `zot_summarize`**: New intelligent summarization tool that consolidates `zot_ask_paper`, `zot_get_item`, and `zot_get_item_fulltext`
+- **Intent Detection**: Automatically recognizes desired depth (quick/targeted/comprehensive/full)
+- **Cost Optimization**: Selects most efficient strategy (prevents unnecessary full-text extraction)
+- **Multi-Aspect Orchestration**: Comprehensive mode automatically asks 4 key questions (research question, methodology, findings, conclusions)
+- **Four Execution Modes**: Quick (~500-800 tokens), Targeted (~2k-5k tokens), Comprehensive (~8k-15k tokens), Full (10k-100k tokens)
+- **Smart Escalation**: Recommends mode upgrade when needed
+
 ### Resource Management & Stability
 - **Sequential Execution**: Comprehensive Mode (3 backends) runs sequentially instead of parallel to prevent memory exhaustion and system freezes
 - **Parallel Optimization**: Fast/Graph-enriched/Metadata-enriched modes (1-2 backends) still run in parallel for speed
