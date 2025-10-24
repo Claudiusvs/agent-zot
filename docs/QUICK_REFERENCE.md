@@ -88,8 +88,8 @@ python populate_neo4j_from_qdrant.py
 
 ### 🆕 Primary Search (Recommended)
 - **`zot_search(query, limit, force_mode)`** - **Smart unified search (RECOMMENDED DEFAULT)**
-  - Automatic intent detection (relationship/metadata/semantic)
-  - Smart backend selection (Fast/Graph-enriched/Metadata-enriched/Comprehensive modes)
+  - Automatic intent detection (entity/relationship/metadata/semantic)
+  - Smart backend selection (Fast/Entity-enriched/Graph-enriched/Metadata-enriched/Comprehensive - 5 modes)
   - Query expansion for vague queries
   - Automatic escalation when quality is inadequate
   - Result provenance tracking
@@ -117,6 +117,8 @@ python populate_neo4j_from_qdrant.py
 - ~~`zot_semantic_search(query, limit)`~~ - DEPRECATED: Use `zot_search` (Fast Mode)
 - ~~`zot_unified_search(query, limit)`~~ - DEPRECATED: Use `zot_search` (Comprehensive Mode)
 - ~~`zot_refine_search(query, limit, max_iterations)`~~ - DEPRECATED: Use `zot_search` (has built-in refinement)
+- ~~`zot_enhanced_semantic_search(query, limit, include_chunk_entities, filters)`~~ - DEPRECATED: Use `zot_search` (Entity-enriched Mode)
+- ~~`zot_hybrid_vector_graph_search(query, limit, vector_weight)`~~ - DEPRECATED: Use `zot_search` (Graph-enriched Mode)
 - `zot_decompose_query(query, limit)` - Multi-concept query decomposition (still useful for complex AND/OR queries)
 
 ### Advanced Graph Analysis (Legacy - use `zot_explore_graph` instead)
