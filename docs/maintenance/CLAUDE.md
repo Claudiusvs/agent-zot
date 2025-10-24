@@ -4,6 +4,268 @@ This file contains important context and pending tasks for Claude to execute whe
 
 ---
 
+## Unified Smart Search Implementation (Completed 2025-10-24)
+
+### Overview
+Implemented intelligent unified search tool (`zot_search`) that consolidates three legacy tools (`zot_semantic_search`, `zot_unified_search`, `zot_refine_search`) with automatic intent detection, smart backend selection, and resource-safe execution.
+
+### New Module: `src/agent_zot/search/unified_smart.py`
+
+**Purpose:** Single intelligent search interface that automatically:
+1. Detects query intent (relationship/metadata/semantic)
+2. Expands vague queries with domain-specific terms
+3. Selects optimal backend combination
+4. Escalates to comprehensive search when quality is inadequate
+5. Tracks result provenance (which backends found each paper)
+
+**Architecture (6 Phases):**
+
+```python
+def smart_search(semantic_search_instance, query: str, limit: int = 10, force_mode: Optional[str] = None):
+    """
+    Phase 1: Intent Detection
+    - Analyzes query patterns (relationship/metadata/semantic)
+    - Returns: (intent_type, confidence)
+
+    Phase 2: Query Refinement (if needed)
+    - Expands vague queries using expand_query_smart()
+    - Adds domain-specific terms
+
+    Phase 3: Backend Selection & Execution
+    - Fast Mode: semantic only (1 backend)
+    - Graph-enriched: semantic + graph (2 backends, parallel)
+    - Metadata-enriched: semantic + metadata (2 backends, parallel)
+    - Comprehensive: all 3 backends (sequential execution)
+
+    Phase 4: Result Merging
+    - Single backend: direct results
+    - Multiple backends: Reciprocal Rank Fusion (RRF)
+    - Intent-based weighting
+
+    Phase 5: Quality Assessment
+    - Confidence scoring (high/medium/low)
+    - Coverage calculation (percentage of limit)
+    - Needs escalation determination
+
+    Phase 6: Escalation (if needed)
+    - Adds remaining backends
+    - Re-merges all results
+    - Returns comprehensive results
+    """
+```
+
+**Four Execution Modes:**
+
+| Mode | Backends | Execution | Use Case | Timing |
+|------|----------|-----------|----------|--------|
+| **Fast** | Qdrant only | Parallel (N/A) | Simple semantic queries | ~2 sec |
+| **Graph-enriched** | Qdrant + Neo4j | Parallel | Relationship queries | ~4 sec |
+| **Metadata-enriched** | Qdrant + Zotero API | Parallel | Author/year queries | ~4 sec |
+| **Comprehensive** | All 3 backends | **Sequential** | Quality fallback | ~6-8 sec |
+
+### Intent Detection Patterns
+
+**File:** `src/agent_zot/search/unified_smart.py:27-77`
+
+**Relationship Intent (confidence: 0.90):**
+```python
+relationship_patterns = [
+    r'\bcollaborat\w*\b',  # collaborated, collaboration, collaborating
+    r'\bco-author\b',      # co-author (hyphenated)
+    r'\bco author\b',      # co author (space)
+    r'\b(citation|cited|citing|cites)\b',
+    r'\b(network|connection|related to)\b',
+    r'\b(who worked with|influenced by|builds on)\b',
+    r'\b(relationship between|links between)\b',
+    r'\bwho\s+(has\s+)?(studied|researched|worked|wrote|published)\b',
+    r'\b(which|what)\s+(authors|researchers|scientists|scholars)\b',
+]
+```
+
+**Metadata Intent (confidence: 0.80):**
+```python
+metadata_patterns = [
+    r'\bby\s+[A-Z][a-zA-Z\'\-]+(\s+[A-Z][a-zA-Z\'\-]+)*\b',  # "by Author Name"
+    # Supports: Smith, McDonald, DePrince, O'Brien, van der Waals
+    r'\b[A-Z][a-zA-Z\'\-]+\'s\s+(work|papers|research)\b',  # "Author's work"
+    r'\bpublished in\s+\d{4}\b',  # "published in 2023"
+    r'\bin\s+\d{4}\b',            # "in 2023"
+]
+```
+
+**Semantic Intent (confidence: 0.70):**
+- Default when no patterns match
+- Pure content-based queries
+
+### Resource Management Improvements
+
+#### Sequential Backend Execution
+
+**Problem:** Comprehensive Mode ran 3 heavy backends in parallel:
+- Qdrant (BGE-M3 model ~1-2GB)
+- Neo4j (Ollama LLM + BGE-M3 embeddings)
+- Zotero API (network I/O)
+
+Result: Memory exhaustion → laptop freeze when combined with multiple processes
+
+**Solution:** `run_sequential_backends()` function (lines 337-392)
+```python
+def run_sequential_backends(semantic_search_instance, query, backends, limit):
+    """Run backends one at a time to prevent resource exhaustion."""
+    for backend in backends:
+        if backend == "semantic":
+            result = semantic_search_instance.search(query, limit * 2)
+        elif backend == "graph":
+            result = semantic_search_instance.graph_search(query, None, limit)
+        elif backend == "metadata":
+            result = semantic_search_instance.zotero_client.items(...)
+```
+
+**Smart Execution Strategy:**
+- 1-2 backends → Parallel (fast, safe)
+- 3+ backends → Sequential (slower, prevents freeze)
+
+**File:** `src/agent_zot/search/unified_smart.py:486-501`
+
+#### Orphaned Process Cleanup
+
+**Problem:** Multiple agent-zot processes accumulate after MCP reconnects, each consuming ~1-2GB RAM for ML models.
+
+**Solution:** `cleanup_orphaned_processes()` function in `src/agent_zot/core/server.py:86-150`
+
+**How it works:**
+1. Runs on server startup (called in `server_lifespan()`)
+2. Finds all `agent-zot serve` processes
+3. Checks if process has active stdio using `lsof`
+4. Kills processes without active stdin/stdout (orphaned)
+5. Keeps processes with active stdio (legitimate concurrent sessions)
+
+**Limitations:**
+- Unix sockets stay open after disconnect on macOS
+- `lsof` can't always distinguish orphaned processes
+- Manual cleanup may still be needed occasionally
+
+**Workaround:** Users can manually kill old processes:
+```bash
+ps aux | grep "agent-zot serve" | grep -v grep
+kill <old_PID>
+```
+
+### Bug Fixes
+
+#### Fix #1: Neo4j Availability Detection
+**File:** `src/agent_zot/search/unified_smart.py:90-113`
+
+**Problem:** Used non-existent `execute_query()` method
+```python
+# ❌ WRONG
+result = neo4j_client.execute_query("MATCH (n) RETURN count(n)")
+```
+
+**Solution:** Use correct `get_graph_statistics()` method
+```python
+# ✅ CORRECT
+stats = neo4j_client.get_graph_statistics()
+total_nodes = stats.get("papers", 0) + stats.get("total_entities", 0)
+```
+
+**Commit:** `b2d5e32` (2025-10-24)
+
+#### Fix #2: Collaboration Pattern Matching
+**File:** `src/agent_zot/search/unified_smart.py:43-45`
+
+**Problem:** Pattern with trailing `\b` only matched "collaborat" as complete word
+```python
+# ❌ WRONG - doesn't match "collaborated", "collaboration"
+r'\b(collaborat|co-author|co author)\b'
+```
+
+**Solution:** Use `\w*` to match all inflections
+```python
+# ✅ CORRECT - matches collaborated, collaboration, collaborating
+r'\bcollaborat\w*\b',  # all forms
+r'\bco-author\b',      # hyphenated
+r'\bco author\b',      # with space
+```
+
+**Commit:** `981ec88` (2025-10-24)
+
+#### Fix #3: Complex Author Names
+**File:** `src/agent_zot/search/unified_smart.py:60-62`
+
+**Problem:** Pattern `[A-Z][a-z]+` only matched simple names like "Smith"
+
+**Solution:** Support complex names with apostrophes, hyphens, internal capitals
+```python
+# Handles: Smith, McDonald, DePrince, O'Brien, van der Waals
+r'\bby\s+[A-Z][a-zA-Z\'\-]+(\s+[A-Z][a-zA-Z\'\-]+)*\b',
+```
+
+**Commit:** `ea8030c` (2025-10-24)
+
+#### Fix #4: Provenance Deduplication
+**File:** `src/agent_zot/search/unified_smart.py:230-261`
+
+**Problem:** Backend names duplicated in results: `["semantic", "semantic", "semantic"]`
+
+**Solution:** Deduplicate while preserving order
+```python
+# Deduplicate backends while preserving order
+result["found_in"] = list(dict.fromkeys(backends))
+```
+
+**Commit:** `d09354d` (2025-10-24)
+
+### MCP Tool Integration
+
+**File:** `src/agent_zot/core/server.py:270-478`
+
+**New Tool:** `zot_search`
+- Priority: "🔥 HIGHEST PRIORITY - 🟢 RECOMMENDED DEFAULT"
+- Parameters: `query`, `limit`, `force_mode` (optional)
+- Returns: Structured results with intent, mode, backends used, quality metrics, provenance
+
+**Legacy Tools Deprecated:**
+- `zot_semantic_search` → Use `zot_search` (Fast Mode)
+- `zot_unified_search` → Use `zot_search` (Comprehensive Mode)
+- `zot_refine_search` → Use `zot_search` (has built-in refinement)
+
+**Agent Instructions Updated:**
+- File: `~/.claude/agents/literature-discovery-specialist.md`
+- Recommends `zot_search` as primary tool
+- Documents 4 execution modes
+- Provides query-driven selection guidance
+
+### Testing & Verification
+
+**Test Results (2025-10-24):**
+
+| Test | Query | Intent | Confidence | Mode | Result |
+|------|-------|--------|------------|------|--------|
+| 1 | "who collaborated with Lanius" | relationship | 0.90 | Graph-enriched | ✅ |
+| 2 | "papers published in 2020 on trauma" | metadata | 0.80 | Metadata-enriched | ✅ |
+| 3 | "papers by O'Brien on memory" | metadata | 0.80 | Metadata-enriched | ✅ |
+| 4 | "papers citing dissociation research" | relationship | 0.90 | Graph-enriched | ✅ |
+| 5 | "dissociation" | semantic | 0.70 | Fast Mode | ✅ |
+| 6 | "memory consolidation" (force=comprehensive) | semantic | 0.70 | Comprehensive | ✅ No freeze |
+
+**Performance:**
+- Fast Mode: ~2 seconds
+- Graph-enriched/Metadata-enriched: ~4 seconds
+- Comprehensive Mode: ~6-8 seconds (sequential)
+- **No system freezes** ✅
+
+**Commits:**
+- `204efcc` - Initial unified search implementation
+- `d09354d` - Fix intent detection and provenance
+- `ea8030c` - Fix complex author names
+- `b2d5e32` - Fix Neo4j availability check
+- `981ec88` - Fix collaboration pattern
+- `5636bfa` - Add sequential backends + orphaned process cleanup
+- `506a41c` - Update documentation
+
+---
+
 ## Backup System & Data Quality Fixes (Completed 2025-10-24)
 
 ### Overview
