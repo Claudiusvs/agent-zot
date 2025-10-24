@@ -364,7 +364,7 @@ Choose tools based on what the query asks for, not hierarchical ordering.
 ## Backend Capabilities
 
 **Qdrant (Vector DB):** Semantic search over 2,411+ papers, full-text chunked, BGE-M3 embeddings
-**Neo4j (Knowledge Graph):** Citation networks, author collaborations, concept relationships (0.5% populated currently)
+**Neo4j (Knowledge Graph):** Citation networks, author collaborations, concept relationships (98% populated - ~138,000 relationships)
 **Zotero API:** Metadata, collections, tags, notes, annotations, export
 
 ---
@@ -1403,104 +1403,106 @@ def _extract_item_key_from_input(value: str) -> Optional[str]:
     return None
 
 
-@mcp.tool(
-    name="zot_hybrid_vector_graph_search",
-    description="🔥 HIGH PRIORITY - 🔵 ADVANCED - Combines semantic search with relationship discovery with manual weight control. Use when you want both content relevance AND network connections with custom weighting. Requires Neo4j.\n\n💡 For most queries, use zot_search (Graph-enriched Mode) instead - it handles this automatically.\n💡 Use this tool when you need manual control over vector_weight (0.0-1.0) parameter.\n⚠️ For content-only queries, use zot_search (faster).\n\nUse for: Combined semantic+relationship queries when you need manual weight tuning (advanced users)"
-,
-    annotations={
-        "readOnlyHint": True,
-        "title": "Hybrid Vector+Graph Search (Vector/Graph)"
-    }
-)
-def hybrid_vector_graph_search(
-    query: str,
-    limit: int = 10,
-    vector_weight: float = 0.7,
-    *,
-    ctx: Context
-) -> str:
-    """
-    Perform hybrid search combining Qdrant vector search with Neo4j graph relationships.
-
-    Args:
-        query: Search query
-        limit: Maximum number of results (default: 10)
-        vector_weight: Weight for vector results 0-1, graph weight is (1 - vector_weight) (default: 0.7)
-        ctx: MCP context
-
-    Returns:
-        Markdown-formatted hybrid search results with combined scoring
-    """
-    try:
-        from agent_zot.search.semantic import create_semantic_search
-        from pathlib import Path
-
-        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
-        search = create_semantic_search(str(config_path))
-
-        # Perform hybrid search
-        results = search.hybrid_vector_graph_search(
-            query=query,
-            limit=limit,
-            vector_weight=vector_weight
-        )
-
-        if results.get("error"):
-            return f"Hybrid search error: {results['error']}"
-
-        search_type = results.get("search_type", "unknown")
-        papers = results.get("results", [])
-        graph_enabled = results.get("graph_enabled", False)
-
-        if not papers:
-            return f"No results found for query: '{query}'"
-
-        # Format results
-        output = [f"# Hybrid Search Results for '{query}'", ""]
-        output.append(f"**Search Type:** {search_type}")
-        output.append(f"**Graph Enhancement:** {'Enabled' if graph_enabled else 'Disabled'}")
-        output.append(f"Found {len(papers)} papers:")
-        output.append("")
-
-        for i, paper in enumerate(papers, 1):
-            zotero_item = paper.get("zotero_item", {})
-            item_data = zotero_item.get("data", {})
-
-            title = item_data.get("title", "Untitled")
-            item_key = paper.get("item_key", "N/A")
-            vector_score = paper.get("similarity_score", 0)
-            combined_score = paper.get("combined_score", vector_score)
-            related_count = paper.get("related_papers_count", 0)
-            sample_related = paper.get("sample_related", [])
-
-            output.append(f"## {i}. {title}")
-            output.append(f"**Item Key:** {item_key}")
-            output.append(f"**Combined Score:** {combined_score:.3f}")
-            output.append(f"**Vector Score:** {vector_score:.3f}")
-
-            if graph_enabled:
-                output.append(f"**Related Papers (Graph):** {related_count}")
-                if sample_related:
-                    output.append(f"**Sample Connections:** {', '.join(sample_related)}")
-
-            # Add authors and year
-            creators = item_data.get("creators", [])
-            if creators:
-                authors = [f"{c.get('lastName', '')}" for c in creators[:3]]
-                output.append(f"**Authors:** {', '.join(authors)}")
-
-            year = item_data.get("date", "")[:4] if item_data.get("date") else "N/A"
-            output.append(f"**Year:** {year}")
-
-            output.append("")
-
-        return "\n".join(output)
-
-    except Exception as e:
-        ctx.error(f"Error in hybrid search: {str(e)}")
-        return f"Error in hybrid search: {str(e)}"
-
-
+# ========== DISABLED: zot_hybrid_vector_graph_search ==========
+# @mcp.tool(
+#     name="zot_hybrid_vector_graph_search",
+#     description="🔥 HIGH PRIORITY - 🔵 ADVANCED - Combines semantic search with relationship discovery with manual weight control. Use when you want both content relevance AND network connections with custom weighting. Requires Neo4j.\n\n💡 For most queries, use zot_search (Graph-enriched Mode) instead - it handles this automatically.\n💡 Use this tool when you need manual control over vector_weight (0.0-1.0) parameter.\n⚠️ For content-only queries, use zot_search (faster).\n\nUse for: Combined semantic+relationship queries when you need manual weight tuning (advanced users)"
+# ,
+#     annotations={
+#         "readOnlyHint": True,
+#         "title": "Hybrid Vector+Graph Search (Vector/Graph)"
+#     }
+# )
+# def hybrid_vector_graph_search(
+#     query: str,
+#     limit: int = 10,
+#     vector_weight: float = 0.7,
+#     *,
+#     ctx: Context
+# ) -> str:
+#     """
+#     Perform hybrid search combining Qdrant vector search with Neo4j graph relationships.
+# 
+#     Args:
+#         query: Search query
+#         limit: Maximum number of results (default: 10)
+#         vector_weight: Weight for vector results 0-1, graph weight is (1 - vector_weight) (default: 0.7)
+#         ctx: MCP context
+# 
+#     Returns:
+#         Markdown-formatted hybrid search results with combined scoring
+#     """
+#     try:
+#         from agent_zot.search.semantic import create_semantic_search
+#         from pathlib import Path
+# 
+#         config_path = Path.home() / ".config" / "agent-zot" / "config.json"
+#         search = create_semantic_search(str(config_path))
+# 
+#         # Perform hybrid search
+#         results = search.hybrid_vector_graph_search(
+#             query=query,
+#             limit=limit,
+#             vector_weight=vector_weight
+#         )
+# 
+#         if results.get("error"):
+#             return f"Hybrid search error: {results['error']}"
+# 
+#         search_type = results.get("search_type", "unknown")
+#         papers = results.get("results", [])
+#         graph_enabled = results.get("graph_enabled", False)
+# 
+#         if not papers:
+#             return f"No results found for query: '{query}'"
+# 
+#         # Format results
+#         output = [f"# Hybrid Search Results for '{query}'", ""]
+#         output.append(f"**Search Type:** {search_type}")
+#         output.append(f"**Graph Enhancement:** {'Enabled' if graph_enabled else 'Disabled'}")
+#         output.append(f"Found {len(papers)} papers:")
+#         output.append("")
+# 
+#         for i, paper in enumerate(papers, 1):
+#             zotero_item = paper.get("zotero_item", {})
+#             item_data = zotero_item.get("data", {})
+# 
+#             title = item_data.get("title", "Untitled")
+#             item_key = paper.get("item_key", "N/A")
+#             vector_score = paper.get("similarity_score", 0)
+#             combined_score = paper.get("combined_score", vector_score)
+#             related_count = paper.get("related_papers_count", 0)
+#             sample_related = paper.get("sample_related", [])
+# 
+#             output.append(f"## {i}. {title}")
+#             output.append(f"**Item Key:** {item_key}")
+#             output.append(f"**Combined Score:** {combined_score:.3f}")
+#             output.append(f"**Vector Score:** {vector_score:.3f}")
+# 
+#             if graph_enabled:
+#                 output.append(f"**Related Papers (Graph):** {related_count}")
+#                 if sample_related:
+#                     output.append(f"**Sample Connections:** {', '.join(sample_related)}")
+# 
+#             # Add authors and year
+#             creators = item_data.get("creators", [])
+#             if creators:
+#                 authors = [f"{c.get('lastName', '')}" for c in creators[:3]]
+#                 output.append(f"**Authors:** {', '.join(authors)}")
+# 
+#             year = item_data.get("date", "")[:4] if item_data.get("date") else "N/A"
+#             output.append(f"**Year:** {year}")
+# 
+#             output.append("")
+# 
+#         return "\n".join(output)
+# 
+#     except Exception as e:
+#         ctx.error(f"Error in hybrid search: {str(e)}")
+#         return f"Error in hybrid search: {str(e)}"
+# 
+# 
+# ========== END DISABLED: zot_hybrid_vector_graph_search ==========
 def deduplicate_chunks(chunks: List[Dict]) -> List[Dict]:
     """
     Remove duplicate chunks based on normalized text content.
@@ -1932,7 +1934,7 @@ def find_similar_papers(
 
 @mcp.tool(
     name="zot_enhanced_semantic_search",
-    description="🔥 HIGH PRIORITY - 🔵 ADVANCED - Implements Figure 3 pattern from Qdrant GraphRAG documentation.\n\nHow it works (4 steps):\n1. Semantic search in Qdrant finds relevant chunks\n2. Extracts chunk IDs (e.g., 'ABCD1234_chunk_5')\n3. Queries Neo4j for entities in those EXACT chunks\n4. Returns papers + matched text + entities from that text\n\n💡 Most precise search available. Use when you need to know:\n- 'Which concepts appear in papers about [topic]?'\n- 'What methods are used for [purpose] in the literature?'\n- 'Which theories are discussed alongside [concept]?'\n\nExample queries:\n✓ \"which methods appear in papers about [topic]?\"\n✓ \"what theories are discussed in [field] research?\"\n✓ \"which techniques are used for [purpose]?\"\n\nNOT for:\n✗ \"just find papers about [topic]\" → use zot_search (faster)\n✗ \"who worked with [author]\" → use zot_explore_graph (Collaboration Mode)\n\n⚠️ Requires Neo4j population. If unpopulated (currently 0.5%), uses standard semantic search instead.\n\nUse for: Entity-aware semantic search, discovering what concepts/methods/theories appear in relevant passages",
+    description="🔥 HIGH PRIORITY - 🔵 ADVANCED - Implements Figure 3 pattern from Qdrant GraphRAG documentation.\n\nHow it works (4 steps):\n1. Semantic search in Qdrant finds relevant chunks\n2. Extracts chunk IDs (e.g., 'ABCD1234_chunk_5')\n3. Queries Neo4j for entities in those EXACT chunks  \n4. Returns papers + matched text + entities from that text\n\n💡 Most precise search available. Use when you need to know:\n- 'Which concepts appear in papers about [topic]?'\n- 'What methods are used for [purpose] in the literature?'\n- 'Which theories are discussed alongside [concept]?'\n\nExample queries:\n✓ \"which methods appear in papers about [topic]?\"\n✓ \"what theories are discussed in [field] research?\"\n✓ \"which techniques are used for [purpose]?\"\n\nNOT for:\n✗ \"just find papers about [topic]\" → use zot_search (faster)\n✗ \"who worked with [author]\" → use zot_explore_graph (Collaboration Mode)\n\n⚠️ Requires Neo4j population. Graph is 98% populated with ~138k relationships across 23k+ entities.\n\nUse for: Entity-aware semantic search, discovering what concepts/methods/theories appear in relevant passages",
     annotations={
         "readOnlyHint": True,
         "title": "Enhanced Semantic Search (Vector)"
