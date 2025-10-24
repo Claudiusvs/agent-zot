@@ -288,12 +288,6 @@ Choose tools based on what the query asks for, not hierarchical ordering.
 **When:** Query has multiple concepts with AND/OR operators
 **Example:** "fMRI studies of working memory AND aging"
 
-### Entity-Enriched Semantic Search (Manual Control)
-**Tool:** `zot_enhanced_semantic_search`
-**When:** Need manual control over entity-enriched search (automatically used by `zot_search` Entity-enriched Mode)
-**Note:** `zot_search` now automatically triggers this when detecting entity discovery queries
-**Example:** "Which methods appear in papers about attention?" (use `zot_search` instead)
-
 ### Metadata/Collections/Tags
 **Tools:** Zotero API tools
 - `zot_search_items` - Keyword-based metadata search
@@ -1941,151 +1935,155 @@ def find_similar_papers(
         return f"Error finding similar papers: {str(e)}"
 
 
-@mcp.tool(
-    name="zot_enhanced_semantic_search",
-    description="📊 MEDIUM PRIORITY - 🔵 ADVANCED - Manual control for entity-enriched search.\n\n⚠️ **RECOMMENDATION**: Use `zot_search` instead - it automatically triggers this tool when detecting entity discovery queries.\n\n`zot_search` Entity-enriched Mode provides:\n- Automatic intent detection (\"which methods/concepts appear in...\")\n- Same Figure 3 pattern from Qdrant GraphRAG\n- Integrated with smart mode selection and escalation\n- Result provenance and quality assessment\n\nThis tool is available for manual control when you need to:\n- Bypass automatic intent detection\n- Fine-tune entity search parameters\n- Test/debug entity enrichment directly\n\nHow it works (4 steps):\n1. Semantic search in Qdrant finds relevant chunks\n2. Extracts chunk IDs (e.g., 'ABCD1234_chunk_5')\n3. Queries Neo4j for entities in those EXACT chunks  \n4. Returns papers + matched text + entities from that text\n\nExample queries (use `zot_search` instead):\n✓ \"which methods appear in papers about [topic]?\"\n✓ \"what theories are discussed in [field] research?\"\n✓ \"which techniques are used for [purpose]?\"\n\n⚠️ Requires Neo4j population. Graph is 98% populated with ~138k relationships across 23k+ entities.\n\nUse for: Manual control over entity-enriched search when `zot_search` automatic detection is insufficient",
-    annotations={
-        "readOnlyHint": True,
-        "title": "Enhanced Semantic Search (Vector)"
-    }
-)
-def enhanced_semantic_search(
-    query: str,
-    limit: int = 10,
-    include_chunk_entities: bool = True,
-    filters: Optional[str] = None,
-    *,
-    ctx: Context
-) -> str:
-    """
-    Enhanced semantic search with chunk-level entity enrichment (Figure 3 pattern).
-
-    This implements the full Qdrant GraphRAG architecture:
-    1. Semantic search in Qdrant for relevant chunks
-    2. Extract Qdrant point IDs from results
-    3. Use those IDs to query Neo4j for chunk-specific entities
-    4. Enrich each result with entities, types, and relationships
-
-    Args:
-        query: Search query text
-        limit: Maximum number of results (default: 10)
-        include_chunk_entities: Whether to enrich with Neo4j entities (default: True)
-        filters: Optional metadata filters as JSON string
-        ctx: MCP context
-
-    Returns:
-        Markdown-formatted results with chunk-level entities and entity types
-    """
-    try:
-        from agent_zot.search.semantic import create_semantic_search
-        from pathlib import Path
-
-        if not query.strip():
-            return "Error: Search query cannot be empty"
-
-        ctx.info(f"Performing enhanced semantic search for: {query}")
-
-        # Parse filters if provided
-        parsed_filters = None
-        if filters:
-            if isinstance(filters, str):
-                try:
-                    parsed_filters = json.loads(filters)
-                except json.JSONDecodeError as e:
-                    return f"Error: Invalid JSON in filters parameter: {str(e)}"
-            else:
-                parsed_filters = filters
-
-        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
-        search = create_semantic_search(str(config_path))
-
-        # Call the enhanced_semantic_search method
-        results = search.enhanced_semantic_search(
-            query=query,
-            limit=limit,
-            include_chunk_entities=include_chunk_entities,
-            filters=parsed_filters
-        )
-
-        if results.get("error"):
-            return f"Error during enhanced search: {results['error']}"
-
-        if not results.get("results"):
-            return f"No results found for query: '{query}'\n\nTry:\n- Broadening your search terms\n- Running zot_update_search_database if you haven't indexed recently\n- Checking if Neo4j is populated (run with include_chunk_entities=False to test Qdrant only)"
-
-        # Format results
-        output = [f"# Enhanced Semantic Search Results"]
-        output.append(f"\n**Query:** {query}")
-        output.append(f"**Search Type:** {results.get('search_type', 'enhanced_semantic')}")
-        output.append(f"**Neo4j Enabled:** {results.get('neo4j_enabled', False)}")
-        output.append(f"**Results:** {results['total_found']}\n")
-
-        for i, result in enumerate(results["results"], 1):
-            # Extract result data
-            item_key = result.get("item_key", "unknown")
-            similarity = result.get("similarity_score", 0)
-            matched_text = result.get("matched_text", "")[:300]  # First 300 chars
-
-            # Get paper title from zotero_item
-            title = "Unknown"
-            if result.get("zotero_item"):
-                zotero_data = result["zotero_item"].get("data", {})
-                title = zotero_data.get("title", "Unknown")
-
-            output.append(f"## {i}. {title}")
-            output.append(f"**Item Key:** {item_key}")
-            output.append(f"**Relevance:** {similarity:.3f}")
-
-            # Show chunk entities if available
-            if result.get("chunk_entities"):
-                entities = result["chunk_entities"]
-                entity_types = result.get("entity_types", [])
-                sample_entities = result.get("sample_entities", [])
-
-                output.append(f"\n**Entities Found in This Chunk:** {len(entities)}")
-                if entity_types:
-                    output.append(f"**Entity Types:** {', '.join(entity_types)}")
-                if sample_entities:
-                    output.append(f"**Key Entities:** {', '.join(sample_entities[:5])}")
-
-                # Show detailed entities
-                output.append(f"\n**Detailed Entities:**")
-                for entity in entities[:10]:  # Show first 10
-                    entity_name = entity.get("name", "Unknown")
-                    entity_types_list = entity.get("types", [])
-                    entity_desc = entity.get("description", "")
-
-                    # Filter out base "Entity" type
-                    types_str = ", ".join([t for t in entity_types_list if t != "Entity"])
-
-                    output.append(f"- **{entity_name}** ({types_str})")
-                    if entity_desc:
-                        output.append(f"  └─ {entity_desc[:100]}")
-
-                if len(entities) > 10:
-                    output.append(f"  ... and {len(entities) - 10} more entities")
-
-            elif include_chunk_entities and results.get("neo4j_enabled"):
-                output.append(f"\n*No entities found for this chunk (Neo4j may not have data for this paper yet)*")
-
-            # Show matched text snippet
-            output.append(f"\n**Matched Text Snippet:**")
-            output.append(f"> {matched_text}...")
-            output.append("")
-
-        output.append("\n---")
-        output.append("**💡 Tips:**")
-        output.append("- Use `zot_ask_paper(item_key, question)` to read more content from specific papers")
-        output.append("- Use `zot_graph_search(entity_name)` to explore entity relationships")
-        output.append("- Entities are extracted from the exact chunks that matched your query")
-
-        return "\n".join(output)
-
-    except Exception as e:
-        import traceback
-        ctx.error(f"Error in enhanced_semantic_search: {str(e)}")
-        ctx.error(f"Traceback: {traceback.format_exc()}")
-        return f"Error performing enhanced semantic search: {str(e)}"
+# ========== DISABLED: zot_enhanced_semantic_search ==========
+# @mcp.tool(
+#     name="zot_enhanced_semantic_search",
+#     description="⚠️ DEPRECATED - Use `zot_search` instead (Entity-enriched Mode)\n\n🔵 LEGACY TOOL - Entity-enriched semantic search (Figure 3 pattern from Qdrant GraphRAG).\n\n**Recommendation**: Use `zot_search` instead, which provides:\n- Automatic entity intent detection (\"which methods/concepts appear in...\")\n- Same Figure 3 pattern from Qdrant GraphRAG\n- Integrated with smart mode selection and escalation\n- Result provenance and quality assessment\n- Cost optimization (avoids unnecessary entity enrichment)\n\n💡 Only use this tool if:\n✓ Explicitly need manual control over entity search parameters\n✓ Bypassing automatic intent detection for testing\n✓ Debugging entity enrichment directly\n\n⚠️ Limitations:\n✗ No automatic intent detection\n✗ No smart mode selection\n✗ No quality assessment or escalation\n✗ No provenance tracking\n\nUse for: Legacy support only - prefer zot_search for all entity discovery queries",
+#     annotations={
+#         "readOnlyHint": True,
+#         "title": "Enhanced Semantic Search (Vector)"
+#     }
+# )
+# def enhanced_semantic_search(
+#     query: str,
+#     limit: int = 10,
+#     include_chunk_entities: bool = True,
+#     filters: Optional[str] = None,
+#     *,
+#     ctx: Context
+# ) -> str:
+#     """
+#     Enhanced semantic search with chunk-level entity enrichment (Figure 3 pattern).
+#
+#     This implements the full Qdrant GraphRAG architecture:
+#     1. Semantic search in Qdrant for relevant chunks
+#     2. Extract Qdrant point IDs from results
+#     3. Use those IDs to query Neo4j for chunk-specific entities
+#     4. Enrich each result with entities, types, and relationships
+#
+#     Args:
+#         query: Search query text
+#         limit: Maximum number of results (default: 10)
+#         include_chunk_entities: Whether to enrich with Neo4j entities (default: True)
+#         filters: Optional metadata filters as JSON string
+#         ctx: MCP context
+#
+#     Returns:
+#         Markdown-formatted results with chunk-level entities and entity types
+#     """
+#     try:
+#         from agent_zot.search.semantic import create_semantic_search
+#         from pathlib import Path
+#
+#         if not query.strip():
+#             return "Error: Search query cannot be empty"
+#
+#         ctx.info(f"Performing enhanced semantic search for: {query}")
+#
+#         # Parse filters if provided
+#         parsed_filters = None
+#         if filters:
+#             if isinstance(filters, str):
+#                 try:
+#                     parsed_filters = json.loads(filters)
+#                 except json.JSONDecodeError as e:
+#                     return f"Error: Invalid JSON in filters parameter: {str(e)}"
+#             else:
+#                 parsed_filters = filters
+#
+#         config_path = Path.home() / ".config" / "agent-zot" / "config.json"
+#         search = create_semantic_search(str(config_path))
+#
+#         # Call the enhanced_semantic_search method
+#         results = search.enhanced_semantic_search(
+#             query=query,
+#             limit=limit,
+#             include_chunk_entities=include_chunk_entities,
+#             filters=parsed_filters
+#         )
+#
+#         if results.get("error"):
+#             return f"Error during enhanced search: {results['error']}"
+#
+#         if not results.get("results"):
+#             return f"No results found for query: '{query}'\n\nTry:\n- Broadening your search terms\n- Running zot_update_search_database if you haven't indexed recently\n- Checking if Neo4j is populated (run with include_chunk_entities=False to test Qdrant only)"
+#
+#         # Format results
+#         output = [f"# Enhanced Semantic Search Results"]
+#         output.append(f"\n**Query:** {query}")
+#         output.append(f"**Search Type:** {results.get('search_type', 'enhanced_semantic')}")
+#         output.append(f"**Neo4j Enabled:** {results.get('neo4j_enabled', False)}")
+#         output.append(f"**Results:** {results['total_found']}\n")
+#
+#         for i, result in enumerate(results["results"], 1):
+#             # Extract result data
+#             item_key = result.get("item_key", "unknown")
+#             similarity = result.get("similarity_score", 0)
+#             matched_text = result.get("matched_text", "")[:300]  # First 300 chars
+#
+#             # Get paper title from zotero_item
+#             title = "Unknown"
+#             if result.get("zotero_item"):
+#                 zotero_data = result["zotero_item"].get("data", {})
+#                 title = zotero_data.get("title", "Unknown")
+#
+#             output.append(f"## {i}. {title}")
+#             output.append(f"**Item Key:** {item_key}")
+#             output.append(f"**Relevance:** {similarity:.3f}")
+#
+#             # Show chunk entities if available
+#             if result.get("chunk_entities"):
+#                 entities = result["chunk_entities"]
+#                 entity_types = result.get("entity_types", [])
+#                 sample_entities = result.get("sample_entities", [])
+#
+#                 output.append(f"\n**Entities Found in This Chunk:** {len(entities)}")
+#                 if entity_types:
+#                     output.append(f"**Entity Types:** {', '.join(entity_types)}")
+#                 if sample_entities:
+#                     output.append(f"**Key Entities:** {', '.join(sample_entities[:5])}")
+#
+#                 # Show detailed entities
+#                 output.append(f"\n**Detailed Entities:**")
+#                 for entity in entities[:10]:  # Show first 10
+#                     entity_name = entity.get("name", "Unknown")
+#                     entity_types_list = entity.get("types", [])
+#                     entity_desc = entity.get("description", "")
+#
+#                     # Filter out base "Entity" type
+#                     types_str = ", ".join([t for t in entity_types_list if t != "Entity"])
+#
+#                     output.append(f"- **{entity_name}** ({types_str})")
+#                     if entity_desc:
+#                         output.append(f"  └─ {entity_desc[:100]}")
+#
+#                 if len(entities) > 10:
+#                     output.append(f"  ... and {len(entities) - 10} more entities")
+#
+#             elif include_chunk_entities and results.get("neo4j_enabled"):
+#                 output.append(f"\n*No entities found for this chunk (Neo4j may not have data for this paper yet)*")
+#
+#             # Show matched text snippet
+#             output.append(f"\n**Matched Text Snippet:**")
+#             output.append(f"> {matched_text}...")
+#             output.append("")
+#
+#         output.append("\n---")
+#         output.append("**💡 Tips:**")
+#         output.append("- Use `zot_ask_paper(item_key, question)` to read more content from specific papers")
+#         output.append("- Use `zot_graph_search(entity_name)` to explore entity relationships")
+#         output.append("- Entities are extracted from the exact chunks that matched your query")
+#
+#         return "\n".join(output)
+#
+#     except Exception as e:
+#         import traceback
+#         ctx.error(f"Error in enhanced_semantic_search: {str(e)}")
+#         ctx.error(f"Traceback: {traceback.format_exc()}")
+#         return f"Error performing enhanced semantic search: {str(e)}"
+#
+#
+# ========== END DISABLED: zot_enhanced_semantic_search ==========
 
 
 # DEPRECATED - Removed for pure agentic approach
