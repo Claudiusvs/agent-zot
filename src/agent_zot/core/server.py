@@ -1311,7 +1311,7 @@ def update_search_database(
 ,
     annotations={
         "readOnlyHint": True,
-        "title": "Get Search Database Status"
+        "title": "Database Status"
     }
 )
 def get_search_database_status(*, ctx: Context) -> str:
