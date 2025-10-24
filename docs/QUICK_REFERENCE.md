@@ -101,6 +101,13 @@ python populate_neo4j_from_qdrant.py
   - Multi-aspect orchestration (4 key questions for comprehensive mode)
   - Four modes: Quick (~500-800 tokens), Targeted (~2k-5k tokens), Comprehensive (~8k-15k tokens), Full (10k-100k tokens)
 
+### 🆕 Primary Graph Exploration (Recommended)
+- **`zot_explore_graph(query, paper_key, author, concept, start_year, end_year, field, force_mode, limit, max_hops)`** - **Smart unified graph exploration (RECOMMENDED DEFAULT)**
+  - Automatic intent detection (citation/collaboration/concept/temporal/influence/venue)
+  - Parameter extraction from natural language queries
+  - Smart mode selection (chooses optimal Neo4j traversal)
+  - Seven modes: Citation Chain, Influence (PageRank), Related Papers, Collaboration, Concept Network, Temporal, Venue Analysis, plus Comprehensive
+
 ### Content Analysis (Advanced)
 - `zot_ask_paper(item_key, question, top_k)` - Direct chunk retrieval (manual control)
 - `zot_get_item(item_key)` - Metadata only
@@ -112,9 +119,15 @@ python populate_neo4j_from_qdrant.py
 - ~~`zot_refine_search(query, limit, max_iterations)`~~ - DEPRECATED: Use `zot_search` (has built-in refinement)
 - `zot_decompose_query(query, limit)` - Multi-concept query decomposition (still useful for complex AND/OR queries)
 
-### Relationship Analysis
-- `zot_graph_search(query, entity_types, limit)` - Neo4j graph search
-- `zot_find_related_papers(item_key, limit)` - Citation/author connections
+### Advanced Graph Analysis (Legacy - use `zot_explore_graph` instead)
+- ~~`zot_graph_search(query, entity_types, limit)`~~ - DEPRECATED: Use `zot_explore_graph` (automatic mode selection)
+- ~~`zot_find_related_papers(item_key, limit)`~~ - DEPRECATED: Use `zot_explore_graph` (Related Papers Mode)
+- ~~`zot_find_citation_chain(paper_key, max_hops, limit)`~~ - DEPRECATED: Use `zot_explore_graph` (Citation Chain Mode)
+- ~~`zot_find_collaborator_network(author, max_hops, limit)`~~ - DEPRECATED: Use `zot_explore_graph` (Collaboration Mode)
+- ~~`zot_explore_concept_network(concept, max_hops, limit)`~~ - DEPRECATED: Use `zot_explore_graph` (Concept Network Mode)
+- ~~`zot_track_topic_evolution(concept, start_year, end_year)`~~ - DEPRECATED: Use `zot_explore_graph` (Temporal Mode)
+- ~~`zot_analyze_venues(field, top_n)`~~ - DEPRECATED: Use `zot_explore_graph` (Venue Analysis Mode)
+- ~~`zot_find_seminal_papers(field, top_n)`~~ - DEPRECATED: Use `zot_explore_graph` (Influence Mode)
 
 ### Fallback Tools
 - `zot_search_items(query, limit)` - Keyword search via Zotero API
