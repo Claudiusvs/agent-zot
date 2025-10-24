@@ -4332,13 +4332,13 @@ def get_recent(
 
 # @mcp.tool(
 #     name="zot_get_annotations",
-    description="📊 MEDIUM PRIORITY - 🔸 SECONDARY - Get all annotations for a specific item or across your entire Zotero library.\n\nUse for: Retrieving highlights and comments from PDF annotations"
-,
-    annotations={
-        "readOnlyHint": True,
-        "title": "Get Annotations (Zotero)"
-    }
-)
+#     description="📊 MEDIUM PRIORITY - 🔸 SECONDARY - Get all annotations for a specific item or across your entire Zotero library.\n\nUse for: Retrieving highlights and comments from PDF annotations"
+# ,
+#     annotations={
+#         "readOnlyHint": True,
+#         "title": "Get Annotations (Zotero)"
+#     }
+# )
 def get_annotations(
     item_key: Optional[str] = None,
     use_pdf_extraction: bool = False,
