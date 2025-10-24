@@ -451,8 +451,12 @@ def smart_search(
     - zot_unified_search (Comprehensive Mode)
     - zot_refine_search (with refinement + escalation)
     - zot_enhanced_semantic_search (Entity-enriched Mode)
+    - zot_decompose_query (automatic multi-concept decomposition)
 
     Execution flow:
+    0. Check if query should be decomposed (AND/OR/multi-concept)
+       - If yes: decompose → execute sub-queries → merge results
+       - If no: continue with single-query flow
     1. Detect query intent (entity/relationship/metadata/semantic)
     2. Apply query refinement if query is vague
     3. Select backends based on intent:
@@ -478,8 +482,66 @@ def smart_search(
     from agent_zot.search.iterative import reformulate_query
     from agent_zot.search.unified import reciprocal_rank_fusion
     from agent_zot.utils.query_expansion import expand_query_smart
+    from agent_zot.search.decomposition import decompose_query, merge_decomposed_results
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     logger.info(f"Starting smart search for: '{query}'")
+
+    # Phase 0: Query Decomposition (if multi-concept)
+    logger.info("Phase 0: Checking if query should be decomposed")
+
+    sub_queries = decompose_query(query)
+
+    if len(sub_queries) > 1:
+        logger.info(f"Query decomposed into {len(sub_queries)} sub-queries")
+        logger.info(f"Sub-queries: {[sq['query'] for sq in sub_queries]}")
+
+        # Execute sub-queries recursively (each gets full smart_search treatment)
+        results_by_subquery = {}
+        with ThreadPoolExecutor(max_workers=min(len(sub_queries), 5)) as executor:
+            futures = {}
+            for sq in sub_queries:
+                subquery_text = sq["query"]
+                future = executor.submit(
+                    smart_search,  # Recursive call - each sub-query gets intent detection, backend selection, etc.
+                    semantic_search_instance,
+                    subquery_text,
+                    limit * 2,  # Get more results per sub-query for better merging
+                    force_mode
+                )
+                futures[future] = subquery_text
+
+            for future in as_completed(futures):
+                subquery_text = futures[future]
+                try:
+                    result = future.result()
+                    results_by_subquery[subquery_text] = result.get("results", [])
+                    logger.info(f"Sub-query '{subquery_text}' returned {len(result.get('results', []))} results")
+                except Exception as e:
+                    logger.error(f"Sub-query '{subquery_text}' failed: {e}")
+                    results_by_subquery[subquery_text] = []
+
+        # Merge with weighted scoring
+        logger.info("Merging decomposed results with weighted scoring")
+        merged_results = merge_decomposed_results(
+            results_by_subquery,
+            sub_queries,
+            limit
+        )
+
+        logger.info(f"Decomposition complete: {len(merged_results)} merged results")
+
+        return {
+            "query": query,
+            "decomposed": True,
+            "sub_queries": sub_queries,
+            "results": merged_results,
+            "total_found": len(merged_results),
+            "mode": "Decomposed Multi-Concept Search"
+        }
+
+    # If not decomposed, continue with normal single-query flow
+    logger.info("No decomposition needed, continuing with single-query flow")
 
     # Phase 1: Query Analysis & Refinement
     logger.info("Phase 1: Query analysis and refinement")

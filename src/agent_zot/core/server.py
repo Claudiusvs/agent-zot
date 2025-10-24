@@ -283,11 +283,6 @@ Choose tools based on what the query asks for, not hierarchical ordering.
 
 ## Advanced Tools (Specialized Use Cases)
 
-### Multi-Concept Boolean Queries
-**Tool:** `zot_decompose_query`
-**When:** Query has multiple concepts with AND/OR operators
-**Example:** "fMRI studies of working memory AND aging"
-
 ### Metadata/Collections/Tags
 **Tools:** Zotero API tools
 - `zot_search_items` - Keyword-based metadata search
@@ -328,10 +323,11 @@ Choose tools based on what the query asks for, not hierarchical ordering.
    → Understand approach (Targeted Mode - semantic Q&A)
 ```
 
-### Example 3: Multi-Concept Query
+### Example 3: Multi-Concept Query (Automatic Decomposition)
 ```
-1. zot_decompose_query("reinforcement learning AND language models")
-   → Breaks into sub-queries, merges results
+1. zot_search("reinforcement learning AND language models")
+   → Automatically detects multi-concept query and decomposes it
+   → Breaks into sub-queries, executes them, merges results
 
 2. zot_summarize(item_key, "Summarize comprehensively")
    → Understand existing RL+LM work (Comprehensive Mode)
@@ -353,9 +349,9 @@ Choose tools based on what the query asks for, not hierarchical ordering.
 
 ✅ zot_search → zot_summarize → zot_explore_graph (complete workflow)
 ✅ zot_search (Fast Mode) → escalates automatically if quality inadequate
+✅ zot_search automatically decomposes multi-concept queries (AND/OR/complex patterns)
 ✅ zot_summarize (Targeted Mode) for specific questions, (Comprehensive Mode) for full understanding
 ✅ zot_explore_graph with natural language - it extracts parameters automatically
-✅ zot_decompose_query for complex AND/OR boolean queries
 
 ---
 
@@ -1062,166 +1058,169 @@ def smart_unified_search(
 #         ctx.error(f"Error in iterative search: {str(e)}")
 #         return f"Error in iterative search: {str(e)}"
 # 
-# 
+#
 # ========== END DISABLED: zot_refine_search ==========
 
-@mcp.tool(
-    name="zot_decompose_query",
-    description="🔥 HIGH PRIORITY - 🔵 ADVANCED - Query decomposition for complex multi-concept queries.\n\n💡 Use when:\n✓ Query contains multiple distinct concepts (e.g., 'neural networks AND decision making')\n✓ Query uses boolean operators (AND, OR)\n✓ Query has natural conjunctions (and, with, or, versus)\n✓ Query combines different domains/methods (e.g., 'fMRI studies of memory in aging')\n✓ You want comprehensive coverage of multi-faceted topics\n\nHow it works:\n1. Analyzes query structure to identify multiple concepts\n2. Decomposes into simpler sub-queries based on patterns:\n   - Boolean operators (AND, OR)\n   - Natural conjunctions (and, with, plus, or, versus)\n   - Prepositions (in, about, regarding, concerning)\n   - Comma-separated concepts\n   - Multiple noun phrases\n3. Executes sub-queries in parallel\n4. Merges results using weighted scoring:\n   - Required concepts (AND) have higher importance (1.0)\n   - Optional concepts (OR) have lower importance (0.7)\n   - Supporting concepts have moderate importance (0.4-0.6)\n   - Papers appearing in multiple sub-queries rank higher\n\nDecomposition patterns:\n- 'X AND Y' → searches for X, Y separately (both required)\n- 'X OR Y' → searches for X, Y separately (either acceptable)\n- 'X in Y' → searches for 'X in Y', X, Y separately\n- 'X, Y, Z' → searches for full query + individual concepts\n\nOften finds more comprehensive results than single complex query because it:\n- Reduces query complexity for better matching\n- Increases recall by searching variants\n- Balances precision (full query) with coverage (sub-queries)\n\nNOT for:\n✗ Simple single-concept queries → use zot_search (faster)\n✗ Queries that shouldn't be split (e.g., proper names like 'New York') → use zot_search\n\n💡 Often combines with:\n- zot_search (Comprehensive Mode) - Combine for maximum multi-backend coverage\n- zot_summarize - Understand content from papers found via sub-queries\n- zot_explore_graph - Explore connections between results\n\nUse for: Complex multi-concept queries requiring comprehensive coverage across concepts",
-    annotations={
-        "readOnlyHint": True,
-        "title": "Query Decomposition (Multi-Concept)"
-    }
-)
-def decompose_query_tool(query: str, limit: int = 10, *, ctx: Context) -> str:
-    """
-    Decompose complex query into sub-queries and merge results.
-
-    Args:
-        query: Complex multi-concept search query
-        limit: Number of final results to return (default: 10)
-        ctx: MCP context
-
-    Returns:
-        Formatted search results with decomposition metadata
-    """
-    try:
-        ctx.info(f"Starting decomposed search for: '{query}'")
-
-        # Import modules
-        from agent_zot.search.semantic import create_semantic_search
-        from agent_zot.search.decomposition import decomposed_search
-        from pathlib import Path
-
-        # Determine config path (must match unified_search tool)
-        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
-
-        # Create semantic search instance
-        search = create_semantic_search(str(config_path))
-
-        # Perform decomposed search
-        results = decomposed_search(
-            semantic_search_instance=search,
-            query=query,
-            limit=limit
-        )
-
-        # Format output
-        output = []
-        output.append(f"# Decomposed Search Results: '{query}'")
-        output.append("")
-
-        # Show decomposition metadata
-        decomposition = results.get("decomposition", {})
-        was_decomposed = decomposition.get("decomposed", False)
-
-        output.append("## Query Decomposition")
-        output.append("")
-
-        if not was_decomposed:
-            output.append(f"ℹ️ **No decomposition applied**: {decomposition.get('reason', 'Query is already simple')}")
-            output.append("")
-        else:
-            sub_queries = decomposition.get("sub_queries", [])
-            output.append(f"- **Sub-queries Generated**: {len(sub_queries)}")
-            output.append(f"- **Total Results from Sub-queries**: {decomposition.get('total_sub_results', 0)}")
-            output.append(f"- **Unique Papers Found**: {decomposition.get('unique_papers_found', 0)}")
-            output.append(f"- **Final Results**: {results.get('total_found', 0)}")
-            output.append("")
-
-            # Show sub-queries
-            output.append("### Sub-queries")
-            output.append("")
-
-            for idx, sq in enumerate(sub_queries, 1):
-                sq_text = sq.get("query", "")
-                sq_type = sq.get("type", "unknown")
-                sq_importance = sq.get("importance", 0.0)
-
-                # Format type
-                type_emoji = {
-                    "primary": "🎯",
-                    "required": "✅",
-                    "optional": "🔷",
-                    "supporting": "📎"
-                }.get(sq_type, "•")
-
-                output.append(f"{idx}. {type_emoji} **{sq_type.title()}**: `{sq_text}`")
-                output.append(f"   - Importance weight: {sq_importance}")
-                output.append("")
-
-            # Show errors if any
-            if errors := decomposition.get("errors"):
-                output.append("### Errors")
-                output.append("")
-                for subquery, error in errors.items():
-                    output.append(f"- `{subquery}`: {error}")
-                output.append("")
-
-        # Show results
-        output.append("---")
-        output.append("")
-        output.append("## Papers Found")
-        output.append("")
-
-        search_results = results.get("results", [])
-
-        if not search_results:
-            output.append("No results found.")
-        else:
-            for idx, result in enumerate(search_results, 1):
-                item_key = result.get("item_key", "unknown")
-                similarity = result.get("similarity_score", 0.0)
-                combined_score = result.get("combined_score")
-                zotero_item = result.get("zotero_item", {})
-                data = zotero_item.get("data", {})
-
-                title = data.get("title", "Untitled")
-                creators = format_creators(data.get("creators", []))
-                year = data.get("date", "")[:4] if data.get("date") else "n.d."
-
-                output.append(f"### {idx}. {title}")
-                output.append("")
-                output.append(f"- **Authors**: {creators}")
-                output.append(f"- **Year**: {year}")
-                output.append(f"- **Item Key**: `{item_key}`")
-
-                if combined_score is not None:
-                    output.append(f"- **Combined Score**: {combined_score:.3f} (from multiple sub-queries)")
-                else:
-                    output.append(f"- **Similarity**: {similarity:.3f}")
-
-                if abstract := data.get("abstractNote"):
-                    abstract_preview = abstract[:200] + "..." if len(abstract) > 200 else abstract
-                    output.append(f"- **Abstract**: {abstract_preview}")
-
-                output.append("")
-
-        # Add explanation
-        output.append("---")
-        output.append("")
-
-        if was_decomposed:
-            output.append("✅ **Query decomposition applied** to increase coverage across multiple concepts.")
-            output.append("")
-            output.append("Papers appearing in multiple sub-queries receive higher combined scores, indicating relevance to multiple aspects of your query.")
-        else:
-            output.append("ℹ️ **Simple query** - no decomposition needed.")
-
-        if results.get("total_found", 0) < limit:
-            output.append("")
-            output.append("💡 **Tip**: To find more results, try:")
-            output.append("  - Using broader query terms")
-            output.append("  - Using `zot_unified_search` for multi-backend search")
-            output.append("  - Using `zot_refine_search` for automatic query refinement")
-
-        ctx.info(f"Decomposed search completed: {results.get('total_found', 0)} results")
-
-        return "\n".join(output)
-
-    except Exception as e:
-        ctx.error(f"Error in decomposed search: {str(e)}")
-        return f"Error in decomposed search: {str(e)}"
+# ========== DISABLED: zot_decompose_query ==========
+# @mcp.tool(
+#     name="zot_decompose_query",
+#     description="⚠️ DEPRECATED - Use `zot_search` instead (automatic multi-concept decomposition)\n\n🔵 LEGACY TOOL - Query decomposition for complex multi-concept queries.\n\n**Recommendation**: Use `zot_search` instead, which provides:\n- Automatic decomposition detection (AND/OR/multi-concept patterns)\n- Same query decomposition logic as Phase 0 pre-processing\n- Recursive smart_search for each sub-query (benefits from all 5 modes)\n- Weighted result merging with importance scoring\n- Integrated with intent detection, backend selection, and escalation\n- Quality assessment and provenance tracking\n\n💡 Only use this tool if:\n✓ Explicitly need manual control over decomposition parameters\n✓ Bypassing automatic decomposition for testing\n✓ Debugging decomposition logic directly\n\n⚠️ Limitations:\n✗ No integration with smart backend selection\n✗ No automatic intent detection for sub-queries\n✗ No quality assessment or escalation\n✗ No provenance tracking\n\nUse for: Legacy support only - prefer zot_search for all multi-concept queries",
+#     annotations={
+#         "readOnlyHint": True,
+#         "title": "Query Decomposition (Multi-Concept)"
+#     }
+# )
+# def decompose_query_tool(query: str, limit: int = 10, *, ctx: Context) -> str:
+#     """
+#     Decompose complex query into sub-queries and merge results.
+#
+#     Args:
+#         query: Complex multi-concept search query
+#         limit: Number of final results to return (default: 10)
+#         ctx: MCP context
+#
+#     Returns:
+#         Formatted search results with decomposition metadata
+#     """
+#     try:
+#         ctx.info(f"Starting decomposed search for: '{query}'")
+#
+#         # Import modules
+#         from agent_zot.search.semantic import create_semantic_search
+#         from agent_zot.search.decomposition import decomposed_search
+#         from pathlib import Path
+#
+#         # Determine config path (must match unified_search tool)
+#         config_path = Path.home() / ".config" / "agent-zot" / "config.json"
+#
+#         # Create semantic search instance
+#         search = create_semantic_search(str(config_path))
+#
+#         # Perform decomposed search
+#         results = decomposed_search(
+#             semantic_search_instance=search,
+#             query=query,
+#             limit=limit
+#         )
+#
+#         # Format output
+#         output = []
+#         output.append(f"# Decomposed Search Results: '{query}'")
+#         output.append("")
+#
+#         # Show decomposition metadata
+#         decomposition = results.get("decomposition", {})
+#         was_decomposed = decomposition.get("decomposed", False)
+#
+#         output.append("## Query Decomposition")
+#         output.append("")
+#
+#         if not was_decomposed:
+#             output.append(f"ℹ️ **No decomposition applied**: {decomposition.get('reason', 'Query is already simple')}")
+#             output.append("")
+#         else:
+#             sub_queries = decomposition.get("sub_queries", [])
+#             output.append(f"- **Sub-queries Generated**: {len(sub_queries)}")
+#             output.append(f"- **Total Results from Sub-queries**: {decomposition.get('total_sub_results', 0)}")
+#             output.append(f"- **Unique Papers Found**: {decomposition.get('unique_papers_found', 0)}")
+#             output.append(f"- **Final Results**: {results.get('total_found', 0)}")
+#             output.append("")
+#
+#             # Show sub-queries
+#             output.append("### Sub-queries")
+#             output.append("")
+#
+#             for idx, sq in enumerate(sub_queries, 1):
+#                 sq_text = sq.get("query", "")
+#                 sq_type = sq.get("type", "unknown")
+#                 sq_importance = sq.get("importance", 0.0)
+#
+#                 # Format type
+#                 type_emoji = {
+#                     "primary": "🎯",
+#                     "required": "✅",
+#                     "optional": "🔷",
+#                     "supporting": "📎"
+#                 }.get(sq_type, "•")
+#
+#                 output.append(f"{idx}. {type_emoji} **{sq_type.title()}**: `{sq_text}`")
+#                 output.append(f"   - Importance weight: {sq_importance}")
+#                 output.append("")
+#
+#             # Show errors if any
+#             if errors := decomposition.get("errors"):
+#                 output.append("### Errors")
+#                 output.append("")
+#                 for subquery, error in errors.items():
+#                     output.append(f"- `{subquery}`: {error}")
+#                 output.append("")
+#
+#         # Show results
+#         output.append("---")
+#         output.append("")
+#         output.append("## Papers Found")
+#         output.append("")
+#
+#         search_results = results.get("results", [])
+#
+#         if not search_results:
+#             output.append("No results found.")
+#         else:
+#             for idx, result in enumerate(search_results, 1):
+#                 item_key = result.get("item_key", "unknown")
+#                 similarity = result.get("similarity_score", 0.0)
+#                 combined_score = result.get("combined_score")
+#                 zotero_item = result.get("zotero_item", {})
+#                 data = zotero_item.get("data", {})
+#
+#                 title = data.get("title", "Untitled")
+#                 creators = format_creators(data.get("creators", []))
+#                 year = data.get("date", "")[:4] if data.get("date") else "n.d."
+#
+#                 output.append(f"### {idx}. {title}")
+#                 output.append("")
+#                 output.append(f"- **Authors**: {creators}")
+#                 output.append(f"- **Year**: {year}")
+#                 output.append(f"- **Item Key**: `{item_key}`")
+#
+#                 if combined_score is not None:
+#                     output.append(f"- **Combined Score**: {combined_score:.3f} (from multiple sub-queries)")
+#                 else:
+#                     output.append(f"- **Similarity**: {similarity:.3f}")
+#
+#                 if abstract := data.get("abstractNote"):
+#                     abstract_preview = abstract[:200] + "..." if len(abstract) > 200 else abstract
+#                     output.append(f"- **Abstract**: {abstract_preview}")
+#
+#                 output.append("")
+#
+#         # Add explanation
+#         output.append("---")
+#         output.append("")
+#
+#         if was_decomposed:
+#             output.append("✅ **Query decomposition applied** to increase coverage across multiple concepts.")
+#             output.append("")
+#             output.append("Papers appearing in multiple sub-queries receive higher combined scores, indicating relevance to multiple aspects of your query.")
+#         else:
+#             output.append("ℹ️ **Simple query** - no decomposition needed.")
+#
+#         if results.get("total_found", 0) < limit:
+#             output.append("")
+#             output.append("💡 **Tip**: To find more results, try:")
+#             output.append("  - Using broader query terms")
+#             output.append("  - Using `zot_unified_search` for multi-backend search")
+#             output.append("  - Using `zot_refine_search` for automatic query refinement")
+#
+#         ctx.info(f"Decomposed search completed: {results.get('total_found', 0)} results")
+#
+#         return "\n".join(output)
+#
+#     except Exception as e:
+#         ctx.error(f"Error in decomposed search: {str(e)}")
+#         return f"Error in decomposed search: {str(e)}"
+#
+# ========== END DISABLED: zot_decompose_query ==========
 
 
 @mcp.tool(
