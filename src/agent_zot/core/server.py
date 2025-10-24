@@ -697,6 +697,14 @@ def refine_search_tool(
         output.append("---")
         output.append("")
 
+        # Check if fallback was used
+        if fallback_message := results.get("message"):
+            output.append(fallback_message)
+            output.append("")
+            if fallback_backends := results.get("fallback_backends"):
+                output.append(f"**Backends used in fallback**: {', '.join(fallback_backends)}")
+                output.append("")
+
         if iterations > 1:
             output.append("✅ **Query refinement was applied** to improve result quality.")
         elif results.get("final_result_count", 0) == 0:
@@ -704,7 +712,7 @@ def refine_search_tool(
         else:
             output.append("ℹ️ **No refinement needed** - initial results were sufficient.")
 
-        if results.get("total_found", 0) < limit:
+        if results.get("total_found", 0) < limit and not results.get("fallback_used"):
             output.append("")
             output.append("💡 **Tip**: If more results are needed, try:")
             output.append("  - Using broader query terms")
