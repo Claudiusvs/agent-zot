@@ -266,6 +266,184 @@ result["found_in"] = list(dict.fromkeys(backends))
 
 ---
 
+## Unified Smart Summarization Implementation (Completed 2025-10-24)
+
+### Overview
+Implemented intelligent unified summarization tool (`zot_summarize`) that consolidates three legacy tools (`zot_ask_paper`, `zot_get_item`, `zot_get_item_fulltext`) with automatic depth detection, cost optimization, and multi-aspect orchestration.
+
+### New Module: `src/agent_zot/search/unified_summarize.py`
+
+**Purpose:** Single intelligent summarization interface that automatically:
+1. Detects summarization depth needed (quick/targeted/comprehensive/full)
+2. Selects optimal retrieval strategy
+3. Orchestrates multi-aspect summaries for comprehensive understanding
+4. Optimizes token cost (prevents unnecessary full-text extraction)
+
+**Architecture (4 Execution Modes):**
+
+```python
+def smart_summarize(item_key, query=None, force_mode=None, ...):
+    """
+    Mode 1: Quick Mode (metadata + abstract)
+    - Trigger: "What is this paper about?", "Give me an overview"
+    - Backend: zot_get_item(include_abstract=True)
+    - Cost: ~500-800 tokens
+    - Use: Overview questions, citation info
+
+    Mode 2: Targeted Mode (semantic Q&A)
+    - Trigger: "What methodology did they use?", "What were the findings?"
+    - Backend: semantic_search with parent_item_key filter
+    - Cost: ~2k-5k tokens
+    - Use: Specific questions about paper content
+
+    Mode 3: Comprehensive Mode (multi-aspect orchestration)
+    - Trigger: "Summarize this paper comprehensively"
+    - Backend: Multiple semantic searches (4 key aspects) + metadata
+    - Aspects: Research question, methodology, findings, conclusions
+    - Cost: ~8k-15k tokens
+    - Use: Full understanding without raw text
+
+    Mode 4: Full Mode (complete text extraction)
+    - Trigger: "Extract all equations", "Get complete text"
+    - Backend: zot_get_item_fulltext()
+    - Cost: 10k-100k tokens (EXPENSIVE)
+    - Use: Non-semantic tasks, complete export
+    """
+```
+
+**Intent Detection Patterns (Domain-Agnostic):**
+
+```python
+# Quick Mode patterns
+QUICK_PATTERNS = [
+    r'\bwhat\s+is\s+this\s+(paper|article|study|document)\s+about\b',
+    r'\b(give|show)\s+(me\s+)?(an?\s+)?overview\b',
+    r'\b(give|show)\s+(me\s+)?(the\s+)?abstract\b',
+    r'\bwho\s+(are\s+)?the\s+authors?\b',
+    r'\bwhen\s+was\s+this\s+published\b',
+]
+
+# Targeted Mode patterns
+TARGETED_PATTERNS = [
+    r'\bwhat\s+(methodology|method|approach|technique)\b',
+    r'\bhow\s+did\s+(they|the\s+authors)\b',
+    r'\bwhat\s+(were|are)\s+the\s+(main\s+)?(findings|results|conclusions)\b',
+    r'\bwhat\s+(data|dataset|sample)\b',
+    r'\bhow\s+(was|were)\s+\w+\s+(measured|assessed|evaluated)\b',
+]
+
+# Comprehensive Mode patterns
+COMPREHENSIVE_PATTERNS = [
+    r'\bsummarize\s+(this\s+)?(paper|article|study)\s+comprehensively\b',
+    r'\bsummarize\s+(the\s+)?entire\s+(paper|article|study)\b',
+    r'\b(give|provide)\s+(me\s+)?a\s+(complete|full|detailed)\s+summary\b',
+]
+
+# Full Mode patterns
+FULL_PATTERNS = [
+    r'\bextract\s+all\s+\w+',
+    r'\bget\s+(the\s+)?(complete|full|entire|raw)\s+text\b',
+    r'\b(find|get|show)\s+all\s+(equations|formulas|figures|tables)\b',
+]
+```
+
+**Mode Implementation Functions:**
+
+1. **`run_quick_mode()`** - Fast metadata + abstract retrieval
+2. **`run_targeted_mode()`** - Semantic chunk search with question
+3. **`run_comprehensive_mode()`** - Multi-aspect orchestration (4 questions)
+4. **`run_full_mode()`** - Complete PDF text extraction
+
+**Multi-Aspect Orchestration (Comprehensive Mode):**
+
+```python
+aspects = [
+    ("Research Question", "What is the main research question or objective of this study?"),
+    ("Methodology", "What methodology or approach did the researchers use?"),
+    ("Findings", "What were the main findings or results?"),
+    ("Conclusions", "What conclusions or implications did the authors draw?"),
+]
+
+# For each aspect:
+# 1. Run semantic search with aspect question
+# 2. Retrieve top 3 chunks (limit to prevent token explosion)
+# 3. Combine all aspects with metadata into comprehensive summary
+```
+
+**Cost Optimization:**
+
+| Mode | Tokens | Multiplier vs Quick | Use Case |
+|------|--------|---------------------|----------|
+| Quick | ~500-800 | 1x | Overview, metadata |
+| Targeted | ~2k-5k | 3-6x | Specific questions |
+| Comprehensive | ~8k-15k | 10-20x | Full understanding |
+| Full | 10k-100k | 15-125x | Raw text export |
+
+**Key Features:**
+- **Automatic mode selection** based on query intent
+- **Prevents over-fetching** - Don't use fulltext when chunks suffice
+- **Quality over quantity** - Targeted chunks better than complete text for most tasks
+- **Graceful degradation** - Falls back with suggestions if mode fails
+
+**MCP Integration (`src/agent_zot/core/server.py`):**
+
+```python
+@mcp.tool(name="zot_summarize", ...)
+def smart_summarize_paper(item_key, query=None, force_mode=None, top_k=5, *, ctx):
+    # Initialize dependencies
+    semantic_search = create_semantic_search(config_path)
+    zot = get_zotero_client()
+
+    # Call unified summarization
+    result = smart_summarize(
+        item_key=item_key,
+        query=query,
+        force_mode=force_mode,
+        semantic_search_instance=semantic_search,
+        zot_client=zot,
+        format_metadata_func=format_item_metadata,
+        get_attachment_func=get_attachment_details,
+        extract_fulltext_func=extract_fulltext_wrapper,
+        top_k=top_k
+    )
+
+    # Format response with metadata
+    # Returns: mode, strategy, tokens_estimated, chunks_retrieved, content
+```
+
+**Bug Fixes:**
+
+1. **Chunk Content Retrieval (Commit `d0dc3ce`)**
+   - **Problem**: Chunks returning empty with 0.00 relevance scores
+   - **Root cause**: Using `result.get("content")` instead of `result.get("matched_text")`
+   - **Fix**: Changed to `result.get("matched_text", result.get("content", ""))`
+   - **Impact**: Both Targeted and Comprehensive modes now return actual content
+
+**Testing Results:**
+
+| Test | Query | Mode Detected | Confidence | Tokens | Chunks | Result |
+|------|-------|---------------|------------|--------|--------|--------|
+| 1 | "What is this paper about?" | quick | 85% | ~535 | 0 | ✅ PASS |
+| 2 | "What methodology did the authors use?" | targeted | 80% | ~1,610 | 5 | ✅ PASS |
+| 3 | "Summarize this paper comprehensively" | comprehensive | 90% | ~4,215 | 12 | ✅ PASS |
+
+**Performance Characteristics:**
+- Quick Mode: <1 second (just API call)
+- Targeted Mode: ~2-3 seconds (semantic search)
+- Comprehensive Mode: ~8-10 seconds (4 sequential searches)
+- Full Mode: 10-30 seconds (PDF extraction)
+
+**Legacy Tool Status:**
+- `zot_ask_paper` - Now "Advanced" (manual control option)
+- `zot_get_item` - Now "Advanced" (metadata-only option)
+- `zot_get_item_fulltext` - Now "Advanced" (explicit full-text export)
+
+**Commits:**
+- `09f80d9` - Initial unified summarization implementation
+- `d0dc3ce` - Fix chunk content field name (matched_text)
+
+---
+
 ## Backup System & Data Quality Fixes (Completed 2025-10-24)
 
 ### Overview

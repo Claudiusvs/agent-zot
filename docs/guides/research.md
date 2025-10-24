@@ -2,13 +2,30 @@
 
 This guide demonstrates common research workflows using Agent-Zot's advanced query capabilities.
 
-## 🆕 Recommended: Use `zot_search` for Most Queries
+## 🆕 Recommended: Intelligent Unified Tools
 
-**As of October 2025**, the new `zot_search` tool is the **recommended default** for literature discovery. It automatically:
+**As of October 2025**, use these intelligent tools for most research workflows:
+
+### `zot_search` - Finding Papers
+The **recommended default** for literature discovery. Automatically:
 - Detects query intent (relationship/metadata/semantic)
 - Selects optimal backend combination
 - Expands vague queries
 - Escalates when quality is inadequate
+
+### `zot_summarize` - Understanding Papers
+The **recommended default** for paper analysis. Automatically:
+- Detects desired depth (quick/targeted/comprehensive/full)
+- Optimizes cost (prevents unnecessary full-text extraction)
+- Orchestrates multi-aspect summaries
+- Returns 4 key aspects: research question, methodology, findings, conclusions
+
+**Complete Workflow Example:**
+```
+1. zot_search("neural mechanisms of cognitive control") → Find relevant papers
+2. zot_summarize(item_key, "Summarize comprehensively") → Understand each paper
+3. [Use specialized tools below for deeper analysis]
+```
 
 **Use specialized tools** (listed below) for specific graph analysis tasks like citation networks, concept evolution, and collaboration analysis.
 
