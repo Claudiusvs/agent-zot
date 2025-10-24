@@ -359,13 +359,11 @@ def iterative_search(
         try:
             from agent_zot.search.unified import unified_search
 
-            # Use the best expanded query we generated, or the original query
-            best_query = reformulated_queries[0] if reformulated_queries else query
-
-            logger.info(f"Fallback: trying unified search with query: '{best_query}'")
+            # Use ORIGINAL query for fallback (expansions were too specific for semantic search)
+            logger.info(f"Fallback: trying unified search with ORIGINAL query: '{query}'")
             unified_results = unified_search(
                 semantic_search_instance,
-                best_query,
+                query,
                 limit=limit
             )
 
@@ -373,7 +371,7 @@ def iterative_search(
                 logger.info(f"Unified search fallback found {len(unified_results['results'])} results")
                 return {
                     "query": query,
-                    "expanded_query": best_query if best_query != query else None,
+                    "expanded_query": None,  # Fallback uses original query, not expanded
                     "limit": limit,
                     "results": unified_results["results"],
                     "total_found": len(unified_results["results"]),
@@ -382,7 +380,7 @@ def iterative_search(
                     "initial_quality": quality_metrics,
                     "fallback_used": "unified_search",
                     "fallback_backends": unified_results.get("backends_used", []),
-                    "message": "⚠️ Semantic search returned 0 results after refinement. Automatically used unified search (Qdrant + Neo4j + Zotero API) as fallback."
+                    "message": "⚠️ Semantic search returned 0 results after refinement. Automatically used unified search (Qdrant + Neo4j + Zotero API) as fallback with original query."
                 }
             else:
                 logger.warning("Unified search fallback also returned 0 results")
