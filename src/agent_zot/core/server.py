@@ -3349,6 +3349,87 @@ def smart_manage_notes_tool(
         return f"Error: {str(e)}"
 
 
+# ========== UNIFIED EXPORT ==========
+@mcp.tool(
+    name="zot_export",
+    description="""🔥 HIGHEST PRIORITY - Unified export tool with automatic format detection.
+
+**Replaces 3 legacy tools:**
+- zot_export_markdown → Markdown Mode
+- zot_export_bibtex → BibTeX Mode
+- zot_export_graph → GraphML Mode
+
+**Three Execution Modes (automatic format detection):**
+
+**1. Markdown Mode** - Export to markdown files with YAML frontmatter
+   - File extension: .md, .markdown OR format="markdown"
+   - Query: "export to papers.md", output_file="research/"
+   - Returns: Individual .md files with frontmatter
+   - Obsidian-compatible format
+
+**2. BibTeX Mode** - Export to .bib file
+   - File extension: .bib, .bibtex OR format="bibtex"
+   - Query: "export to refs.bib", output_file="citations.bib"
+   - Returns: Single .bib file with all entries
+   - LaTeX-compatible format
+
+**3. GraphML Mode** - Export Neo4j knowledge graph
+   - File extension: .graphml, .xml OR format="graphml"
+   - Query: "export graph to network.graphml"
+   - Returns: GraphML file for Gephi/Cytoscape
+   - Requires Neo4j GraphRAG enabled
+
+**Smart Features:**
+✅ Automatic format detection from file extension
+✅ Filter by query or collection
+✅ Optional full-text inclusion (markdown)
+✅ Node type filtering (graphml)
+✅ Batch export (up to 1000 items default)
+
+**Use for:** All export operations - citations, documentation, network analysis""",
+    annotations={"readOnlyHint": False, "title": "Export"}
+)
+def smart_export_tool(
+    output_file: str,
+    format: Optional[str] = None,
+    query: Optional[str] = None,
+    collection_key: Optional[str] = None,
+    include_fulltext: bool = False,
+    node_types: Optional[List[str]] = None,
+    max_nodes: Optional[int] = None,
+    limit: int = 1000,
+    *,
+    ctx: Context
+) -> str:
+    """Smart export with automatic format detection."""
+    try:
+        from agent_zot.search.unified_export import smart_export
+        zot = get_zotero_client()
+
+        # Get Neo4j client if available
+        neo4j = None
+        try:
+            neo4j = get_neo4j_client()
+        except:
+            pass  # Neo4j not available
+
+        result = smart_export(
+            output_file=output_file,
+            zotero_client=zot,
+            neo4j_client=neo4j,
+            format=format,
+            query=query,
+            collection_key=collection_key,
+            include_fulltext=include_fulltext,
+            node_types=node_types,
+            max_nodes=max_nodes,
+            limit=limit
+        )
+        return result.get("content", "Error") if result.get("success") else f"❌ {result.get('error')}"
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+
 # ========== DISABLED: Legacy Collection Tools (Replaced by zot_manage_collections) ==========
 # The following 5 tools have been consolidated into zot_manage_collections:
 # - zot_get_collections → zot_manage_collections (List Mode)
@@ -4242,8 +4323,15 @@ def get_recent(
 #         return f"Error in batch tag update: {str(e)}"
 
 
-@mcp.tool(
-    name="zot_get_annotations",
+# ========== DISABLED: Legacy Note Tools (Replaced by zot_manage_notes) ==========
+# The following 4 tools have been consolidated into zot_manage_notes:
+# - zot_get_annotations → zot_manage_notes (List Annotations Mode)
+# - zot_get_notes → zot_manage_notes (List Notes Mode)
+# - zot_search_notes → zot_manage_notes (Search Mode)
+# - zot_create_note → zot_manage_notes (Create Mode)
+
+# @mcp.tool(
+#     name="zot_get_annotations",
     description="📊 MEDIUM PRIORITY - 🔸 SECONDARY - Get all annotations for a specific item or across your entire Zotero library.\n\nUse for: Retrieving highlights and comments from PDF annotations"
 ,
     annotations={

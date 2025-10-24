@@ -215,18 +215,18 @@ questions = [
 
 ---
 
-## 📊 Tier 2: Specialized/Advanced Tools (MEDIUM PRIORITY)
+## 📊 Tier 2: Unified Management Tools (🔥 HIGH PRIORITY)
 
-### Metadata & Organization
+**The Four Management Tools:**
 
-| Tool | Priority | Purpose |
-|------|----------|---------|
-| `zot_search_items` | 📊 MEDIUM | Keyword-based metadata search |
-| `zot_get_item` | 📊 MEDIUM | Retrieve paper metadata |
-| Collection tools | 📊 MEDIUM | Create/add/remove from collections |
-| Tag tools | 📊 MEDIUM | Get/update tags |
-| Note tools | 📊 MEDIUM | Get/create/search notes |
-| Export tools | 📊 MEDIUM | Markdown/BibTeX/GraphML export |
+| Tool | Modes | Purpose |
+|------|-------|---------|
+| **`zot_manage_collections`** | 5 modes | List, Create, Show Items, Add, Remove collections |
+| **`zot_manage_tags`** | 4 modes | List, Search, Add, Remove tags |
+| **`zot_manage_notes`** | 4 modes | List Annotations, List Notes, Search, Create notes |
+| **`zot_export`** | 3 modes | Markdown, BibTeX, GraphML export |
+
+**Replaces 15 legacy tools** with natural language interface and automatic mode selection.
 
 ---
 
@@ -234,12 +234,11 @@ questions = [
 
 | Tool | Priority | Purpose |
 |------|----------|---------|
+| `zot_search_items` | 🔧 LOW | Keyword-based metadata search (fallback) |
+| `zot_get_item` | 🔧 LOW | Retrieve paper metadata (fallback) |
 | `zot_update_search_database` | 🔧 LOW | Rebuild semantic search index |
 | `zot_get_search_database_status` | 🔧 LOW | Check index health |
 | `zot_get_recent` | 🔧 LOW | Recently added items |
-| `zot_batch_update_tags` | 🔧 LOW | Bulk tag operations |
-| `zot_get_annotations` | 🔧 LOW | Retrieve PDF highlights |
-| `zot_get_collections` | 🔧 LOW | List all collections |
 
 ---
 
@@ -257,72 +256,109 @@ questions = [
 ```
 User Query
     ↓
-┌─────────────────────────────────────────┐
-│ Is it about FINDING papers?             │ → zot_search (auto-detects mode, includes multi-concept decomposition)
-│ Is it about UNDERSTANDING a paper?      │ → zot_summarize (auto-detects depth)
-│ Is it about EXPLORING connections?      │ → zot_explore_graph (auto-detects intent)
-│ Is it about METADATA/ORGANIZATION?      │ → Specialized metadata tools
-│ Is it about MAINTENANCE?                │ → Utility tools
-└─────────────────────────────────────────┘
+┌──────────────────────────────────────────┐
+│ Is it about FINDING papers?              │ → zot_search (auto-detects mode)
+│ Is it about UNDERSTANDING a paper?       │ → zot_summarize (auto-detects depth)
+│ Is it about EXPLORING connections?       │ → zot_explore_graph (auto-detects intent)
+│ Is it about COLLECTIONS?                 │ → zot_manage_collections (auto-detects mode)
+│ Is it about TAGS?                        │ → zot_manage_tags (auto-detects mode)
+│ Is it about NOTES/ANNOTATIONS?           │ → zot_manage_notes (auto-detects mode)
+│ Is it about EXPORTING data?              │ → zot_export (auto-detects format)
+│ Is it about MAINTENANCE?                 │ → Utility tools
+└──────────────────────────────────────────┘
 ```
 
 ---
 
-## 📈 Migration Summary
+## 📈 Complete Migration Summary
 
-### Before (19 tools)
+### Before: 34 Legacy Tools
 
+**Research Tools (19):**
 ```
-Search/Discovery Tools (8):
-- zot_semantic_search
-- zot_unified_search
-- zot_refine_search
-- zot_enhanced_semantic_search
-- zot_hybrid_vector_graph_search
-- zot_decompose_query (now integrated into zot_search as Phase 0)
-- zot_search_items (now integrated into zot_search as Metadata-enriched Mode)
-- zot_get_item (now integrated into zot_summarize as Quick Mode)
+Search/Discovery (8):
+- zot_semantic_search → zot_search
+- zot_unified_search → zot_search
+- zot_refine_search → zot_search
+- zot_enhanced_semantic_search → zot_search
+- zot_hybrid_vector_graph_search → zot_search
+- zot_decompose_query → zot_search (Phase 0)
+- zot_search_items → zot_search (Metadata Mode)
+- zot_get_item → zot_summarize (Quick Mode)
 
-Summarization Tools (2):
-- zot_ask_paper
-- zot_get_item_fulltext
+Summarization (2):
+- zot_ask_paper → zot_summarize
+- zot_get_item_fulltext → zot_summarize
 
-Graph/Exploration Tools (9):
-- zot_graph_search
-- zot_find_citation_chain
-- zot_find_seminal_papers
-- zot_find_similar_papers (now integrated into zot_explore_graph as Content Similarity Mode) 🆕
-- zot_find_related_papers
-- zot_find_collaborator_network
-- zot_explore_concept_network
-- zot_track_topic_evolution
-- zot_analyze_venues
+Graph/Exploration (9):
+- zot_graph_search → zot_explore_graph
+- zot_find_citation_chain → zot_explore_graph
+- zot_find_seminal_papers → zot_explore_graph
+- zot_find_similar_papers → zot_explore_graph
+- zot_find_related_papers → zot_explore_graph
+- zot_find_collaborator_network → zot_explore_graph
+- zot_explore_concept_network → zot_explore_graph
+- zot_track_topic_evolution → zot_explore_graph
+- zot_analyze_venues → zot_explore_graph
 ```
 
-### After (3 unified tools)
-
+**Management Tools (15):**
 ```
-Finding Papers (1):
+Collections (5):
+- zot_get_collections → zot_manage_collections
+- zot_create_collection → zot_manage_collections
+- zot_get_collection_items → zot_manage_collections
+- zot_add_to_collection → zot_manage_collections
+- zot_remove_from_collection → zot_manage_collections
+
+Tags (3):
+- zot_get_tags → zot_manage_tags
+- zot_search_by_tag → zot_manage_tags
+- zot_batch_update_tags → zot_manage_tags
+
+Notes (4):
+- zot_get_annotations → zot_manage_notes
+- zot_get_notes → zot_manage_notes
+- zot_search_notes → zot_manage_notes
+- zot_create_note → zot_manage_notes
+
+Export (3):
+- zot_export_markdown → zot_export
+- zot_export_bibtex → zot_export
+- zot_export_graph → zot_export
+```
+
+### After: 7 Unified Intelligent Tools
+
+**Research Tools (3):**
+```
 ✅ zot_search (5 execution modes)
-
-Understanding Papers (1):
 ✅ zot_summarize (4 depth modes)
-
-Exploring Connections (1):
-✅ zot_explore_graph (9 modes total: 8 graph + 1 content)
+✅ zot_explore_graph (9 modes: 8 graph + 1 content)
 ```
 
-### Benefits
+**Management Tools (4):**
+```
+✅ zot_manage_collections (5 modes)
+✅ zot_manage_tags (4 modes)
+✅ zot_manage_notes (4 modes)
+✅ zot_export (3 modes: markdown, bibtex, graphml)
+```
 
-- ✅ **84% reduction in tool count** (19 → 3 for core workflows)
-- ✅ **Complete query/retrieval consolidation** (all search and metadata retrieval in smart tools)
-- ✅ **Dual-backend exploration** (graph-based via Neo4j + content-based via Qdrant)
-- ✅ **Automatic intent detection** (no manual backend or mode selection)
-- ✅ **Automatic decomposition** (Phase 0 pre-processing for multi-concept queries)
-- ✅ **Smart mode selection** (optimal strategy for each query)
+### Complete Benefits
+
+- ✅ **79% total reduction in tool count** (34 → 7 unified tools)
+- ✅ **Research: 84% reduction** (19 → 3 for core workflows)
+- ✅ **Management: 73% reduction** (15 → 4 for organization)
+- ✅ **Natural language interface** replaces function signatures
+- ✅ **Automatic intent detection** (no manual mode selection)
+- ✅ **Automatic decomposition** (Phase 0 multi-concept queries)
+- ✅ **Smart mode selection** (optimal strategy per query)
 - ✅ **Built-in quality optimization** (escalates when needed)
+- ✅ **Dual-backend architecture** (Neo4j + Qdrant)
 - ✅ **Consistent interface** (same query → consistent routing)
-- ✅ **Reduced cognitive load** (LLM doesn't choose from 19+ options)
+- ✅ **Compound operations** (multi-step workflows in single request)
+- ✅ **Reduced cognitive load** (LLM chooses from 7 vs 34+ options)
 - ✅ **Cost optimization** (uses cheapest/fastest mode that works)
 
 ---

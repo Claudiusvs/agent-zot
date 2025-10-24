@@ -109,6 +109,31 @@ python populate_neo4j_from_qdrant.py
   - Nine modes: Citation Chain, Influence (PageRank), Content Similarity (vector-based), Related Papers, Collaboration, Concept Network, Temporal, Venue Analysis, plus Comprehensive
   - Dual backend: Neo4j for graph exploration + Qdrant for content similarity
 
+### 🆕 Primary Management Tools (Recommended)
+- **`zot_manage_collections(query, collection_key, collection_name, item_keys, parent_collection_key, limit, force_mode)`** - **Smart collections management (RECOMMENDED DEFAULT)**
+  - Five modes: List, Create, Show Items, Add, Remove
+  - Fuzzy collection name matching
+  - Automatic intent detection from natural language
+  - Replaces 5 legacy tools
+
+- **`zot_manage_tags(query, tags, item_keys, item_type, limit, force_mode)`** - **Smart tags management (RECOMMENDED DEFAULT)**
+  - Four modes: List, Search, Add, Remove
+  - Advanced operators support (|| for OR, - for NOT)
+  - Automatic intent detection from natural language
+  - Replaces 3 legacy tools
+
+- **`zot_manage_notes(query, item_key, note_title, note_text, tags, query_text, limit, force_mode)`** - **Smart notes management (RECOMMENDED DEFAULT)**
+  - Four modes: List Annotations, List Notes, Search, Create
+  - Handles both notes and PDF annotations
+  - Automatic intent detection from natural language
+  - Replaces 4 legacy tools
+
+- **`zot_export(output_file, format, query, collection_key, include_fulltext, node_types, max_nodes, limit)`** - **Smart export (RECOMMENDED DEFAULT)**
+  - Three modes: Markdown, BibTeX, GraphML
+  - Automatic format detection from file extension
+  - Supports filtered exports (by query or collection)
+  - Replaces 3 legacy tools
+
 ### Content Analysis (Advanced)
 - `zot_ask_paper(item_key, question, top_k)` - Direct chunk retrieval (manual control)
 - `zot_get_item(item_key)` - Metadata only
@@ -135,8 +160,32 @@ python populate_neo4j_from_qdrant.py
 - ~~`zot_track_topic_evolution(concept, start_year, end_year)`~~ - DEPRECATED: Use `zot_explore_graph` (Temporal Mode)
 - ~~`zot_analyze_venues(field, top_n)`~~ - DEPRECATED: Use `zot_explore_graph` (Venue Analysis Mode)
 
+### Management Operations (Legacy - use unified management tools instead)
+**Collections (use `zot_manage_collections` instead):**
+- ~~`zot_get_collections(limit)`~~ - DEPRECATED: Use `zot_manage_collections` (List Mode)
+- ~~`zot_create_collection(name, parent_collection_key)`~~ - DEPRECATED: Use `zot_manage_collections` (Create Mode)
+- ~~`zot_get_collection_items(collection_key, limit)`~~ - DEPRECATED: Use `zot_manage_collections` (Show Items Mode)
+- ~~`zot_add_to_collection(collection_key, item_keys)`~~ - DEPRECATED: Use `zot_manage_collections` (Add Mode)
+- ~~`zot_remove_from_collection(collection_key, item_keys)`~~ - DEPRECATED: Use `zot_manage_collections` (Remove Mode)
+
+**Tags (use `zot_manage_tags` instead):**
+- ~~`zot_get_tags(limit)`~~ - DEPRECATED: Use `zot_manage_tags` (List Mode)
+- ~~`zot_search_by_tag(tag, item_type, limit)`~~ - DEPRECATED: Use `zot_manage_tags` (Search Mode)
+- ~~`zot_batch_update_tags(query, add_tags, remove_tags, limit)`~~ - DEPRECATED: Use `zot_manage_tags` (Add/Remove Mode)
+
+**Notes (use `zot_manage_notes` instead):**
+- ~~`zot_get_annotations(item_key, limit, use_pdf_extraction)`~~ - DEPRECATED: Use `zot_manage_notes` (List Annotations Mode)
+- ~~`zot_get_notes(item_key, limit)`~~ - DEPRECATED: Use `zot_manage_notes` (List Notes Mode)
+- ~~`zot_search_notes(query, limit)`~~ - DEPRECATED: Use `zot_manage_notes` (Search Mode)
+- ~~`zot_create_note(item_key, note_title, note_text, tags)`~~ - DEPRECATED: Use `zot_manage_notes` (Create Mode)
+
+**Export (use `zot_export` instead):**
+- ~~`zot_export_markdown(output_dir, query, collection_key, include_fulltext, limit)`~~ - DEPRECATED: Use `zot_export` (Markdown Mode)
+- ~~`zot_export_bibtex(output_file, query, collection_key, limit)`~~ - DEPRECATED: Use `zot_export` (BibTeX Mode)
+- ~~`zot_export_graph(output_file, node_types, max_nodes)`~~ - DEPRECATED: Use `zot_export` (GraphML Mode)
+
 ### Fallback Tools
-- None - All query/retrieval operations consolidated into 3 smart tools
+- None - All query/retrieval/management operations consolidated into 7 smart tools
 
 ---
 
