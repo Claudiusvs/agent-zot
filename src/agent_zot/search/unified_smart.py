@@ -45,6 +45,9 @@ def detect_query_intent(query: str) -> Tuple[str, float]:
         r'\b(network|connection|related to)\b',
         r'\b(who worked with|influenced by|builds on)\b',
         r'\b(relationship between|links between)\b',
+        r'\bwho\s+(has\s+)?(studied|researched|worked|wrote|published|examined|investigated|explored)\b',
+        r'\b(which|what)\s+(authors|researchers|scientists|scholars)\b',
+        r'\b(researchers|authors|scholars)\s+(working|focusing|studying)\s+on\b',
     ]
 
     for pattern in relationship_patterns:
@@ -54,9 +57,10 @@ def detect_query_intent(query: str) -> Tuple[str, float]:
 
     # Metadata intent patterns (medium priority)
     metadata_patterns = [
-        r'\bby\s+[A-Z][a-z]+\s+[A-Z][a-z]+\b',  # "by FirstName LastName"
+        r'\bby\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)?\b',  # "by Smith" or "by John Smith"
+        r'\b[A-Z][a-z]+\'s\s+(work|papers|research)\b',  # "Smith's work"
         r'\bpublished in\s+\d{4}\b',  # "published in 2023"
-        r'\bpublished in\s+[A-Z]',  # "published in Nature"
+        r'\bpublished in\s+[A-Z]',  # "published in Journal"
         r'\bin\s+\d{4}\b',  # "in 2023"
         r'\bfrom\s+\d{4}\b',  # "from 2020"
         r'\bauthor:\s*[A-Za-z]',  # "author: Smith"
@@ -243,11 +247,13 @@ def add_provenance(
                     key_to_backends[item_key] = []
                 key_to_backends[item_key].append(backend_name)
 
-    # Add provenance to final results
+    # Add provenance to final results (deduplicate backends)
     for result in results:
         item_key = result.get("item_key")
         if item_key:
-            result["found_in"] = key_to_backends.get(item_key, ["unknown"])
+            backends = key_to_backends.get(item_key, ["unknown"])
+            # Deduplicate backends while preserving order
+            result["found_in"] = list(dict.fromkeys(backends))
 
     return results
 

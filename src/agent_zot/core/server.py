@@ -285,17 +285,17 @@ Smart intent-driven search that automatically:
 **Fast Mode** (Qdrant only)
 - For simple semantic queries about concepts/topics
 - ~2 seconds, minimal cost
-- Example: "papers about working memory"
+- Example: "papers about [concept/topic]"
 
 **Graph-enriched Mode** (Qdrant + Neo4j)
 - For relationship/network queries
 - ~4 seconds, moderate cost
-- Example: "who collaborated with John Smith"
+- Example: "who collaborated with [author name]"
 
 **Metadata-enriched Mode** (Qdrant + Zotero API)
 - For author/journal/year queries
 - ~4 seconds, moderate cost
-- Example: "papers by Jane Doe published in Nature"
+- Example: "papers by [author] published in [journal/year]"
 
 **Comprehensive Mode** (All three backends)
 - Automatic fallback when quality is inadequate
