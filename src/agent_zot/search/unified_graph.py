@@ -137,8 +137,8 @@ def detect_graph_intent(query: str) -> Tuple[str, float, Dict[str, Any]]:
     for pattern in TEMPORAL_PATTERNS:
         if re.search(pattern, query_lower):
             logger.info(f"Detected TEMPORAL intent: pattern '{pattern}' matched")
-            # Try to extract years
-            years = re.findall(r'\b(19|20)\d{2}\b', query)
+            # Try to extract years - use (?:19|20) to make it non-capturing
+            years = re.findall(r'\b(?:19|20)\d{2}\b', query)
             if len(years) >= 2:
                 extracted_params["start_year"] = int(years[0])
                 extracted_params["end_year"] = int(years[-1])
