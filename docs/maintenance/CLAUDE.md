@@ -748,20 +748,32 @@ All legacy tools now include deprecation notice in description:
 
 ### Testing & Verification
 
-**Test Results (2025-10-24):**
+**Complete Test Results (2025-10-24):**
+
+**All 7 modes + Comprehensive mode tested:**
 
 | Test | Query | Intent | Confidence | Mode | Parameters | Result |
 |------|-------|--------|------------|------|------------|--------|
 | 1 | "Find the most influential papers in my library" | influence | 90% | Influence | field=None, top_n=10 | ✅ 5 papers returned |
 | 2 | "Who has collaborated with Spiegel?" | collaboration | 90% | Collaboration | author='Spiegel', max_hops=2 | ✅ 2 collaborators found |
-| 3 | "How has research on dissociation evolved from 2010 to 2024?" | temporal | 85% | Temporal | concept='dissociation', start_year=2010, end_year=2024 | ✅ Correct extraction, no papers (expected - graph 0.5% populated) |
+| 3 | "How has research on dissociation evolved from 2010 to 2024?" | temporal | 85% | Temporal | concept='dissociation', start_year=2010, end_year=2024 | ✅ Correct extraction, no papers (expected)* |
 | 4 | "What are the top journals in my library?" | venue | 80% | Venue | field=None, top_n=10 | ✅ Top 5 journals with counts |
+| 5 | "Find papers citing papers that cite this paper" | citation | 90% | Citation Chain | paper_key='YWCZ8986', max_hops=2 | ✅ Correct detection, no results (expected)* |
+| 6 | "Find papers related to this paper" | related | 85% | Related Papers | paper_key='YWCZ8986' | ✅ Correct detection, no results (expected)* |
+| 7 | "Explore the concept network around trauma" | concept | 85% | Concept Network | concept='trauma', max_hops=2 | ✅ 5 related concepts found |
+| 8 | "Explore everything about dissociation research" | exploratory | 60% | Comprehensive | query='dissociation' | ✅ Ran Seminal papers strategy, 10 papers |
+
+*Note: "No results" expected because Neo4j graph is only 0.5% populated. Mode detection and parameter extraction verified as correct.
 
 **Performance:**
 - Influence Mode: ~2 seconds (PageRank on citation graph)
 - Collaboration Mode: ~3 seconds (2-hop co-authorship traversal)
 - Temporal Mode: ~2 seconds (yearly aggregation + concept filter)
 - Venue Analysis Mode: ~1 second (simple aggregation query)
+- Citation Chain Mode: ~1 second (query executed, no data found)
+- Related Papers Mode: ~1 second (query executed, no data found)
+- Concept Network Mode: ~2 seconds (multi-hop concept propagation)
+- Comprehensive Mode: ~2 seconds (executed 1 strategy)
 
 **Neo4j Graph Status:**
 - Total nodes: 25,184 (2,370 papers, 22,814 entities)
