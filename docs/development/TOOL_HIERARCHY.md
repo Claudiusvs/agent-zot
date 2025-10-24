@@ -28,7 +28,7 @@ These are the **only tools Claude needs** for 95% of research workflows.
 |------|---------|--------------|-----------------|-------|
 | **`zot_search`** | Finding papers | Entity/Relationship/Metadata/Semantic intent | Fast/Entity-enriched/Graph-enriched/Metadata-enriched/Comprehensive (5 modes) | 2-8s |
 | **`zot_summarize`** | Understanding papers | Quick/Targeted/Comprehensive/Full depth | 4 depth modes | 0.5-100k tokens |
-| **`zot_explore_graph`** | Exploring connections | Citation/Collaboration/Concept/Temporal/Influence/Venue intent | 7 strategy modes + Comprehensive | 2-10s |
+| **`zot_explore_graph`** | Exploring connections | Citation/Collaboration/Concept/Temporal/Influence/Venue/Content Similarity intent | 9 modes total (8 graph + 1 content) | 2-10s |
 
 **Why only 3 tools?**
 - ✅ **Automatic intent detection** - No manual backend selection
@@ -147,13 +147,14 @@ questions = [
 
 ## 🕸️ Tool #3: `zot_explore_graph` - Exploring Connections
 
-**Replaces 7 legacy tools:**
+**Replaces 9 legacy tools:**
 - ❌ `zot_graph_search` (general graph queries)
-- ❌ `zot_find_related_papers` (Related Papers Mode)
 - ❌ `zot_find_citation_chain` (Citation Chain Mode)
-- ❌ `zot_explore_concept_network` (Concept Network Mode)
-- ❌ `zot_find_collaborator_network` (Collaboration Mode)
 - ❌ `zot_find_seminal_papers` (Influence Mode)
+- ❌ `zot_find_similar_papers` (Content Similarity Mode) - 🆕
+- ❌ `zot_find_related_papers` (Related Papers Mode)
+- ❌ `zot_find_collaborator_network` (Collaboration Mode)
+- ❌ `zot_explore_concept_network` (Concept Network Mode)
 - ❌ `zot_track_topic_evolution` (Temporal Mode)
 - ❌ `zot_analyze_venues` (Venue Analysis Mode)
 
@@ -163,44 +164,51 @@ questions = [
 |--------|---------------------|----------------|---------------|
 | **Citation** | paper_key | "Papers citing papers that cite X" | Citation Chain Mode (2-3 hop traversal) |
 | **Influence** | field | "Find seminal/influential papers in X" | Influence Mode (PageRank analysis) |
-| **Related** | paper_key | "Papers related to X", "Connected work" | Related Papers Mode (shared entities) |
+| **Content Similarity** | paper_key | "Papers similar to X", "More like this" | Content Similarity Mode (Qdrant vector similarity) |
+| **Related** | paper_key | "Papers related to X", "Connected work" | Related Papers Mode (Neo4j shared entities) |
 | **Collaboration** | author | "Who collaborated with X?" | Collaboration Mode (co-authorship network) |
 | **Concept** | concept | "Concepts related to X" | Concept Network Mode (multi-hop concept links) |
 | **Temporal** | start_year, end_year | "Track how X evolved from 2020-2025" | Temporal Mode (evolution timeline) |
 | **Venue** | field | "Top journals/conferences in X" | Venue Analysis Mode (publication ranking) |
 
-### Seven Execution Modes
+### Nine Execution Modes
 
 ```
-1. Citation Chain Mode
+1. Citation Chain Mode (Neo4j)
    - 2-3 hop citation network traversal
    - Example: "Find papers citing papers that cite X"
 
-2. Influence Mode (PageRank)
+2. Influence Mode (Neo4j PageRank)
    - Citation graph ranking analysis
    - Example: "Find seminal papers in cognitive neuroscience"
 
-3. Related Papers Mode
-   - Shared entity connections
-   - Example: "Papers related to X"
+3. Content Similarity Mode (Qdrant) 🆕
+   - Vector-based 'More Like This' discovery
+   - Example: "Find papers similar to X", "More papers like this"
+   - Note: Content-based (what the paper discusses), not graph-based
 
-4. Collaboration Mode
+4. Related Papers Mode (Neo4j)
+   - Shared entity connections
+   - Example: "Papers related to X", "Connected work"
+   - Note: Graph-based (citations/shared authors), not content-based
+
+5. Collaboration Mode (Neo4j)
    - Co-authorship network
    - Example: "Who collaborated with Smith?"
 
-5. Concept Network Mode
+6. Concept Network Mode (Neo4j)
    - Multi-hop concept relationships
    - Example: "Concepts related to attention mechanisms"
 
-6. Temporal Mode
+7. Temporal Mode (Neo4j)
    - Topic evolution over time
    - Example: "Track how deep learning evolved from 2015-2025"
 
-7. Venue Analysis Mode
+8. Venue Analysis Mode (Neo4j)
    - Publication outlet ranking
    - Example: "Top conferences in NLP"
 
-8. Comprehensive Mode
+9. Comprehensive Mode (Multi-backend)
    - Multi-strategy execution
    - Example: "Explore everything about transformers"
 ```
@@ -215,7 +223,6 @@ questions = [
 |------|----------|---------|
 | `zot_search_items` | 📊 MEDIUM | Keyword-based metadata search |
 | `zot_get_item` | 📊 MEDIUM | Retrieve paper metadata |
-| `zot_find_similar_papers` | 📊 MEDIUM | Content-based "More Like This" |
 | Collection tools | 📊 MEDIUM | Create/add/remove from collections |
 | Tag tools | 📊 MEDIUM | Get/update tags |
 | Note tools | 📊 MEDIUM | Get/create/search notes |
@@ -263,7 +270,7 @@ User Query
 
 ## 📈 Migration Summary
 
-### Before (18 tools)
+### Before (19 tools)
 
 ```
 Search/Discovery Tools (8):
@@ -280,13 +287,14 @@ Summarization Tools (2):
 - zot_ask_paper
 - zot_get_item_fulltext
 
-Graph Tools (7):
+Graph/Exploration Tools (9):
 - zot_graph_search
-- zot_find_related_papers
 - zot_find_citation_chain
-- zot_explore_concept_network
-- zot_find_collaborator_network
 - zot_find_seminal_papers
+- zot_find_similar_papers (now integrated into zot_explore_graph as Content Similarity Mode) 🆕
+- zot_find_related_papers
+- zot_find_collaborator_network
+- zot_explore_concept_network
 - zot_track_topic_evolution
 - zot_analyze_venues
 ```
@@ -301,19 +309,20 @@ Understanding Papers (1):
 ✅ zot_summarize (4 depth modes)
 
 Exploring Connections (1):
-✅ zot_explore_graph (7 strategy modes + comprehensive)
+✅ zot_explore_graph (9 modes total: 8 graph + 1 content)
 ```
 
 ### Benefits
 
-- ✅ **83% reduction in tool count** (18 → 3 for core workflows)
+- ✅ **84% reduction in tool count** (19 → 3 for core workflows)
 - ✅ **Complete query/retrieval consolidation** (all search and metadata retrieval in smart tools)
+- ✅ **Dual-backend exploration** (graph-based via Neo4j + content-based via Qdrant)
 - ✅ **Automatic intent detection** (no manual backend or mode selection)
 - ✅ **Automatic decomposition** (Phase 0 pre-processing for multi-concept queries)
 - ✅ **Smart mode selection** (optimal strategy for each query)
 - ✅ **Built-in quality optimization** (escalates when needed)
 - ✅ **Consistent interface** (same query → consistent routing)
-- ✅ **Reduced cognitive load** (LLM doesn't choose from 18+ options)
+- ✅ **Reduced cognitive load** (LLM doesn't choose from 19+ options)
 - ✅ **Cost optimization** (uses cheapest/fastest mode that works)
 
 ---
@@ -348,10 +357,11 @@ Current tool distribution (post-migration):
 - **Direct when needed** - Can still use specialized tools for specific tasks
 
 **Benefits**:
-- **Simpler** - 83% fewer tools for core workflows (18 → 3)
+- **Simpler** - 84% fewer tools for core workflows (19 → 3)
 - **Smarter** - Automatic intent detection, decomposition, and mode selection
 - **Faster** - Uses optimal backend combination for each query
 - **Better** - Quality assessment and automatic escalation
+- **Unified** - Graph exploration (Neo4j) + content similarity (Qdrant) in one tool
 
 **Impact**:
 - **For Claude** - Clear 3-tool interface, reduced cognitive load

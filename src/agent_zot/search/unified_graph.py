@@ -2,18 +2,19 @@
 Unified intelligent graph exploration tool for Agent-Zot.
 
 Consolidates all graph analysis tools into a single intelligent interface that
-automatically detects exploration intent and selects the optimal graph traversal
-strategy.
+automatically detects exploration intent and selects the optimal exploration
+strategy (graph-based OR content-based).
 
-Seven Execution Modes:
-1. Citation Chain Mode - Multi-hop citation analysis
-2. Seminal Papers Mode - Influential papers by PageRank
-3. Related Papers Mode - Papers connected via shared entities
-4. Collaborator Network Mode - Co-authorship networks
-5. Concept Network Mode - Concept propagation through papers
-6. Topic Evolution Mode - Temporal trajectory analysis
-7. Venue Analysis Mode - Publication outlet patterns
-8. Comprehensive Mode - Multi-strategy exploration with result merging
+Nine Execution Modes:
+1. Citation Chain Mode - Multi-hop citation analysis (Neo4j)
+2. Seminal Papers Mode - Influential papers by PageRank (Neo4j)
+3. Related Papers Mode - Papers connected via shared entities (Neo4j)
+4. Collaborator Network Mode - Co-authorship networks (Neo4j)
+5. Concept Network Mode - Concept propagation through papers (Neo4j)
+6. Topic Evolution Mode - Temporal trajectory analysis (Neo4j)
+7. Venue Analysis Mode - Publication outlet patterns (Neo4j)
+8. Content Similarity Mode - Vector-based 'More Like This' discovery (Qdrant)
+9. Comprehensive Mode - Multi-strategy exploration with result merging
 """
 
 import re
@@ -46,12 +47,22 @@ INFLUENCE_PATTERNS = [
     r'\binfluence\s+(score|metric|analysis)\b',
 ]
 
-# Related Papers Mode patterns
+# Content Similarity Mode patterns (check BEFORE Related Papers - more specific)
+CONTENT_SIMILARITY_PATTERNS = [
+    r'\b(similar|like|resembling)\s+(to|this)\b',
+    r'\bmore\s+(like|similar)\b',
+    r'\bpapers?\s+(like|similar\s+to)\s+(this|[A-Z0-9]{8})\b',
+    r'\bcontent-based\s+similarit',
+    r'\bsemantically\s+similar\b',
+    r'\b(methodology|approach)\s+similar\b',
+]
+
+# Related Papers Mode patterns (graph-based relationships)
 RELATED_PATTERNS = [
-    r'\b(related|similar|connected)\s+(papers?|to)\b',
-    r'\bpapers?\s+(related|similar|connected)\s+to\b',
+    r'\b(related|connected)\s+(papers?|to)\b',  # Removed "similar" - now in Content Similarity
+    r'\bpapers?\s+(related|connected)\s+to\b',
     r'\bshared\s+(entities|authors?|concepts?)\b',
-    r'\bwhat\s+(else|other\s+papers?)\s+(is|are)\s+(related|similar|connected)\b',
+    r'\bwhat\s+(else|other\s+papers?)\s+(is|are)\s+(related|connected)\b',
 ]
 
 # Collaborator Network Mode patterns
@@ -101,6 +112,7 @@ def detect_graph_intent(query: str) -> Tuple[str, float, Dict[str, Any]]:
         Tuple of (intent, confidence, extracted_params) where intent is one of:
         - "citation" - Citation chain analysis
         - "influence" - Seminal/influential papers
+        - "content_similarity" - Vector-based content similarity
         - "related" - Papers connected via entities
         - "collaboration" - Co-authorship networks
         - "concept" - Concept propagation
@@ -122,6 +134,12 @@ def detect_graph_intent(query: str) -> Tuple[str, float, Dict[str, Any]]:
         if re.search(pattern, query_lower):
             logger.info(f"Detected INFLUENCE intent: pattern '{pattern}' matched")
             return ("influence", 0.90, extracted_params)
+
+    # Check Content Similarity patterns (before Related Papers - more specific)
+    for pattern in CONTENT_SIMILARITY_PATTERNS:
+        if re.search(pattern, query_lower):
+            logger.info(f"Detected CONTENT_SIMILARITY intent: pattern '{pattern}' matched")
+            return ("content_similarity", 0.85, extracted_params)
 
     # Check Collaboration patterns
     for pattern in COLLABORATION_PATTERNS:
@@ -586,6 +604,110 @@ def run_venue_analysis_mode(
             "mode": "venue"
         }
 
+def run_content_similarity_mode(
+    semantic_search_instance,
+    zotero_client,
+    paper_key: str,
+    limit: int = 10
+) -> Dict[str, Any]:
+    """
+    Content Similarity Mode: Find papers with similar content using vector similarity.
+
+    Uses Qdrant 'More Like This' on the paper's abstract to find semantically similar papers.
+    This is content-based (what the paper discusses), not graph-based (citations/authors).
+    """
+    logger.info(f"Running CONTENT SIMILARITY Mode: paper_key={paper_key}")
+
+    try:
+        # Get the reference paper's abstract
+        from agent_zot.tools.zotero import get_item_with_fallback
+
+        item = get_item_with_fallback(zotero_client, paper_key)
+
+        if not item:
+            return {
+                "success": False,
+                "error": f"No item found with key: {paper_key}",
+                "mode": "content_similarity"
+            }
+
+        # Get abstract for similarity search
+        abstract = item.get("data", {}).get("abstractNote", "")
+        if not abstract:
+            return {
+                "success": False,
+                "error": f"Item {paper_key} has no abstract for similarity search.",
+                "suggestion": "Use zot_explore_graph Related Papers Mode for graph-based relationships instead.",
+                "mode": "content_similarity"
+            }
+
+        # Use semantic search with the abstract
+        results = semantic_search_instance.search(query=abstract, limit=limit + 1)  # +1 to exclude source paper
+
+        if not results or "results" not in results or not results["results"]:
+            return {
+                "success": False,
+                "error": "No similar papers found",
+                "mode": "content_similarity"
+            }
+
+        # Filter out the source paper if it appears in results
+        filtered_results = [p for p in results["results"] if p.get("item_key") != paper_key][:limit]
+
+        if not filtered_results:
+            return {
+                "success": False,
+                "error": "No similar papers found (only source paper matched)",
+                "mode": "content_similarity"
+            }
+
+        # Get title of reference paper
+        ref_title = item.get("data", {}).get("title", paper_key)
+
+        # Format results as markdown
+        output = [f"# Papers Similar to: {ref_title}\n"]
+        output.append(f"**Reference Key**: {paper_key}\n")
+        output.append(f"Found {len(filtered_results)} semantically similar papers using vector similarity:\n")
+
+        for i, paper in enumerate(filtered_results, 1):
+            title = paper.get("title", "Untitled")
+            authors = paper.get("creators_str", "Unknown authors")
+            year = paper.get("year", "N/A")
+            key = paper.get("item_key", "")
+            score = paper.get("similarity_score", 0.0)
+
+            output.append(f"## {i}. {title}")
+            output.append(f"- **Authors**: {authors}")
+            output.append(f"- **Year**: {year}")
+            output.append(f"- **Item Key**: `{key}`")
+            output.append(f"- **Similarity Score**: {score:.3f}")
+
+            # Include abstract preview if available
+            abs_text = paper.get("abstract", "")
+            if abs_text:
+                preview = abs_text[:200] + "..." if len(abs_text) > 200 else abs_text
+                output.append(f"- **Abstract**: {preview}")
+
+            output.append("")
+
+        return {
+            "success": True,
+            "mode": "content_similarity",
+            "content": "\n".join(output),
+            "papers_found": len(filtered_results),
+            "strategy": "Vector-based content similarity (Qdrant More Like This)",
+            "reference_paper": paper_key
+        }
+
+    except Exception as e:
+        logger.error(f"Content Similarity Mode failed: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "mode": "content_similarity"
+        }
+
+
 def run_comprehensive_mode(
     neo4j_client,
     query: str,
@@ -673,6 +795,8 @@ def run_comprehensive_mode(
 def smart_explore_graph(
     query: str,
     neo4j_client,
+    semantic_search_instance=None,
+    zotero_client=None,
     paper_key: Optional[str] = None,
     author: Optional[str] = None,
     concept: Optional[str] = None,
@@ -684,13 +808,17 @@ def smart_explore_graph(
     max_hops: int = 2
 ) -> Dict[str, Any]:
     """
-    Intelligent unified graph exploration tool.
+    Intelligent unified exploration tool (graph-based AND content-based).
 
-    Automatically detects intent and selects optimal graph traversal strategy.
+    Automatically detects intent and selects optimal exploration strategy:
+    - Graph-based (Neo4j): citations, collaborations, concepts, temporal, venue
+    - Content-based (Qdrant): vector similarity "More Like This"
 
     Args:
         query: User's query string
         neo4j_client: Neo4j GraphRAG client instance
+        semantic_search_instance: Semantic search instance for content similarity (optional)
+        zotero_client: Zotero client instance for metadata (optional)
         paper_key: Optional paper key for paper-centric analysis
         author: Optional author name for collaboration analysis
         concept: Optional concept name for concept/topic analysis
@@ -705,7 +833,7 @@ def smart_explore_graph(
         Dict with:
         - success: bool
         - mode: str (which mode was used)
-        - content: str (the graph analysis results)
+        - content: str (the exploration results)
         - error: str (if failed)
         - Additional metadata (papers_found, strategy, etc.)
     """
@@ -745,6 +873,27 @@ def smart_explore_graph(
 
     elif mode == "influence":
         result = run_seminal_papers_mode(neo4j_client, field, limit)
+
+    elif mode == "content_similarity":
+        if not paper_key:
+            return {
+                "success": False,
+                "error": "Content Similarity Mode requires a paper_key parameter",
+                "suggestion": "Provide paper key or use query like 'find papers similar to ABC12345'"
+            }
+        if not semantic_search_instance:
+            return {
+                "success": False,
+                "error": "Content Similarity Mode requires semantic_search_instance",
+                "suggestion": "This mode requires Qdrant - ensure semantic search is initialized"
+            }
+        if not zotero_client:
+            return {
+                "success": False,
+                "error": "Content Similarity Mode requires zotero_client",
+                "suggestion": "This mode requires Zotero API access"
+            }
+        result = run_content_similarity_mode(semantic_search_instance, zotero_client, paper_key, limit)
 
     elif mode == "related":
         if not paper_key:
@@ -795,7 +944,7 @@ def smart_explore_graph(
     else:
         return {
             "success": False,
-            "error": f"Unknown mode: {mode}. Must be one of: citation, influence, related, collaboration, concept, temporal, venue, exploratory"
+            "error": f"Unknown mode: {mode}. Must be one of: citation, influence, content_similarity, related, collaboration, concept, temporal, venue, exploratory"
         }
 
     # Add intent detection metadata to result

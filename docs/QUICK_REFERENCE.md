@@ -102,11 +102,12 @@ python populate_neo4j_from_qdrant.py
   - Four modes: Quick (~500-800 tokens), Targeted (~2k-5k tokens), Comprehensive (~8k-15k tokens), Full (10k-100k tokens)
 
 ### 🆕 Primary Graph Exploration (Recommended)
-- **`zot_explore_graph(query, paper_key, author, concept, start_year, end_year, field, force_mode, limit, max_hops)`** - **Smart unified graph exploration (RECOMMENDED DEFAULT)**
-  - Automatic intent detection (citation/collaboration/concept/temporal/influence/venue)
+- **`zot_explore_graph(query, paper_key, author, concept, start_year, end_year, field, force_mode, limit, max_hops)`** - **Smart unified exploration (RECOMMENDED DEFAULT)**
+  - Automatic intent detection (citation/collaboration/concept/temporal/influence/venue/content_similarity)
   - Parameter extraction from natural language queries
-  - Smart mode selection (chooses optimal Neo4j traversal)
-  - Seven modes: Citation Chain, Influence (PageRank), Related Papers, Collaboration, Concept Network, Temporal, Venue Analysis, plus Comprehensive
+  - Smart mode selection (chooses optimal strategy: graph-based OR content-based)
+  - Nine modes: Citation Chain, Influence (PageRank), Content Similarity (vector-based), Related Papers, Collaboration, Concept Network, Temporal, Venue Analysis, plus Comprehensive
+  - Dual backend: Neo4j for graph exploration + Qdrant for content similarity
 
 ### Content Analysis (Advanced)
 - `zot_ask_paper(item_key, question, top_k)` - Direct chunk retrieval (manual control)
@@ -125,13 +126,14 @@ python populate_neo4j_from_qdrant.py
 
 ### Advanced Graph Analysis (Legacy - use `zot_explore_graph` instead)
 - ~~`zot_graph_search(query, entity_types, limit)`~~ - DEPRECATED: Use `zot_explore_graph` (automatic mode selection)
-- ~~`zot_find_related_papers(item_key, limit)`~~ - DEPRECATED: Use `zot_explore_graph` (Related Papers Mode)
 - ~~`zot_find_citation_chain(paper_key, max_hops, limit)`~~ - DEPRECATED: Use `zot_explore_graph` (Citation Chain Mode)
+- ~~`zot_find_seminal_papers(field, top_n)`~~ - DEPRECATED: Use `zot_explore_graph` (Influence Mode)
+- ~~`zot_find_similar_papers(item_key, limit)`~~ - DEPRECATED: Use `zot_explore_graph` (Content Similarity Mode)
+- ~~`zot_find_related_papers(item_key, limit)`~~ - DEPRECATED: Use `zot_explore_graph` (Related Papers Mode)
 - ~~`zot_find_collaborator_network(author, max_hops, limit)`~~ - DEPRECATED: Use `zot_explore_graph` (Collaboration Mode)
 - ~~`zot_explore_concept_network(concept, max_hops, limit)`~~ - DEPRECATED: Use `zot_explore_graph` (Concept Network Mode)
 - ~~`zot_track_topic_evolution(concept, start_year, end_year)`~~ - DEPRECATED: Use `zot_explore_graph` (Temporal Mode)
 - ~~`zot_analyze_venues(field, top_n)`~~ - DEPRECATED: Use `zot_explore_graph` (Venue Analysis Mode)
-- ~~`zot_find_seminal_papers(field, top_n)`~~ - DEPRECATED: Use `zot_explore_graph` (Influence Mode)
 
 ### Fallback Tools
 - None - All query/retrieval operations consolidated into 3 smart tools
