@@ -92,25 +92,25 @@ def check_neo4j_availability(semantic_search_instance) -> bool:
         return False
 
     try:
-        # Quick check: count total nodes (should be fast)
-        result = semantic_search_instance.neo4j_client.execute_query(
-            "MATCH (n) RETURN count(n) as node_count LIMIT 1"
-        )
+        # Quick check: get graph statistics (should be fast)
+        stats = semantic_search_instance.neo4j_client.get_graph_statistics()
 
-        if result and len(result) > 0:
-            node_count = result[0].get("node_count", 0)
+        if "error" in stats:
+            logger.warning(f"Neo4j statistics error: {stats['error']}")
+            return False
 
-            if node_count > 0:
-                logger.info(f"Neo4j available with {node_count} nodes")
-                return True
-            else:
-                logger.info("Neo4j available but empty (0 nodes)")
-                return False
+        # Check total nodes (papers + entities)
+        total_nodes = stats.get("papers", 0) + stats.get("total_entities", 0)
+
+        if total_nodes > 0:
+            logger.info(f"Neo4j available with {total_nodes} nodes ({stats.get('papers', 0)} papers, {stats.get('total_entities', 0)} entities)")
+            return True
+        else:
+            logger.info("Neo4j available but empty (0 nodes)")
+            return False
     except Exception as e:
         logger.warning(f"Neo4j availability check failed: {e}")
         return False
-
-    return False
 
 
 def get_backend_weights(intent: str) -> Dict[str, float]:
