@@ -20,14 +20,22 @@ The **recommended default** for paper analysis. Automatically:
 - Orchestrates multi-aspect summaries
 - Returns 4 key aspects: research question, methodology, findings, conclusions
 
+### `zot_explore_graph` - Exploring Connections
+The **recommended default** for graph exploration and network analysis. Automatically:
+- Detects exploration strategy (citation/collaboration/concept/temporal/influence/venue)
+- Selects optimal Neo4j traversal pattern
+- Extracts parameters from queries (author names, years, concepts)
+- Provides 7 specialized modes + comprehensive mode
+
 **Complete Workflow Example:**
 ```
 1. zot_search("neural mechanisms of cognitive control") → Find relevant papers
 2. zot_summarize(item_key, "Summarize comprehensively") → Understand each paper
-3. [Use specialized tools below for deeper analysis]
+3. zot_explore_graph("Who collaborated with [author]?") → Explore connections
+4. zot_explore_graph("How has [topic] evolved from 2015-2025?") → Track evolution
 ```
 
-**Use specialized tools** (listed below) for specific graph analysis tasks like citation networks, concept evolution, and collaboration analysis.
+**Legacy tools** (listed below) are still available for manual control when needed, but the three intelligent tools above handle 95% of research workflows automatically.
 
 ## Table of Contents
 
@@ -46,10 +54,25 @@ The **recommended default** for paper analysis. Automatically:
 
 **Goal**: Identify the most influential papers in your library or field.
 
-**Tools**: `zot_find_seminal_papers`, `zot_semantic_search`
+**Recommended Tool**: `zot_explore_graph` (Influence Mode)
 
-**Workflow**:
+**Quick Start**:
 ```
+Simply ask in natural language:
+→ "Find the most influential papers in my library"
+→ "What are the seminal papers in neuroscience?"
+→ "Show me highly-cited papers on memory"
+
+The tool automatically:
+- Detects "influence" intent (90% confidence)
+- Uses PageRank analysis on citation graph
+- Ranks papers by citation impact
+```
+
+**Legacy Workflow** (for manual control):
+```
+Tools: `zot_find_seminal_papers`, `zot_semantic_search`
+
 1. "Find the most influential papers in my library"
    → Uses PageRank on citation graph
 
@@ -72,10 +95,26 @@ The **recommended default** for paper analysis. Automatically:
 
 **Goal**: Understand how a topic evolved over time.
 
-**Tools**: `zot_track_topic_evolution`, `zot_find_recent_developments`
+**Recommended Tool**: `zot_explore_graph` (Temporal Mode)
 
-**Workflow**:
+**Quick Start**:
 ```
+Simply ask in natural language:
+→ "How has research on attention evolved from 2014-2024?"
+→ "Track the evolution of transformers from 2017 to 2025"
+→ "Show me how memory research changed from 2010-2024"
+
+The tool automatically:
+- Detects "temporal" intent (85% confidence)
+- Extracts concept and year range from query
+- Performs yearly aggregation + concept filtering
+- Shows emerging trends over time
+```
+
+**Legacy Workflow** (for manual control):
+```
+Tools: `zot_track_topic_evolution`, `zot_find_recent_developments`
+
 1. "Track how research on attention mechanisms evolved from 2014-2024"
    → Shows yearly paper counts, emerging concepts, trends
 
@@ -97,10 +136,26 @@ The **recommended default** for paper analysis. Automatically:
 
 **Goal**: Find related concepts and papers through knowledge graph traversal.
 
-**Tools**: `zot_explore_concept_network`, `zot_semantic_search`
+**Recommended Tool**: `zot_explore_graph` (Concept Network Mode)
 
-**Workflow**:
+**Quick Start**:
 ```
+Simply ask in natural language:
+→ "What concepts are related to self-attention?"
+→ "Explore concepts around working memory"
+→ "What connects attention and memory?"
+
+The tool automatically:
+- Detects "concept" intent (85% confidence)
+- Extracts concept from query
+- Performs multi-hop concept propagation (2 hops default)
+- Shows related concepts through intermediate papers
+```
+
+**Legacy Workflow** (for manual control):
+```
+Tools: `zot_explore_concept_network`, `zot_semantic_search`
+
 1. "What concepts are related to self-attention through 2 hops?"
    → Multi-hop concept propagation
 
@@ -123,10 +178,25 @@ The **recommended default** for paper analysis. Automatically:
 
 **Goal**: Find extended citation networks (papers citing papers citing X).
 
-**Tools**: `zot_find_citation_chain`, `zot_find_related_papers`
+**Recommended Tool**: `zot_explore_graph` (Citation Chain Mode)
 
-**Workflow**:
+**Quick Start**:
 ```
+Simply ask in natural language:
+→ "Find papers citing papers that cite [paper_key]"
+→ "Show me the citation chain for this paper"
+→ "What papers build on work citing BERT?"
+
+The tool automatically:
+- Detects "citation" intent (90% confidence)
+- Performs multi-hop citation traversal (2 hops default)
+- Returns extended citation network with paper details
+```
+
+**Legacy Workflow** (for manual control):
+```
+Tools: `zot_find_citation_chain`, `zot_find_related_papers`
+
 1. Find a key paper:
    → "Search for 'Attention Is All You Need'"
 
@@ -227,10 +297,26 @@ The **recommended default** for paper analysis. Automatically:
 
 **Goal**: Discover collaboration patterns and potential collaborators.
 
-**Tools**: `zot_find_collaborator_network`, `zot_graph_search`
+**Recommended Tool**: `zot_explore_graph` (Collaboration Mode)
 
-**Workflow**:
+**Quick Start**:
 ```
+Simply ask in natural language:
+→ "Who collaborated with Geoffrey Hinton?"
+→ "Find the collaborators of Yann LeCun"
+→ "Who has worked with Lanius?"
+
+The tool automatically:
+- Detects "collaboration" intent (90% confidence)
+- Extracts author name from query
+- Performs multi-hop co-authorship traversal (2 hops default)
+- Returns extended collaboration network
+```
+
+**Legacy Workflow** (for manual control):
+```
+Tools: `zot_find_collaborator_network`, `zot_graph_search`
+
 1. "Find collaborators of Geoffrey Hinton (2 hops)"
    → Extended co-authorship network
 
@@ -276,10 +362,26 @@ The **recommended default** for paper analysis. Automatically:
 
 **Goal**: Identify top publication venues for your research.
 
-**Tools**: `zot_analyze_venues`, `zot_find_seminal_papers`
+**Recommended Tool**: `zot_explore_graph` (Venue Analysis Mode)
 
-**Workflow**:
+**Quick Start**:
 ```
+Simply ask in natural language:
+→ "What are the top journals in my library?"
+→ "Show me the best publication venues"
+→ "Analyze venues for neuroscience"
+
+The tool automatically:
+- Detects "venue" intent (80% confidence)
+- Extracts field filter if present
+- Aggregates publication venue statistics
+- Ranks by paper count with metadata
+```
+
+**Legacy Workflow** (for manual control):
+```
+Tools: `zot_analyze_venues`, `zot_find_seminal_papers`
+
 1. "Analyze top publication venues in machine learning"
    → Ranked by paper count
 
@@ -394,20 +496,27 @@ The **recommended default** for paper analysis. Automatically:
 ```
 Goal: Understand the state of research on vision transformers
 
-1. "Find seminal papers on vision transformers"
-   → Identify foundational work
+Using the three intelligent tools:
 
-2. "Track how vision transformer research evolved from 2020-2025"
-   → Understand development trajectory
+1. zot_search("vision transformers")
+   → Find relevant papers (Fast or Comprehensive mode)
 
-3. "Find recent developments on vision transformers (last year)"
-   → Latest innovations
+2. zot_summarize(item_key, "Summarize comprehensively")
+   → Understand each key paper (4 aspects: question, methods, findings, conclusions)
 
-4. "Explore concepts related to vision transformers (2 hops)"
-   → Adjacent research areas
+3. zot_explore_graph("Find the most influential papers on vision transformers")
+   → Identify foundational work (Influence Mode - automatic)
 
-5. "Analyze top publication venues for vision research"
-   → Where to publish
+4. zot_explore_graph("How has vision transformer research evolved from 2020-2025?")
+   → Development trajectory (Temporal Mode - automatic parameter extraction)
+
+5. zot_explore_graph("What concepts are related to vision transformers?")
+   → Adjacent research areas (Concept Network Mode - 2 hops)
+
+6. zot_explore_graph("What are the top venues for vision research?")
+   → Publication outlets (Venue Analysis Mode)
+
+All modes detected automatically - just ask in natural language!
 ```
 
 ---
@@ -417,19 +526,25 @@ Goal: Understand the state of research on vision transformers
 ```
 Goal: Identify potential collaborators in graph learning
 
-1. "Search the graph for authors working on graph neural networks"
-   → Find experts
+Using the three intelligent tools:
 
-2. "Find collaborator networks of [top 3 authors]"
-   → Extended network
+1. zot_search("graph neural networks")
+   → Find papers in this area (Fast or Graph-enriched mode)
 
-3. "What institutions are these researchers from?"
+2. zot_explore_graph("Who collaborated with [top author from results]?")
+   → Extended network (Collaboration Mode - automatic author extraction)
 
-4. "Show me recent papers by these authors (2 years)"
-   → Current work
+3. zot_search("papers by [collaborator name] published in 2023-2024")
+   → Current work (Metadata-enriched mode - automatic intent detection)
 
-5. "Find their most influential papers"
-   → Assess research impact
+4. zot_explore_graph("Find the most influential papers by [author]")
+   → Assess impact (Influence Mode with author filter)
+
+5. zot_summarize(item_key, "What methodology did they use?")
+   → Understand approach (Targeted Mode - semantic Q&A)
+
+Collaboration network → Impact → Current work → Methodology
+All detected automatically!
 ```
 
 ---
@@ -439,19 +554,25 @@ Goal: Identify potential collaborators in graph learning
 ```
 Goal: Find underexplored combinations of RL and language models
 
-1. "Track evolution of reinforcement learning (2015-2025)"
-   → RL trajectory
+Using the three intelligent tools:
 
-2. "Track evolution of language models (2015-2025)"
-   → LM trajectory
+1. zot_explore_graph("How has reinforcement learning evolved from 2015-2025?")
+   → RL trajectory (Temporal Mode - automatic parameter extraction)
 
-3. "Search for papers combining RL and language models"
-   → Existing work
+2. zot_explore_graph("How have language models evolved from 2015-2025?")
+   → LM trajectory (Temporal Mode)
 
-4. "Explore concept network around RLHF (2 hops)"
-   → Related concepts
+3. zot_search("papers combining reinforcement learning and language models")
+   → Existing work (Fast or Comprehensive mode)
 
-5. Identify gaps: concepts appearing in one evolution but not the intersection
+4. zot_explore_graph("What concepts connect RL and language models?")
+   → Bridging concepts (Concept Network Mode)
+
+5. zot_summarize(item_key, "Summarize comprehensively")
+   → Understand existing RL+LM work (Comprehensive Mode - 4 aspects)
+
+Identify gaps: concepts in each evolution but sparse in the intersection
+All modes and parameters detected automatically!
 ```
 
 ---

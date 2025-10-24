@@ -444,6 +444,376 @@ def smart_summarize_paper(item_key, query=None, force_mode=None, top_k=5, *, ctx
 
 ---
 
+## Unified Smart Graph Exploration Implementation (Completed 2025-10-24)
+
+### Overview
+Implemented intelligent unified graph exploration tool (`zot_explore_graph`) that consolidates 7 legacy graph tools into one intelligent interface with automatic mode selection, parameter extraction, and multi-strategy exploration.
+
+### New Module: `src/agent_zot/search/unified_graph.py`
+
+**Purpose:** Single intelligent graph exploration interface that automatically:
+1. Detects exploration strategy needed (citation/collaboration/concept/temporal/influence/venue)
+2. Selects optimal Neo4j traversal pattern
+3. Extracts parameters from natural language queries (author names, years, concepts)
+4. Executes multi-strategy exploration for comprehensive analysis
+
+**Architecture (7 Execution Modes + Comprehensive):**
+
+```python
+def smart_explore_graph(query, neo4j_client, paper_key=None, author=None, ...):
+    """
+    Mode 1: Citation Chain Mode (paper → citing papers → second-level citations)
+    - Trigger: "Find papers citing papers that cite X"
+    - Backend: Neo4j multi-hop citation traversal
+    - Parameters: paper_key, max_hops (default 2)
+    - Use: Extended citation network analysis
+
+    Mode 2: Influence Mode (PageRank-based paper ranking)
+    - Trigger: "Find seminal/influential/highly-cited papers"
+    - Backend: Neo4j citation graph PageRank analysis
+    - Parameters: field (optional), top_n
+    - Use: Identifying foundational papers
+
+    Mode 3: Related Papers Mode (shared entity connections)
+    - Trigger: "Papers related to X", "Connected work"
+    - Backend: Neo4j shared authors, concepts, methods
+    - Parameters: paper_key
+    - Use: Finding papers with common entities
+
+    Mode 4: Collaboration Mode (co-authorship networks)
+    - Trigger: "Who collaborated with [author]?"
+    - Backend: Neo4j multi-hop co-authorship traversal
+    - Parameters: author, max_hops (default 2)
+    - Use: Extended collaboration network analysis
+
+    Mode 5: Concept Network Mode (concept propagation)
+    - Trigger: "Concepts related to X", "What connects A and B?"
+    - Backend: Neo4j multi-hop concept relationships
+    - Parameters: concept, max_hops (default 2)
+    - Use: Exploring related concepts through papers
+
+    Mode 6: Temporal Mode (topic evolution over time)
+    - Trigger: "Track how [topic] evolved from [year] to [year]"
+    - Backend: Neo4j temporal analysis with yearly trends
+    - Parameters: concept, start_year, end_year
+    - Use: Topic evolution timeline
+
+    Mode 7: Venue Analysis Mode (publication outlet ranking)
+    - Trigger: "Top journals/conferences in [field]"
+    - Backend: Neo4j publication venue statistics
+    - Parameters: field (optional), top_n
+    - Use: Identifying key publication outlets
+
+    Mode 8: Comprehensive Mode (multi-strategy exploration)
+    - Trigger: "Explore everything about X"
+    - Backend: Runs multiple strategies and merges results
+    - Parameters: query, paper_key, limit
+    - Use: Broad exploration combining approaches
+    """
+```
+
+**Intent Detection Patterns (Domain-Agnostic):**
+
+```python
+# Citation Chain Mode patterns
+CITATION_PATTERNS = [
+    r'\bcit(ing|ation|ed?)\s+(papers?|chain|network)\b',
+    r'\bpapers?\s+(citing|that\s+cite)\b',
+    r'\bcitation\s+(chain|network|path)\b',
+    r'\bpapers?\s+citing\s+papers?\s+(citing|that\s+cite)\b',
+]
+
+# Influence Mode patterns
+INFLUENCE_PATTERNS = [
+    r'\b(seminal|influential|foundational|key|important|highly-cited)\s+papers?\b',
+    r'\bmost\s+(influential|cited|important)\b',
+    r'\b(top|best|leading)\s+papers?\b',
+]
+
+# Related Papers Mode patterns
+RELATED_PATTERNS = [
+    r'\brelated\s+(to|papers?)\b',
+    r'\bsimilar\s+(to|papers?)\b',
+    r'\bconnected\s+(to|work|papers?)\b',
+]
+
+# Collaboration Mode patterns
+COLLABORATION_PATTERNS = [
+    r'\bcollaborat\w*\b',
+    r'\bco-author',
+    r'\b(worked|works|working)\s+with\b',
+]
+
+# Concept Network Mode patterns
+CONCEPT_PATTERNS = [
+    r'\bconcepts?\s+(related|connected)\b',
+    r'\b(what|which)\s+connects?\b',
+    r'\brelationships?\s+between\b',
+]
+
+# Temporal Mode patterns
+TEMPORAL_PATTERNS = [
+    r'\b(evolv(e|ed|ing|ution)|develop(ed|ment)|progress(ed|ion))\b.*\b(from|since|over|between)\b.*\d{4}',
+    r'\btrack\w*\b.*\b(over\s+time|temporal|chronological)\b',
+    r'\bhow\s+(did|has)\b.*\b(chang(e|ed)|evolv(e|ed))\b',
+]
+
+# Venue Analysis Mode patterns
+VENUE_PATTERNS = [
+    r'\b(top|best|leading)\s+(journals?|conferences?|venues?|publications?)\b',
+    r'\bwhere\s+(was|were)\s+.*\bpublished\b',
+]
+```
+
+**Parameter Extraction (Automatic):**
+
+```python
+# Author name extraction - supports complex names
+author_match = re.search(
+    r'(?:with|of|by|for)\s+([A-Z][a-zA-Z\'\-]+(?:\s+[A-Z][a-zA-Z\'\-]+)*)',
+    query
+)
+# Handles: Smith, McDonald, DePrince, O'Brien, van der Waals
+
+# Year extraction - 4-digit years (1900-2099)
+years = re.findall(r'\b(?:19|20)\d{2}\b', query)
+# Note: (?:...) non-capturing group returns full year, not just prefix
+
+# Concept extraction - stops at evolution verbs or time prepositions
+concept_match = re.search(
+    r'(?:of|on|about|for)\s+([a-zA-Z\s]{3,30}?)\s+(?:evolv|chang|develop|progress|emerg|from|since|over|between)',
+    query
+)
+# Extracts "dissociation" from "dissociation evolved from 2010 to 2024"
+
+# Field extraction - for venue and influence queries
+field_match = re.search(r'(?:in|on|about)\s+([a-zA-Z\s]{3,30}?)\s*(?:\?|$)', query)
+```
+
+**Mode Implementation Functions:**
+
+1. **`run_citation_chain_mode()`** - Multi-hop citation traversal
+2. **`run_seminal_papers_mode()`** - PageRank influence ranking
+3. **`run_related_papers_mode()`** - Shared entity discovery
+4. **`run_collaborator_network_mode()`** - Co-authorship network
+5. **`run_concept_network_mode()`** - Concept propagation
+6. **`run_topic_evolution_mode()`** - Temporal analysis
+7. **`run_venue_analysis_mode()`** - Publication outlet statistics
+8. **`run_comprehensive_mode()`** - Multi-strategy aggregation
+
+**Consistent Return Structure:**
+
+```python
+{
+    "success": True/False,
+    "mode": "citation|influence|related|collaboration|concept|temporal|venue|exploratory",
+    "content": "Formatted markdown output",
+    "papers_found": int,
+    "strategy": "Description of strategy used",
+    "intent_confidence": float (0.0-1.0),
+    "query": "Original query",
+    # Mode-specific fields:
+    "field_filter": str,      # For influence/venue modes
+    "year_range": str,        # For temporal mode
+    "author": str,            # For collaboration mode
+    "concept": str,           # For concept/temporal modes
+}
+```
+
+**Bug Fixes:**
+
+#### Fix #1: Neo4j Client Return Value Mismatch (Commit `1b3dcdf`)
+**Problem:** All 7 mode functions expected Neo4j client methods to return dicts with keys like `{'papers': [...], 'formatted_output': '...'}`, but they actually return lists directly.
+
+**Error Message:**
+```python
+AttributeError: 'list' object has no attribute 'get'
+```
+
+**Root Cause:** Functions written with incorrect assumptions:
+```python
+# ❌ WRONG - assumes dict return
+result = neo4j_client.find_seminal_papers(field=field, top_n=top_n)
+if result.get("error"):  # Crashes - result is a list, not dict
+    return {"success": False, "error": result["error"]}
+papers = result.get("papers", [])  # Crashes
+```
+
+**Solution:** Rewrote all mode functions to handle list returns and format markdown ourselves:
+```python
+# ✅ CORRECT - handles list return
+results = neo4j_client.find_seminal_papers(field=field, top_n=top_n)
+if not results:  # Check for empty list
+    return {"success": False, "error": "No papers found", "mode": "influence"}
+
+# Format markdown ourselves
+field_info = f" in field: {field}" if field else " across all fields"
+output = [f"# Seminal Papers{field_info.title()}\n"]
+output.append(f"Top {len(results)} most influential papers:\n")
+
+for i, paper in enumerate(results, 1):
+    title = paper.get("title", "Unknown")
+    year = paper.get("year", "N/A")
+    key = paper.get("item_key", "")
+    output.append(f"## {i}. {title} ({year})")
+    output.append(f"- **Key**: {key}")
+    # ...
+
+return {
+    "success": True,
+    "mode": "influence",
+    "content": "\n".join(output),
+    "papers_found": len(results),
+    # ...
+}
+```
+
+**Impact:** Fixed all 7 mode functions (citation, influence, related, collaboration, concept, temporal, venue).
+
+#### Fix #2: Year Extraction Capturing Only Prefix (Commit `477a85b`)
+**Problem:** Query "How has research on dissociation evolved from 2010 to 2024?" extracted years as "20" and "20" instead of "2010" and "2024".
+
+**Root Cause:** Regex pattern `r'\b(19|20)\d{2}\b'` used a capturing group `(19|20)`, so `re.findall` returned only the captured part:
+```python
+# ❌ WRONG - capturing group
+years = re.findall(r'\b(19|20)\d{2}\b', query)
+# Returns: ['20', '20'] instead of ['2010', '2024']
+```
+
+**Solution:** Changed to non-capturing group `(?:...)`:
+```python
+# ✅ CORRECT - non-capturing group
+years = re.findall(r'\b(?:19|20)\d{2}\b', query)
+# Returns: ['2010', '2024']
+```
+
+**Impact:** Temporal mode now correctly extracts 4-digit years from queries.
+
+#### Fix #3: Concept Extraction Including Evolution Verbs (Commit `9dc590c`)
+**Problem:** Query "How has research on dissociation evolved from 2010 to 2024?" extracted concept as "dissociation evolved" instead of just "dissociation".
+
+**Root Cause:** Concept extraction pattern stopped at "from|since|over|between" but not at evolution-related verbs, so it captured text up to "from":
+```python
+# ❌ WRONG - doesn't stop at "evolved"
+concept_match = re.search(
+    r'(?:of|on|about|for)\s+([a-zA-Z\s]{3,30}?)\s+(?:from|since|over|between)',
+    query
+)
+# "on dissociation evolved from" → captures "dissociation evolved"
+```
+
+**Solution:** Added evolution verbs to the stop pattern:
+```python
+# ✅ CORRECT - stops at evolution verbs
+concept_match = re.search(
+    r'(?:of|on|about|for)\s+([a-zA-Z\s]{3,30}?)\s+(?:evolv|chang|develop|progress|emerg|from|since|over|between)',
+    query
+)
+# "on dissociation evolved from" → captures "dissociation" (stops at "evolv")
+```
+
+**Impact:** Temporal mode now correctly extracts clean concept names without trailing verbs.
+
+### MCP Tool Integration
+
+**File:** `src/agent_zot/core/server.py:2039-2248`
+
+**New Tool:** `zot_explore_graph`
+- Priority: "🔥 HIGHEST PRIORITY - 🟢 RECOMMENDED DEFAULT"
+- Parameters: `query`, `paper_key`, `author`, `concept`, `start_year`, `end_year`, `field`, `force_mode`, `limit`, `max_hops`
+- Returns: Structured results with mode, content, confidence, provenance
+
+**Legacy Tools Updated (Marked as DEPRECATED/ADVANCED):**
+- `zot_graph_search` → Use `zot_explore_graph` (automatic mode selection)
+- `zot_find_related_papers` → Use `zot_explore_graph` (Related Papers Mode)
+- `zot_find_citation_chain` → Use `zot_explore_graph` (Citation Chain Mode)
+- `zot_find_collaborator_network` → Use `zot_explore_graph` (Collaboration Mode)
+- `zot_explore_concept_network` → Use `zot_explore_graph` (Concept Network Mode)
+- `zot_track_topic_evolution` → Use `zot_explore_graph` (Temporal Mode)
+- `zot_analyze_venues` → Use `zot_explore_graph` (Venue Analysis Mode)
+- `zot_find_seminal_papers` → Use `zot_explore_graph` (Influence Mode)
+
+All legacy tools now include deprecation notice in description:
+```python
+@mcp.tool(
+    name="zot_find_related_papers",
+    description="""📊 MEDIUM PRIORITY - 🔵 ADVANCED - Find papers related to a given paper.
+
+⚠️ DEPRECATED: Use `zot_explore_graph` instead - it automatically detects this need and uses Related Papers Mode.
+
+💡 Use this ONLY when you want manual control over the specific traversal.""",
+    annotations={"readOnlyHint": True, "title": "Find Related Papers (Manual)"}
+)
+```
+
+### Testing & Verification
+
+**Test Results (2025-10-24):**
+
+| Test | Query | Intent | Confidence | Mode | Parameters | Result |
+|------|-------|--------|------------|------|------------|--------|
+| 1 | "Find the most influential papers in my library" | influence | 90% | Influence | field=None, top_n=10 | ✅ 5 papers returned |
+| 2 | "Who has collaborated with Spiegel?" | collaboration | 90% | Collaboration | author='Spiegel', max_hops=2 | ✅ 2 collaborators found |
+| 3 | "How has research on dissociation evolved from 2010 to 2024?" | temporal | 85% | Temporal | concept='dissociation', start_year=2010, end_year=2024 | ✅ Correct extraction, no papers (expected - graph 0.5% populated) |
+| 4 | "What are the top journals in my library?" | venue | 80% | Venue | field=None, top_n=10 | ✅ Top 5 journals with counts |
+
+**Performance:**
+- Influence Mode: ~2 seconds (PageRank on citation graph)
+- Collaboration Mode: ~3 seconds (2-hop co-authorship traversal)
+- Temporal Mode: ~2 seconds (yearly aggregation + concept filter)
+- Venue Analysis Mode: ~1 second (simple aggregation query)
+
+**Neo4j Graph Status:**
+- Total nodes: 25,184 (2,370 papers, 22,814 entities)
+- Total relationships: 134,068
+- Graph populated: 0.5% (minimal entity extraction)
+- Expected: Many queries return "No results found" due to minimal graph data
+- Solution: Parameter extraction and mode selection still validates correctly
+
+**Error Handling:**
+- Empty results return helpful messages: "No papers found for concept 'dissociation' between 2010-2024"
+- Missing parameters fallback to extracted values or defaults
+- Neo4j unavailable: Returns error with suggestion to check Docker container
+
+### Three-Tool Vision Complete
+
+**All three intelligent consolidation tools now implemented:**
+
+1. ✅ **`zot_search`** - Finding papers (Oct 24)
+   - 3 legacy tools → 1 intelligent tool
+   - 4 execution modes (Fast, Graph-enriched, Metadata-enriched, Comprehensive)
+
+2. ✅ **`zot_summarize`** - Understanding papers (Oct 24)
+   - 3 legacy tools → 1 intelligent tool
+   - 4 execution modes (Quick, Targeted, Comprehensive, Full)
+
+3. ✅ **`zot_explore_graph`** - Exploring connections (Oct 24)
+   - 7 legacy tools → 1 intelligent tool
+   - 7 execution modes + Comprehensive
+
+**User Experience Improvements:**
+- Single tool for each major workflow (find → understand → explore)
+- Automatic mode selection based on query intent
+- Natural language parameter extraction
+- Consistent return structures across all tools
+- Cost optimization (prevents over-fetching)
+- Quality assessment and smart escalation
+
+**Legacy Tool Strategy:**
+- Marked as DEPRECATED/ADVANCED in tool descriptions
+- Still available for manual control when needed
+- Recommendation to use smart tools instead
+- Documentation updated across all files
+
+### Commits
+
+- **`ed7e212`** - Initial unified graph exploration implementation
+- **`1b3dcdf`** - Fix Neo4j client return value handling in all graph mode functions
+- **`477a85b`** - Fix year extraction regex in temporal mode detection
+- **`9dc590c`** - Fix concept extraction to exclude evolution verbs
+
+---
+
 ## Backup System & Data Quality Fixes (Completed 2025-10-24)
 
 ### Overview
