@@ -12,6 +12,7 @@ import uuid
 import asyncio
 import json
 import re
+import subprocess
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -82,10 +83,79 @@ def get_item_with_fallback(zot, item_key: str) -> Optional[Dict]:
             # Not a 404, re-raise
             raise
 
+def cleanup_orphaned_processes():
+    """
+    Find and kill orphaned agent-zot processes (those without active stdio connections).
+
+    This prevents resource exhaustion from multiple abandoned processes accumulating
+    when Claude Code reconnects/restarts. Allows multiple legitimate sessions to
+    run concurrently (each with active stdio).
+    """
+    try:
+        current_pid = os.getpid()
+
+        # Find all agent-zot serve processes
+        result = subprocess.run(
+            ["ps", "aux"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+
+        orphaned_count = 0
+        for line in result.stdout.splitlines():
+            if "agent-zot" in line and "serve" in line and str(current_pid) not in line:
+                # Extract PID (second column in ps aux output)
+                parts = line.split()
+                if len(parts) < 2:
+                    continue
+
+                try:
+                    pid = int(parts[1])
+                except (ValueError, IndexError):
+                    continue
+
+                # Check if process has active stdio (lsof checks file descriptors)
+                try:
+                    lsof_result = subprocess.run(
+                        ["lsof", "-p", str(pid)],
+                        capture_output=True,
+                        text=True,
+                        timeout=2
+                    )
+
+                    # Check if stdin (0u) and stdout (1u) are present and connected
+                    has_stdin = "0u" in lsof_result.stdout or "0r" in lsof_result.stdout
+                    has_stdout = "1u" in lsof_result.stdout or "1w" in lsof_result.stdout
+
+                    # If missing stdio, it's likely orphaned
+                    if not (has_stdin and has_stdout):
+                        sys.stderr.write(f"Killing orphaned agent-zot process (PID {pid}) - no active stdio\n")
+                        os.kill(pid, 9)  # SIGKILL
+                        orphaned_count += 1
+                    else:
+                        sys.stderr.write(f"Keeping agent-zot process (PID {pid}) - active stdio detected (concurrent session)\n")
+
+                except (subprocess.TimeoutExpired, subprocess.CalledProcessError, ProcessLookupError):
+                    # Process might have exited, lsof failed, or permission denied - skip it
+                    pass
+
+        if orphaned_count > 0:
+            sys.stderr.write(f"Cleaned up {orphaned_count} orphaned process(es)\n")
+        else:
+            sys.stderr.write("No orphaned processes found\n")
+
+    except Exception as e:
+        sys.stderr.write(f"Warning: Could not cleanup orphaned processes: {e}\n")
+
+
 @asynccontextmanager
 async def server_lifespan(server: FastMCP):
     """Manage server startup and shutdown lifecycle."""
     sys.stderr.write("Starting Zotero MCP server...\n")
+
+    # Clean up orphaned processes from previous sessions
+    cleanup_orphaned_processes()
 
     # DISABLED: Auto-update check removed for instant server startup
     # The initialization of semantic search (loading embeddings, connecting to databases)

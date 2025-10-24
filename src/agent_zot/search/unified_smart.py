@@ -334,6 +334,64 @@ def run_parallel_backends(
     return results_by_backend, errors_by_backend
 
 
+def run_sequential_backends(
+    semantic_search_instance,
+    query: str,
+    backends: List[str],
+    limit: int
+) -> Tuple[Dict[str, List[Dict[str, Any]]], Dict[str, str]]:
+    """
+    Run multiple search backends sequentially (one at a time).
+
+    Used for Comprehensive Mode to prevent resource exhaustion from
+    running 3 heavy backends (Qdrant + Neo4j + Zotero) in parallel.
+
+    Args:
+        semantic_search_instance: ZoteroSemanticSearch instance
+        query: Search query
+        backends: List of backend names to run ("semantic", "graph", "metadata")
+        limit: Result limit per backend
+
+    Returns:
+        Tuple of (results_by_backend, errors_by_backend)
+    """
+    from agent_zot.search.unified import convert_graph_entities_to_papers, convert_metadata_search_to_papers
+
+    results_by_backend = {}
+    errors_by_backend = {}
+
+    # Run each backend sequentially
+    for backend in backends:
+        try:
+            if backend == "semantic":
+                logger.info("Running semantic search...")
+                result = semantic_search_instance.search(query, limit * 2)
+                results_by_backend[backend] = result.get("results", [])
+
+            elif backend == "graph":
+                logger.info("Running graph search...")
+                result = semantic_search_instance.graph_search(query, None, limit)
+                results_by_backend[backend] = convert_graph_entities_to_papers(result.get("results", []))
+
+            elif backend == "metadata":
+                logger.info("Running metadata search...")
+                result = semantic_search_instance.zotero_client.items(
+                    q=query,
+                    qmode="titleCreatorYear",
+                    limit=limit
+                )
+                results_by_backend[backend] = convert_metadata_search_to_papers(result)
+
+            logger.info(f"{backend} search completed: {len(results_by_backend[backend])} results")
+
+        except Exception as e:
+            logger.error(f"{backend} search failed: {e}")
+            errors_by_backend[backend] = str(e)
+            results_by_backend[backend] = []  # Empty results on failure
+
+    return results_by_backend, errors_by_backend
+
+
 def smart_search(
     semantic_search_instance,
     query: str,
@@ -423,12 +481,24 @@ def smart_search(
     # Phase 3: Execute Search
     logger.info("Phase 3: Executing search across selected backends")
 
-    results_by_backend, errors_by_backend = run_parallel_backends(
-        semantic_search_instance,
-        query_to_use,
-        backends,
-        limit
-    )
+    # Use sequential execution for 3+ backends (Comprehensive Mode) to prevent resource exhaustion
+    # Use parallel execution for 1-2 backends (Fast/Graph-enriched/Metadata-enriched) for speed
+    if len(backends) >= 3:
+        logger.info("Using sequential execution (3+ backends - prevents resource exhaustion)")
+        results_by_backend, errors_by_backend = run_sequential_backends(
+            semantic_search_instance,
+            query_to_use,
+            backends,
+            limit
+        )
+    else:
+        logger.info(f"Using parallel execution ({len(backends)} backend(s) - safe and fast)")
+        results_by_backend, errors_by_backend = run_parallel_backends(
+            semantic_search_instance,
+            query_to_use,
+            backends,
+            limit
+        )
 
     if not results_by_backend:
         return {
@@ -495,12 +565,23 @@ def smart_search(
         additional_backends = [b for b in all_backends if b not in backends]
 
         if additional_backends:
-            additional_results, additional_errors = run_parallel_backends(
-                semantic_search_instance,
-                query_to_use,
-                additional_backends,
-                limit
-            )
+            # Use sequential for 2+ additional backends, parallel for 1
+            if len(additional_backends) >= 2:
+                logger.info(f"Running {len(additional_backends)} additional backends sequentially")
+                additional_results, additional_errors = run_sequential_backends(
+                    semantic_search_instance,
+                    query_to_use,
+                    additional_backends,
+                    limit
+                )
+            else:
+                logger.info(f"Running {len(additional_backends)} additional backend in parallel")
+                additional_results, additional_errors = run_parallel_backends(
+                    semantic_search_instance,
+                    query_to_use,
+                    additional_backends,
+                    limit
+                )
 
             # Merge with existing results
             results_by_backend.update(additional_results)
