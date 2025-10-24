@@ -258,26 +258,24 @@ def iterative_search(
     # Initial search
     initial_results = semantic_search_instance.search(query, limit=limit * 2)
 
-    if not initial_results.get("results"):
-        return {
-            "query": query,
-            "limit": limit,
-            "results": [],
-            "total_found": 0,
-            "iterations": 1,
-            "refinements": [],
-            "error": "No results found for initial query"
-        }
-
+    # Extract quality metrics (handle empty results)
     quality_metrics = initial_results.get("quality_metrics", {})
-    confidence = quality_metrics.get("confidence", "medium")
-    coverage = quality_metrics.get("coverage", 0.5)
+    confidence = quality_metrics.get("confidence", "low")
+    coverage = quality_metrics.get("coverage", 0.0)
 
-    logger.info(f"Initial search: confidence={confidence}, coverage={coverage:.2f}")
+    has_results = bool(initial_results.get("results"))
+
+    if has_results:
+        logger.info(f"Initial search: confidence={confidence}, coverage={coverage:.2f}")
+    else:
+        logger.info("Initial search returned 0 results - will attempt query refinement")
+        # Set quality metrics to trigger refinement
+        confidence = "low"
+        coverage = 0.0
 
     # Collect all results
     all_results = {}  # item_key -> result dict
-    for result in initial_results["results"]:
+    for result in initial_results.get("results", []):
         item_key = result.get("item_key")
         if item_key:
             all_results[item_key] = result
@@ -287,9 +285,10 @@ def iterative_search(
 
     # Decide if refinement is needed
     needs_refinement = (
+        not has_results or  # Always refine if no results
         confidence == "low" or
         coverage < 0.4 or
-        len(initial_results["results"]) < limit
+        len(initial_results.get("results", [])) < limit
     )
 
     if needs_refinement and current_iteration < max_iterations:
