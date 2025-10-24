@@ -3077,98 +3077,105 @@ For content-based search, use `zot_search` instead."""
 #         return f"Error searching Zotero: {str(e)}"
 #
 # ========== END DISABLED: zot_search_items ==========
+# ========== DISABLED: Legacy Tag Tools (Replaced by zot_manage_tags) ==========
+# The following 3 tools have been consolidated into zot_manage_tags:
+# - zot_search_by_tag → zot_manage_tags (Search Mode)
+# - zot_get_tags → zot_manage_tags (List Mode)
+# - zot_batch_update_tags → zot_manage_tags (Add/Remove Mode)
 
-@mcp.tool(
-    name="zot_search_by_tag",
-    description="📊 MEDIUM PRIORITY - ⚪ FALLBACK - Search for items by tag with advanced operators. Use when filtering by tags/metadata, not for semantic content search.\n\nSupports disjunction (tag1 || tag2), exclusion (-tag), and AND logic across conditions.\n\n⚠️ For semantic research queries, use zot_search first.\n\nUse for: Complex tag-based filtering like ['important || urgent', '-draft'] for (important OR urgent) AND NOT draft",
-    annotations={
-        "readOnlyHint": True,
-        "title": "Search by Tag (Zotero)"
-    }
-)
-def search_by_tag(
-    tag: List[str],
-    item_type: str = "-attachment",
-    limit: Optional[int] = 10,
-    *,
-    ctx: Context
-) -> str:
-    """
-    Search for items in your Zotero library by tag。
-    Conditions are ANDed, each term supports disjunction`||` and exclusion`-`.
-    
-    Args:
-        tag: List of tag conditions. Items are returned only if they satisfy 
-            ALL conditions in the list. Each tag condition can be expressed 
-            in two ways:
-                As alternatives: tag1 || tag2 (matches items with either tag1 OR tag2)
-                As exclusions: -tag (matches items that do NOT have this tag)
-            For example, a tag field with ["research || important", "-draft"] would 
-            return items that:
-                Have either "research" OR "important" tags, AND
-                Do NOT have the "draft" tag
-        item_type: Type of items to search for. Use "-attachment" to exclude attachments.
-        limit: Maximum number of results to return
-        ctx: MCP context
-    
-    Returns:
-        Markdown-formatted search results
-    """
-    try:
-        if not tag:
-            return "Error: Tag cannot be empty"
-
-        ctx.info(f"Searching Zotero for tag '{tag}'")
-        zot = get_zotero_client()
-        
-        
-        # Search using the query parameters
-        zot.add_parameters(q="", tag=tag, itemType=item_type, limit=limit)
-        results = zot.items()
-        
-        if not results:
-            return f"No items found with tag: '{tag}'"
-        
-        # Format results as markdown
-        output = [f"# Search Results for Tag: '{tag}'", ""]
-        
-        for i, item in enumerate(results, 1):
-            data = item.get("data", {})
-            title = data.get("title", "Untitled")
-            item_type = data.get("itemType", "unknown")
-            date = data.get("date", "No date")
-            key = item.get("key", "")
-            
-            # Format creators
-            creators = data.get("creators", [])
-            creators_str = format_creators(creators)
-            
-            # Build the formatted entry
-            output.append(f"## {i}. {title}")
-            output.append(f"**Type:** {item_type}")
-            output.append(f"**Item Key:** {key}")
-            output.append(f"**Date:** {date}")
-            output.append(f"**Authors:** {creators_str}")
-            
-            # Add abstract snippet if present
-            if abstract := data.get("abstractNote"):
-                # Limit abstract length for search results
-                abstract_snippet = abstract[:200] + "..." if len(abstract) > 200 else abstract
-                output.append(f"**Abstract:** {abstract_snippet}")
-            
-            # Add tags if present
-            if tags := data.get("tags"):
-                tag_list = [f"`{tag['tag']}`" for tag in tags]
-                if tag_list:
-                    output.append(f"**Tags:** {' '.join(tag_list)}")
-            
-            output.append("")  # Empty line between items
-        
-        return "\n".join(output)
-    
-    except Exception as e:
-        ctx.error(f"Error searching Zotero: {str(e)}")
-        return f"Error searching Zotero: {str(e)}"
+# @mcp.tool(
+#     name="zot_search_by_tag",
+#     description="⚠️ DEPRECATED - Use `zot_manage_tags` instead (Search Mode)\n\n📊 LEGACY - Search for items by tag with advanced operators. Use when filtering by tags/metadata, not for semantic content search.\n\nSupports disjunction (tag1 || tag2), exclusion (-tag), and AND logic across conditions.\n\n⚠️ For semantic research queries, use zot_search first.\n\nUse for: Complex tag-based filtering like ['important || urgent', '-draft'] for (important OR urgent) AND NOT draft",
+#     annotations={
+#         "readOnlyHint": True,
+#         "title": "Search by Tag (Deprecated)"
+#     }
+# )
+# def search_by_tag(
+#     tag: List[str],
+#     item_type: str = "-attachment",
+#     limit: Optional[int] = 10,
+#     *,
+#     ctx: Context
+# ) -> str:
+#     """
+#     DEPRECATED: Use zot_manage_tags instead.
+#
+#     Search for items in your Zotero library by tag。
+#     Conditions are ANDed, each term supports disjunction`||` and exclusion`-`.
+#
+#     Args:
+#         tag: List of tag conditions. Items are returned only if they satisfy
+#             ALL conditions in the list. Each tag condition can be expressed
+#             in two ways:
+#                 As alternatives: tag1 || tag2 (matches items with either tag1 OR tag2)
+#                 As exclusions: -tag (matches items that do NOT have this tag)
+#             For example, a tag field with ["research || important", "-draft"] would
+#             return items that:
+#                 Have either "research" OR "important" tags, AND
+#                 Do NOT have the "draft" tag
+#         item_type: Type of items to search for. Use "-attachment" to exclude attachments.
+#         limit: Maximum number of results to return
+#         ctx: MCP context
+#
+#     Returns:
+#         Markdown-formatted search results
+#     """
+#     try:
+#         if not tag:
+#             return "Error: Tag cannot be empty"
+#
+#         ctx.info(f"Searching Zotero for tag '{tag}'")
+#         zot = get_zotero_client()
+#
+#
+#         # Search using the query parameters
+#         zot.add_parameters(q="", tag=tag, itemType=item_type, limit=limit)
+#         results = zot.items()
+#
+#         if not results:
+#             return f"No items found with tag: '{tag}'"
+#
+#         # Format results as markdown
+#         output = [f"# Search Results for Tag: '{tag}'", ""]
+#
+#         for i, item in enumerate(results, 1):
+#             data = item.get("data", {})
+#             title = data.get("title", "Untitled")
+#             item_type = data.get("itemType", "unknown")
+#             date = data.get("date", "No date")
+#             key = item.get("key", "")
+#
+#             # Format creators
+#             creators = data.get("creators", [])
+#             creators_str = format_creators(creators)
+#
+#             # Build the formatted entry
+#             output.append(f"## {i}. {title}")
+#             output.append(f"**Type:** {item_type}")
+#             output.append(f"**Item Key:** {key}")
+#             output.append(f"**Date:** {date}")
+#             output.append(f"**Authors:** {creators_str}")
+#
+#             # Add abstract snippet if present
+#             if abstract := data.get("abstractNote"):
+#                 # Limit abstract length for search results
+#                 abstract_snippet = abstract[:200] + "..." if len(abstract) > 200 else abstract
+#                 output.append(f"**Abstract:** {abstract_snippet}")
+#
+#             # Add tags if present
+#             if tags := data.get("tags"):
+#                 tag_list = [f"`{tag['tag']}`" for tag in tags]
+#                 if tag_list:
+#                     output.append(f"**Tags:** {' '.join(tag_list)}")
+#
+#             output.append("")  # Empty line between items
+#
+#         return "\n".join(output)
+#
+#     except Exception as e:
+#         ctx.error(f"Error searching Zotero: {str(e)}")
+#         return f"Error searching Zotero: {str(e)}"
 
 # DEPRECATED - Use zot_get_item() instead
 # @mcp.tool(
@@ -3181,344 +3188,523 @@ def search_by_tag(
 # )
 
 
+# ========== UNIFIED COLLECTIONS MANAGEMENT ==========
 @mcp.tool(
-    name="zot_get_collections",
-    description="📊 MEDIUM PRIORITY - 🔸 SECONDARY - List all collections in your Zotero library.\n\nUse for: Browsing library organization structure and collection hierarchy"
-,
-    annotations={
-        "readOnlyHint": True,
-        "title": "Get Collections (Zotero)"
-    }
+    name="zot_manage_collections",
+    description="""🔥 HIGHEST PRIORITY - Unified collections management. Replaces: zot_get_collections, zot_create_collection, zot_get_collection_items, zot_add_to_collection, zot_remove_from_collection""",
+    annotations={"readOnlyHint": False, "title": "Manage Collections"}
 )
-def get_collections(
+def smart_manage_collections_tool(query: str, collection_key: Optional[str] = None, collection_name: Optional[str] = None,
+    item_keys: Optional[List[str]] = None, parent_collection_key: Optional[str] = None, limit: Optional[int] = None,
+    force_mode: Optional[str] = None, *, ctx: Context) -> str:
+    """Smart collections management."""
+    try:
+        from agent_zot.search.unified_collections import smart_manage_collections
+        zot = get_zotero_client()
+        result = smart_manage_collections(query=query, zotero_client=zot, collection_key=collection_key,
+            collection_name=collection_name, item_keys=item_keys, parent_collection_key=parent_collection_key,
+            limit=limit, force_mode=force_mode)
+        return result.get("content", "Error") if result.get("success") else f"❌ {result.get('error')}"
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+
+# ========== UNIFIED TAGS MANAGEMENT ==========
+@mcp.tool(
+    name="zot_manage_tags",
+    description="""🔥 HIGHEST PRIORITY - Unified tags management with natural language interface.
+
+**Replaces 3 legacy tools:**
+- zot_get_tags → List Mode
+- zot_search_by_tag → Search Mode
+- zot_batch_update_tags → Add/Remove Mode
+
+**Four Execution Modes (automatic detection):**
+
+**1. List Mode** - List all tags in library
+   - Query: "list all tags", "show my tags", "what tags do I have"
+   - Returns: All tags with item counts
+
+**2. Search Mode** - Find items by tag(s)
+   - Query: "find papers tagged with 'important'", "items with tag urgent"
+   - Supports operators: disjunction (tag1 || tag2), exclusion (-tag), AND logic
+   - Returns: Items matching tag criteria
+
+**3. Add Mode** - Add tag(s) to items
+   - Query: "add tag 'reviewed' to ABC12345", "tag XYZ67890 as important"
+   - Batch operation: works with multiple items and tags
+   - Returns: Update confirmation
+
+**4. Remove Mode** - Remove tag(s) from items
+   - Query: "remove tag 'draft' from ABC12345", "untag XYZ67890"
+   - Batch operation: works with multiple items and tags
+   - Returns: Update confirmation
+
+**Smart Features:**
+✅ Automatic intent detection from natural language
+✅ Parameter extraction (tags, item keys) from query text
+✅ Batch operations across multiple items
+✅ Advanced search operators (||, -)
+✅ Duplicate prevention when adding tags
+
+**Use for:** All tag management operations - listing, searching, adding, removing tags""",
+    annotations={"readOnlyHint": False, "title": "Manage Tags"}
+)
+def smart_manage_tags_tool(
+    query: str,
+    tags: Optional[List[str]] = None,
+    item_keys: Optional[List[str]] = None,
+    item_type: Optional[str] = "-attachment",
     limit: Optional[int] = None,
+    force_mode: Optional[str] = None,
     *,
     ctx: Context
 ) -> str:
-    """
-    List all collections in your Zotero library.
-    
-    Args:
-        limit: Maximum number of collections to return
-        ctx: MCP context
-    
-    Returns:
-        Markdown-formatted list of collections
-    """
+    """Smart tags management with automatic intent detection."""
     try:
-        ctx.info("Fetching collections")
+        from agent_zot.search.unified_tags import smart_manage_tags
         zot = get_zotero_client()
-        
-        
-        collections = zot.collections(limit=limit)
-        
-        # Always return the header, even if empty
-        output = ["# Zotero Collections", ""]
-        
-        if not collections:
-            output.append("No collections found in your Zotero library.")
-            return "\n".join(output)
-        
-        # Create a mapping of collection IDs to their data
-        collection_map = {c["key"]: c for c in collections}
-        
-        # Create a mapping of parent to child collections
-        # Only add entries for collections that actually exist
-        hierarchy = {}
-        for coll in collections:
-            parent_key = coll["data"].get("parentCollection")
-            # Handle various representations of "no parent"
-            if parent_key in ["", None] or not parent_key:
-                parent_key = None  # Normalize to None
-            
-            if parent_key not in hierarchy:
-                hierarchy[parent_key] = []
-            hierarchy[parent_key].append(coll["key"])
-        
-        # Function to recursively format collections
-        def format_collection(key, level=0):
-            if key not in collection_map:
-                return []
-            
-            coll = collection_map[key]
-            name = coll["data"].get("name", "Unnamed Collection")
-            
-            # Create indentation for hierarchy
-            indent = "  " * level
-            lines = [f"{indent}- **{name}** (Key: {key})"]
-            
-            # Add children if they exist
-            child_keys = hierarchy.get(key, [])
-            for child_key in sorted(child_keys):  # Sort for consistent output
-                lines.extend(format_collection(child_key, level + 1))
-            
-            return lines
-        
-        # Start with top-level collections (those with None as parent)
-        top_level_keys = hierarchy.get(None, [])
-        
-        if not top_level_keys:
-            # If no clear hierarchy, just list all collections
-            output.append("Collections (flat list):")
-            for coll in sorted(collections, key=lambda x: x["data"].get("name", "")):
-                name = coll["data"].get("name", "Unnamed Collection")
-                key = coll["key"]
-                output.append(f"- **{name}** (Key: {key})")
-        else:
-            # Display hierarchical structure
-            for key in sorted(top_level_keys):
-                output.extend(format_collection(key))
-        
-        return "\n".join(output)
-    
+        result = smart_manage_tags(
+            query=query,
+            zotero_client=zot,
+            tags=tags,
+            item_keys=item_keys,
+            item_type=item_type,
+            limit=limit,
+            force_mode=force_mode
+        )
+        return result.get("content", "Error") if result.get("success") else f"❌ {result.get('error')}"
     except Exception as e:
-        ctx.error(f"Error fetching collections: {str(e)}")
-        error_msg = f"Error fetching collections: {str(e)}"
-        return f"# Zotero Collections\n\n{error_msg}"
+        return f"Error: {str(e)}"
 
 
+# ========== UNIFIED NOTES MANAGEMENT ==========
 @mcp.tool(
-    name="zot_get_collection_items",
-    description="📊 MEDIUM PRIORITY - 🔸 SECONDARY - Get all items in a specific Zotero collection.\n\nUse for: Retrieving all papers in a specific collection by collection key"
-,
-    annotations={
-        "readOnlyHint": True,
-        "title": "Get Collection Items (Zotero)"
-    }
+    name="zot_manage_notes",
+    description="""🔥 HIGHEST PRIORITY - Unified notes and annotations management.
+
+**Replaces 4 legacy tools:**
+- zot_get_annotations → List Annotations Mode
+- zot_get_notes → List Notes Mode
+- zot_search_notes → Search Mode
+- zot_create_note → Create Mode
+
+**Four Execution Modes (automatic detection):**
+
+**1. List Annotations Mode** - Get PDF highlights and comments
+   - Query: "list annotations for ABC12345", "show highlights"
+   - Returns: Annotations with text, comments, page numbers
+
+**2. List Notes Mode** - Get notes attached to items or library
+   - Query: "show my notes", "list notes for ABC12345"
+   - Returns: Notes with snippets and keys
+
+**3. Search Mode** - Search notes by text content
+   - Query: "search for notes about methodology", "find notes containing results"
+   - Returns: Matching notes with context
+
+**4. Create Mode** - Create new note for an item
+   - Query: "create a note for ABC12345 titled 'Review comments'"
+   - Requires: item_key, note_title, note_text
+   - Returns: Confirmation with note key
+
+**Smart Features:**
+✅ Automatic intent detection
+✅ Works with items or entire library
+✅ HTML formatting for rich notes
+✅ Tag support for note organization
+
+**Use for:** All notes and annotations operations""",
+    annotations={"readOnlyHint": False, "title": "Manage Notes"}
 )
-def get_collection_items(
-    collection_key: str,
-    limit: Optional[int] = 50,
+def smart_manage_notes_tool(
+    query: str,
+    item_key: Optional[str] = None,
+    note_title: Optional[str] = None,
+    note_text: Optional[str] = None,
+    tags: Optional[List[str]] = None,
+    query_text: Optional[str] = None,
+    limit: Optional[int] = None,
+    force_mode: Optional[str] = None,
     *,
     ctx: Context
 ) -> str:
-    """
-    Get all items in a specific Zotero collection.
-    
-    Args:
-        collection_key: The collection key/ID
-        limit: Maximum number of items to return
-        ctx: MCP context
-    
-    Returns:
-        Markdown-formatted list of items in the collection
-    """
+    """Smart notes management with automatic intent detection."""
     try:
-        ctx.info(f"Fetching items for collection {collection_key}")
+        from agent_zot.search.unified_notes import smart_manage_notes
         zot = get_zotero_client()
-        
-        # First get the collection details
-        try:
-            collection = zot.collection(collection_key)
-            collection_name = collection["data"].get("name", "Unnamed Collection")
-        except Exception:
-            collection_name = f"Collection {collection_key}"
-        
-        
-        # Then get the items
-        items = zot.collection_items(collection_key, limit=limit)
-        if not items:
-            return f"No items found in collection: {collection_name} (Key: {collection_key})"
-        
-        # Format items as markdown
-        output = [f"# Items in Collection: {collection_name}", ""]
-        
-        for i, item in enumerate(items, 1):
-            data = item.get("data", {})
-            title = data.get("title", "Untitled")
-            item_type = data.get("itemType", "unknown")
-            date = data.get("date", "No date")
-            key = item.get("key", "")
-            
-            # Format creators
-            creators = data.get("creators", [])
-            creators_str = format_creators(creators)
-            
-            # Build the formatted entry
-            output.append(f"## {i}. {title}")
-            output.append(f"**Type:** {item_type}")
-            output.append(f"**Item Key:** {key}")
-            output.append(f"**Date:** {date}")
-            output.append(f"**Authors:** {creators_str}")
-            
-            output.append("")  # Empty line between items
-        
-        return "\n".join(output)
-
+        result = smart_manage_notes(
+            query=query,
+            zotero_client=zot,
+            item_key=item_key,
+            note_title=note_title,
+            note_text=note_text,
+            tags=tags,
+            query_text=query_text,
+            limit=limit,
+            force_mode=force_mode
+        )
+        return result.get("content", "Error") if result.get("success") else f"❌ {result.get('error')}"
     except Exception as e:
-        ctx.error(f"Error fetching collection items: {str(e)}")
-        return f"Error fetching collection items: {str(e)}"
+        return f"Error: {str(e)}"
 
 
-@mcp.tool(
-    name="zot_create_collection",
-    description="📊 MEDIUM PRIORITY - 🔸 SECONDARY - Create a new collection in your Zotero library.\n\nUse for: Organizing papers into new collection like 'Machine Learning 2024'"
-,
-    annotations={
-        "readOnlyHint": True,
-        "title": "Create Collection (Zotero)"
-    }
-)
-def create_collection(
-    name: str,
-    parent_collection_key: Optional[str] = None,
-    *,
-    ctx: Context
-) -> str:
-    """
-    Create a new collection in your Zotero library.
+# ========== DISABLED: Legacy Collection Tools (Replaced by zot_manage_collections) ==========
+# The following 5 tools have been consolidated into zot_manage_collections:
+# - zot_get_collections → zot_manage_collections (List Mode)
+# - zot_create_collection → zot_manage_collections (Create Mode)
+# - zot_get_collection_items → zot_manage_collections (Show Items Mode)
+# - zot_add_to_collection → zot_manage_collections (Add Mode)
+# - zot_remove_from_collection → zot_manage_collections (Remove Mode)
 
-    Args:
-        name: Name of the new collection
-        parent_collection_key: Optional parent collection key to nest this collection under
-        ctx: MCP context
-
-    Returns:
-        Success message with the new collection's key
-    """
-    try:
-        if not name.strip():
-            return "Error: Collection name cannot be empty"
-
-        ctx.info(f"Creating collection '{name}'")
-        zot = get_zotero_client()
-
-        # Build the collection payload
-        payload = [{
-            "name": name,
-            "parentCollection": parent_collection_key if parent_collection_key else False
-        }]
-
-        # Create the collection
-        result = zot.create_collections(payload)
-
-        if result and "successful" in result and result["successful"]:
-            new_key = result["successful"]["0"]["key"]
-            parent_msg = f" under parent {parent_collection_key}" if parent_collection_key else ""
-            return f"✓ Collection '{name}' created successfully{parent_msg}\nCollection Key: {new_key}"
-        else:
-            return f"Failed to create collection '{name}'. Result: {result}"
-
-    except Exception as e:
-        ctx.error(f"Error creating collection: {str(e)}")
-        return f"Error creating collection: {str(e)}"
-
-
-@mcp.tool(
-    name="zot_add_to_collection",
-    description="📊 MEDIUM PRIORITY - 🔸 SECONDARY - Add one or more items to a collection.\n\nUse for: Batch adding multiple paper keys to an existing collection"
-,
-    annotations={
-        "readOnlyHint": True,
-        "title": "Add to Collection (Zotero)"
-    }
-)
-def add_to_collection(
-    collection_key: str,
-    item_keys: List[str],
-    *,
-    ctx: Context
-) -> str:
-    """
-    Add one or more items to a collection.
-
-    Args:
-        collection_key: The collection key/ID to add items to
-        item_keys: List of item keys to add to the collection
-        ctx: MCP context
-
-    Returns:
-        Success message
-    """
-    try:
-        if not item_keys:
-            return "Error: Must provide at least one item key"
-
-        if not collection_key.strip():
-            return "Error: Collection key cannot be empty"
-
-        ctx.info(f"Adding {len(item_keys)} items to collection {collection_key}")
-        zot = get_zotero_client()
-
-        # Get collection name for confirmation message
-        try:
-            collection = zot.collection(collection_key)
-            collection_name = collection["data"].get("name", f"Collection {collection_key}")
-        except Exception:
-            collection_name = f"Collection {collection_key}"
-
-        # Add items to collection
-        # pyzotero expects item keys as a list
-        result = zot.addto_collection(collection_key, item_keys)
-
-        # Check if successful
-        if result:
-            items_str = f"{len(item_keys)} item(s)" if len(item_keys) > 1 else "item"
-            return f"✓ Successfully added {items_str} to collection '{collection_name}'\nCollection Key: {collection_key}"
-        else:
-            return f"Failed to add items to collection '{collection_name}'"
-
-    except Exception as e:
-        ctx.error(f"Error adding items to collection: {str(e)}")
-        return f"Error adding items to collection: {str(e)}"
+# @mcp.tool(
+#     name="zot_get_collections",
+#     description="⚠️ DEPRECATED - Use `zot_manage_collections` instead (List Mode)\n\n📊 LEGACY - List all collections in your Zotero library.\n\nUse for: Browsing library organization structure and collection hierarchy"
+# ,
+#     annotations={
+#         "readOnlyHint": True,
+#         "title": "Get Collections (Deprecated)"
+#     }
+# )
+# def get_collections(
+#     limit: Optional[int] = None,
+#     *,
+#     ctx: Context
+# ) -> str:
+#     """
+#     DEPRECATED: Use zot_manage_collections instead.
+#
+#     List all collections in your Zotero library.
+#
+#     Args:
+#         limit: Maximum number of collections to return
+#         ctx: MCP context
+#
+#     Returns:
+#         Markdown-formatted list of collections
+#     """
+#     try:
+#         ctx.info("Fetching collections")
+#         zot = get_zotero_client()
+#
+#
+#         collections = zot.collections(limit=limit)
+#
+#         # Always return the header, even if empty
+#         output = ["# Zotero Collections", ""]
+#
+#         if not collections:
+#             output.append("No collections found in your Zotero library.")
+#             return "\n".join(output)
+#
+#         # Create a mapping of collection IDs to their data
+#         collection_map = {c["key"]: c for c in collections}
+#
+#         # Create a mapping of parent to child collections
+#         # Only add entries for collections that actually exist
+#         hierarchy = {}
+#         for coll in collections:
+#             parent_key = coll["data"].get("parentCollection")
+#             # Handle various representations of "no parent"
+#             if parent_key in ["", None] or not parent_key:
+#                 parent_key = None  # Normalize to None
+#
+#             if parent_key not in hierarchy:
+#                 hierarchy[parent_key] = []
+#             hierarchy[parent_key].append(coll["key"])
+#
+#         # Function to recursively format collections
+#         def format_collection(key, level=0):
+#             if key not in collection_map:
+#                 return []
+#
+#             coll = collection_map[key]
+#             name = coll["data"].get("name", "Unnamed Collection")
+#
+#             # Create indentation for hierarchy
+#             indent = "  " * level
+#             lines = [f"{indent}- **{name}** (Key: {key})"]
+#
+#             # Add children if they exist
+#             child_keys = hierarchy.get(key, [])
+#             for child_key in sorted(child_keys):  # Sort for consistent output
+#                 lines.extend(format_collection(child_key, level + 1))
+#
+#             return lines
+#
+#         # Start with top-level collections (those with None as parent)
+#         top_level_keys = hierarchy.get(None, [])
+#
+#         if not top_level_keys:
+#             # If no clear hierarchy, just list all collections
+#             output.append("Collections (flat list):")
+#             for coll in sorted(collections, key=lambda x: x["data"].get("name", "")):
+#                 name = coll["data"].get("name", "Unnamed Collection")
+#                 key = coll["key"]
+#                 output.append(f"- **{name}** (Key: {key})")
+#         else:
+#             # Display hierarchical structure
+#             for key in sorted(top_level_keys):
+#                 output.extend(format_collection(key))
+#
+#         return "\n".join(output)
+#
+#     except Exception as e:
+#         ctx.error(f"Error fetching collections: {str(e)}")
+#         error_msg = f"Error fetching collections: {str(e)}"
+#         return f"# Zotero Collections\n\n{error_msg}"
 
 
-@mcp.tool(
-    name="zot_remove_from_collection",
-    description="🔧 LOW PRIORITY - ⚪ FALLBACK - Remove one or more items from a collection.\n\nUse for: Batch removing papers from a collection without deleting them"
-,
-    annotations={
-        "readOnlyHint": True,
-        "title": "Remove from Collection (Zotero)"
-    }
-)
-def remove_from_collection(
-    collection_key: str,
-    item_keys: List[str],
-    *,
-    ctx: Context
-) -> str:
-    """
-    Remove one or more items from a collection.
+# @mcp.tool(
+#     name="zot_get_collection_items",
+#     description="⚠️ DEPRECATED - Use `zot_manage_collections` instead (Show Items Mode)\n\n📊 LEGACY - Get all items in a specific Zotero collection.\n\nUse for: Retrieving all papers in a specific collection by collection key"
+# ,
+#     annotations={
+#         "readOnlyHint": True,
+#         "title": "Get Collection Items (Deprecated)"
+#     }
+# )
+# def get_collection_items(
+#     collection_key: str,
+#     limit: Optional[int] = 50,
+#     *,
+#     ctx: Context
+# ) -> str:
+#     """
+#     DEPRECATED: Use zot_manage_collections instead.
+#
+#     Get all items in a specific Zotero collection.
+#
+#     Args:
+#         collection_key: The collection key/ID
+#         limit: Maximum number of items to return
+#         ctx: MCP context
+#
+#     Returns:
+#         Markdown-formatted list of items in the collection
+#     """
+#     try:
+#         ctx.info(f"Fetching items for collection {collection_key}")
+#         zot = get_zotero_client()
+#
+#         # First get the collection details
+#         try:
+#             collection = zot.collection(collection_key)
+#             collection_name = collection["data"].get("name", "Unnamed Collection")
+#         except Exception:
+#             collection_name = f"Collection {collection_key}"
+#
+#
+#         # Then get the items
+#         items = zot.collection_items(collection_key, limit=limit)
+#         if not items:
+#             return f"No items found in collection: {collection_name} (Key: {collection_key})"
+#
+#         # Format items as markdown
+#         output = [f"# Items in Collection: {collection_name}", ""]
+#
+#         for i, item in enumerate(items, 1):
+#             data = item.get("data", {})
+#             title = data.get("title", "Untitled")
+#             item_type = data.get("itemType", "unknown")
+#             date = data.get("date", "No date")
+#             key = item.get("key", "")
+#
+#             # Format creators
+#             creators = data.get("creators", [])
+#             creators_str = format_creators(creators)
+#
+#             # Build the formatted entry
+#             output.append(f"## {i}. {title}")
+#             output.append(f"**Type:** {item_type}")
+#             output.append(f"**Item Key:** {key}")
+#             output.append(f"**Date:** {date}")
+#             output.append(f"**Authors:** {creators_str}")
+#
+#             output.append("")  # Empty line between items
+#
+#         return "\n".join(output)
+#
+#     except Exception as e:
+#         ctx.error(f"Error fetching collection items: {str(e)}")
+#         return f"Error fetching collection items: {str(e)}"
 
-    Args:
-        collection_key: The collection key/ID to remove items from
-        item_keys: List of item keys to remove from the collection
-        ctx: MCP context
 
-    Returns:
-        Success message
-    """
-    try:
-        if not item_keys:
-            return "Error: Must provide at least one item key"
+# @mcp.tool(
+#     name="zot_create_collection",
+#     description="⚠️ DEPRECATED - Use `zot_manage_collections` instead (Create Mode)\n\n📊 LEGACY - Create a new collection in your Zotero library.\n\nUse for: Organizing papers into new collection like 'Machine Learning 2024'"
+# ,
+#     annotations={
+#         "readOnlyHint": True,
+#         "title": "Create Collection (Deprecated)"
+#     }
+# )
+# def create_collection(
+#     name: str,
+#     parent_collection_key: Optional[str] = None,
+#     *,
+#     ctx: Context
+# ) -> str:
+#     """
+#     DEPRECATED: Use zot_manage_collections instead.
+#
+#     Create a new collection in your Zotero library.
+#
+#     Args:
+#         name: Name of the new collection
+#         parent_collection_key: Optional parent collection key to nest this collection under
+#         ctx: MCP context
+#
+#     Returns:
+#         Success message with the new collection's key
+#     """
+#     try:
+#         if not name.strip():
+#             return "Error: Collection name cannot be empty"
+#
+#         ctx.info(f"Creating collection '{name}'")
+#         zot = get_zotero_client()
+#
+#         # Build the collection payload
+#         payload = [{
+#             "name": name,
+#             "parentCollection": parent_collection_key if parent_collection_key else False
+#         }]
+#
+#         # Create the collection
+#         result = zot.create_collections(payload)
+#
+#         if result and "successful" in result and result["successful"]:
+#             new_key = result["successful"]["0"]["key"]
+#             parent_msg = f" under parent {parent_collection_key}" if parent_collection_key else ""
+#             return f"✓ Collection '{name}' created successfully{parent_msg}\nCollection Key: {new_key}"
+#         else:
+#             return f"Failed to create collection '{name}'. Result: {result}"
+#
+#     except Exception as e:
+#         ctx.error(f"Error creating collection: {str(e)}")
+#         return f"Error creating collection: {str(e)}"
 
-        if not collection_key.strip():
-            return "Error: Collection key cannot be empty"
 
-        ctx.info(f"Removing {len(item_keys)} items from collection {collection_key}")
-        zot = get_zotero_client()
+# @mcp.tool(
+#     name="zot_add_to_collection",
+#     description="⚠️ DEPRECATED - Use `zot_manage_collections` instead (Add Mode)\n\n📊 LEGACY - Add one or more items to a collection.\n\nUse for: Batch adding multiple paper keys to an existing collection"
+# ,
+#     annotations={
+#         "readOnlyHint": True,
+#         "title": "Add to Collection (Deprecated)"
+#     }
+# )
+# def add_to_collection(
+#     collection_key: str,
+#     item_keys: List[str],
+#     *,
+#     ctx: Context
+# ) -> str:
+#     """
+#     DEPRECATED: Use zot_manage_collections instead.
+#
+#     Add one or more items to a collection.
+#
+#     Args:
+#         collection_key: The collection key/ID to add items to
+#         item_keys: List of item keys to add to the collection
+#         ctx: MCP context
+#
+#     Returns:
+#         Success message
+#     """
+#     try:
+#         if not item_keys:
+#             return "Error: Must provide at least one item key"
+#
+#         if not collection_key.strip():
+#             return "Error: Collection key cannot be empty"
+#
+#         ctx.info(f"Adding {len(item_keys)} items to collection {collection_key}")
+#         zot = get_zotero_client()
+#
+#         # Get collection name for confirmation message
+#         try:
+#             collection = zot.collection(collection_key)
+#             collection_name = collection["data"].get("name", f"Collection {collection_key}")
+#         except Exception:
+#             collection_name = f"Collection {collection_key}"
+#
+#         # Add items to collection
+#         # pyzotero expects item keys as a list
+#         result = zot.addto_collection(collection_key, item_keys)
+#
+#         # Check if successful
+#         if result:
+#             items_str = f"{len(item_keys)} item(s)" if len(item_keys) > 1 else "item"
+#             return f"✓ Successfully added {items_str} to collection '{collection_name}'\nCollection Key: {collection_key}"
+#         else:
+#             return f"Failed to add items to collection '{collection_name}'"
+#
+#     except Exception as e:
+#         ctx.error(f"Error adding items to collection: {str(e)}")
+#         return f"Error adding items to collection: {str(e)}"
 
-        # Get collection name for confirmation message
-        try:
-            collection = zot.collection(collection_key)
-            collection_name = collection["data"].get("name", f"Collection {collection_key}")
-        except Exception:
-            collection_name = f"Collection {collection_key}"
 
-        # Remove items from collection
-        result = zot.deletefrom_collection(collection_key, item_keys)
-
-        # Check if successful
-        if result:
-            items_str = f"{len(item_keys)} item(s)" if len(item_keys) > 1 else "item"
-            return f"✓ Successfully removed {items_str} from collection '{collection_name}'\nCollection Key: {collection_key}"
-        else:
-            return f"Failed to remove items from collection '{collection_name}'"
-
-    except Exception as e:
-        ctx.error(f"Error removing items from collection: {str(e)}")
-        return f"Error removing items from collection: {str(e)}"
+# @mcp.tool(
+#     name="zot_remove_from_collection",
+#     description="⚠️ DEPRECATED - Use `zot_manage_collections` instead (Remove Mode)\n\n🔧 LEGACY - Remove one or more items from a collection.\n\nUse for: Batch removing papers from a collection without deleting them"
+# ,
+#     annotations={
+#         "readOnlyHint": True,
+#         "title": "Remove from Collection (Deprecated)"
+#     }
+# )
+# def remove_from_collection(
+#     collection_key: str,
+#     item_keys: List[str],
+#     *,
+#     ctx: Context
+# ) -> str:
+#     """
+#     DEPRECATED: Use zot_manage_collections instead.
+#
+#     Remove one or more items from a collection.
+#
+#     Args:
+#         collection_key: The collection key/ID to remove items from
+#         item_keys: List of item keys to remove from the collection
+#         ctx: MCP context
+#
+#     Returns:
+#         Success message
+#     """
+#     try:
+#         if not item_keys:
+#             return "Error: Must provide at least one item key"
+#
+#         if not collection_key.strip():
+#             return "Error: Collection key cannot be empty"
+#
+#         ctx.info(f"Removing {len(item_keys)} items from collection {collection_key}")
+#         zot = get_zotero_client()
+#
+#         # Get collection name for confirmation message
+#         try:
+#             collection = zot.collection(collection_key)
+#             collection_name = collection["data"].get("name", f"Collection {collection_key}")
+#         except Exception:
+#             collection_name = f"Collection {collection_key}"
+#
+#         # Remove items from collection
+#         result = zot.deletefrom_collection(collection_key, item_keys)
+#
+#         # Check if successful
+#         if result:
+#             items_str = f"{len(item_keys)} item(s)" if len(item_keys) > 1 else "item"
+#             return f"✓ Successfully removed {items_str} from collection '{collection_name}'\nCollection Key: {collection_key}"
+#         else:
+#             return f"Failed to remove items from collection '{collection_name}'"
+#
+#     except Exception as e:
+#         ctx.error(f"Error removing items from collection: {str(e)}")
+#         return f"Error removing items from collection: {str(e)}"
 
 
 # DEPRECATED - Use zot_get_item(include_children=True) instead
@@ -3774,61 +3960,63 @@ def remove_from_collection(
 # 
 # ========== END DISABLED: zot_get_item_fulltext ==========
 
-@mcp.tool(
-    name="zot_get_tags",
-    description="📊 MEDIUM PRIORITY - 🔸 SECONDARY - Get all tags used in your Zotero library.\n\nUse for: Exploring tag vocabulary and frequency across library"
-,
-    annotations={
-        "readOnlyHint": True,
-        "title": "Get Tags (Zotero)"
-    }
-)
-def get_tags(
-    limit: Optional[int] = None,
-    *,
-    ctx: Context
-) -> str:
-    """
-    Get all tags used in your Zotero library.
-    
-    Args:
-        limit: Maximum number of tags to return
-        ctx: MCP context
-    
-    Returns:
-        Markdown-formatted list of tags
-    """
-    try:
-        ctx.info("Fetching tags")
-        zot = get_zotero_client()
-        
-        
-        tags = zot.tags(limit=limit)
-        if not tags:
-            return "No tags found in your Zotero library."
-        
-        # Format tags as markdown
-        output = ["# Zotero Tags", ""]
-        
-        # Sort tags alphabetically
-        sorted_tags = sorted(tags)
-        
-        # Group tags alphabetically
-        current_letter = None
-        for tag in sorted_tags:
-            first_letter = tag[0].upper() if (tag and len(tag) > 0) else "#"
-            
-            if first_letter != current_letter:
-                current_letter = first_letter
-                output.append(f"## {current_letter}")
-            
-            output.append(f"- `{tag}`")
-        
-        return "\n".join(output)
-    
-    except Exception as e:
-        ctx.error(f"Error fetching tags: {str(e)}")
-        return f"Error fetching tags: {str(e)}"
+# @mcp.tool(
+#     name="zot_get_tags",
+#     description="⚠️ DEPRECATED - Use `zot_manage_tags` instead (List Mode)\n\n📊 LEGACY - Get all tags used in your Zotero library.\n\nUse for: Exploring tag vocabulary and frequency across library"
+# ,
+#     annotations={
+#         "readOnlyHint": True,
+#         "title": "Get Tags (Deprecated)"
+#     }
+# )
+# def get_tags(
+#     limit: Optional[int] = None,
+#     *,
+#     ctx: Context
+# ) -> str:
+#     """
+#     DEPRECATED: Use zot_manage_tags instead.
+#
+#     Get all tags used in your Zotero library.
+#
+#     Args:
+#         limit: Maximum number of tags to return
+#         ctx: MCP context
+#
+#     Returns:
+#         Markdown-formatted list of tags
+#     """
+#     try:
+#         ctx.info("Fetching tags")
+#         zot = get_zotero_client()
+#
+#
+#         tags = zot.tags(limit=limit)
+#         if not tags:
+#             return "No tags found in your Zotero library."
+#
+#         # Format tags as markdown
+#         output = ["# Zotero Tags", ""]
+#
+#         # Sort tags alphabetically
+#         sorted_tags = sorted(tags)
+#
+#         # Group tags alphabetically
+#         current_letter = None
+#         for tag in sorted_tags:
+#             first_letter = tag[0].upper() if (tag and len(tag) > 0) else "#"
+#
+#             if first_letter != current_letter:
+#                 current_letter = first_letter
+#                 output.append(f"## {current_letter}")
+#
+#             output.append(f"- `{tag}`")
+#
+#         return "\n".join(output)
+#
+#     except Exception as e:
+#         ctx.error(f"Error fetching tags: {str(e)}")
+#         return f"Error fetching tags: {str(e)}"
 
 
 @mcp.tool(
@@ -3902,154 +4090,156 @@ def get_recent(
         return f"Error fetching recent items: {str(e)}"
 
 
-@mcp.tool(
-    name="zot_batch_update_tags",
-    description="📊 MEDIUM PRIORITY - 🔸 SECONDARY - Batch update tags across multiple items matching a search query.\n\nUse for: Adding/removing tags across multiple items efficiently"
-,
-    annotations={
-        "readOnlyHint": True,
-        "title": "Batch Update Tags (Zotero)"
-    }
-)
-def batch_update_tags(
-    query: str,
-    add_tags: Optional[str] = None,
-    remove_tags: Optional[str] = None,
-    limit: int = 50,
-    *,
-    ctx: Context
-) -> str:
-    """
-    Batch update tags across multiple items matching a search query.
-    
-    Args:
-        query: Search query to find items to update
-        add_tags: List of tags to add to matched items (can be list or JSON string)
-        remove_tags: List of tags to remove from matched items (can be list or JSON string)
-        limit: Maximum number of items to process
-        ctx: MCP context
-    
-    Returns:
-        Summary of the batch update
-    """
-    try:
-        if not query:
-            return "Error: Search query cannot be empty"
-        
-        if not add_tags and not remove_tags:
-            return "Error: You must specify either tags to add or tags to remove"
-        
-        # Debug logging... commented out for now but could be useful in future.
-        # ctx.info(f"add_tags type: {type(add_tags)}, value: {add_tags}")
-        # ctx.info(f"remove_tags type: {type(remove_tags)}, value: {remove_tags}")
-        
-        # Handle case where add_tags might be a JSON string instead of list
-        if add_tags and isinstance(add_tags, str):
-            try:
-                import json
-                add_tags = json.loads(add_tags)
-                ctx.info(f"Parsed add_tags from JSON string: {add_tags}")
-            except json.JSONDecodeError:
-                return f"Error: add_tags appears to be malformed JSON string: {add_tags}"
-        
-        # Handle case where remove_tags might be a JSON string instead of list  
-        if remove_tags and isinstance(remove_tags, str):
-            try:
-                import json
-                remove_tags = json.loads(remove_tags)
-                ctx.info(f"Parsed remove_tags from JSON string: {remove_tags}")
-            except json.JSONDecodeError:
-                return f"Error: remove_tags appears to be malformed JSON string: {remove_tags}"
-        
-        ctx.info(f"Batch updating tags for items matching '{query}'")
-        zot = get_zotero_client()
-        
-        
-        # Search for items matching the query
-        zot.add_parameters(q=query, limit=limit)
-        items = zot.items()
-        
-        if not items:
-            return f"No items found matching query: '{query}'"
-        
-        # Initialize counters
-        updated_count = 0
-        skipped_count = 0
-        added_tag_counts = {tag: 0 for tag in (add_tags or [])}
-        removed_tag_counts = {tag: 0 for tag in (remove_tags or [])}
-        
-        # Process each item
-        for item in items:
-            # Skip attachments if they were included in the results
-            if item["data"].get("itemType") == "attachment":
-                skipped_count += 1
-                continue
-                
-            # Get current tags
-            current_tags = item["data"].get("tags", [])
-            current_tag_values = {t["tag"] for t in current_tags}
-            
-            # Track if this item needs to be updated
-            needs_update = False
-            
-            # Process tags to remove
-            if remove_tags:
-                new_tags = []
-                for tag_obj in current_tags:
-                    tag = tag_obj["tag"]
-                    if tag in remove_tags:
-                        removed_tag_counts[tag] += 1
-                        needs_update = True
-                    else:
-                        new_tags.append(tag_obj)
-                current_tags = new_tags
-            
-            # Process tags to add
-            if add_tags:
-                for tag in add_tags:
-                    if tag and tag not in current_tag_values:
-                        current_tags.append({"tag": tag})
-                        added_tag_counts[tag] += 1
-                        needs_update = True
-            
-            # Update the item if needed
-            # Since we are logging errors we might as well log the update.
-            if needs_update:
-                try:
-                    item["data"]["tags"] = current_tags
-                    ctx.info(f"Updating item {item.get('key', 'unknown')} with tags: {current_tags}")
-                    result = zot.update_item(item)
-                    ctx.info(f"Update result: {result}")
-                    updated_count += 1
-                except Exception as e:
-                    ctx.error(f"Failed to update item {item.get('key', 'unknown')}: {str(e)}")
-                    # Continue with other items instead of failing completely
-                    skipped_count += 1
-            else:
-                skipped_count += 1
-        
-        # Format the response
-        response = ["# Batch Tag Update Results", ""]
-        response.append(f"Query: '{query}'")
-        response.append(f"Items processed: {len(items)}")
-        response.append(f"Items updated: {updated_count}")
-        response.append(f"Items skipped: {skipped_count}")
-        
-        if add_tags:
-            response.append("\n## Tags Added")
-            for tag, count in added_tag_counts.items():
-                response.append(f"- `{tag}`: {count} items")
-        
-        if remove_tags:
-            response.append("\n## Tags Removed")
-            for tag, count in removed_tag_counts.items():
-                response.append(f"- `{tag}`: {count} items")
-        
-        return "\n".join(response)
-    
-    except Exception as e:
-        ctx.error(f"Error in batch tag update: {str(e)}")
-        return f"Error in batch tag update: {str(e)}"
+# @mcp.tool(
+#     name="zot_batch_update_tags",
+#     description="⚠️ DEPRECATED - Use `zot_manage_tags` instead (Add/Remove Mode)\n\n📊 LEGACY - Batch update tags across multiple items matching a search query.\n\nUse for: Adding/removing tags across multiple items efficiently"
+# ,
+#     annotations={
+#         "readOnlyHint": True,
+#         "title": "Batch Update Tags (Deprecated)"
+#     }
+# )
+# def batch_update_tags(
+#     query: str,
+#     add_tags: Optional[str] = None,
+#     remove_tags: Optional[str] = None,
+#     limit: int = 50,
+#     *,
+#     ctx: Context
+# ) -> str:
+#     """
+#     DEPRECATED: Use zot_manage_tags instead.
+#
+#     Batch update tags across multiple items matching a search query.
+#
+#     Args:
+#         query: Search query to find items to update
+#         add_tags: List of tags to add to matched items (can be list or JSON string)
+#         remove_tags: List of tags to remove from matched items (can be list or JSON string)
+#         limit: Maximum number of items to process
+#         ctx: MCP context
+#
+#     Returns:
+#         Summary of the batch update
+#     """
+#     try:
+#         if not query:
+#             return "Error: Search query cannot be empty"
+#
+#         if not add_tags and not remove_tags:
+#             return "Error: You must specify either tags to add or tags to remove"
+#
+#         # Debug logging... commented out for now but could be useful in future.
+#         # ctx.info(f"add_tags type: {type(add_tags)}, value: {add_tags}")
+#         # ctx.info(f"remove_tags type: {type(remove_tags)}, value: {remove_tags}")
+#
+#         # Handle case where add_tags might be a JSON string instead of list
+#         if add_tags and isinstance(add_tags, str):
+#             try:
+#                 import json
+#                 add_tags = json.loads(add_tags)
+#                 ctx.info(f"Parsed add_tags from JSON string: {add_tags}")
+#             except json.JSONDecodeError:
+#                 return f"Error: add_tags appears to be malformed JSON string: {add_tags}"
+#
+#         # Handle case where remove_tags might be a JSON string instead of list
+#         if remove_tags and isinstance(remove_tags, str):
+#             try:
+#                 import json
+#                 remove_tags = json.loads(remove_tags)
+#                 ctx.info(f"Parsed remove_tags from JSON string: {remove_tags}")
+#             except json.JSONDecodeError:
+#                 return f"Error: remove_tags appears to be malformed JSON string: {remove_tags}"
+#
+#         ctx.info(f"Batch updating tags for items matching '{query}'")
+#         zot = get_zotero_client()
+#
+#
+#         # Search for items matching the query
+#         zot.add_parameters(q=query, limit=limit)
+#         items = zot.items()
+#
+#         if not items:
+#             return f"No items found matching query: '{query}'"
+#
+#         # Initialize counters
+#         updated_count = 0
+#         skipped_count = 0
+#         added_tag_counts = {tag: 0 for tag in (add_tags or [])}
+#         removed_tag_counts = {tag: 0 for tag in (remove_tags or [])}
+#
+#         # Process each item
+#         for item in items:
+#             # Skip attachments if they were included in the results
+#             if item["data"].get("itemType") == "attachment":
+#                 skipped_count += 1
+#                 continue
+#
+#             # Get current tags
+#             current_tags = item["data"].get("tags", [])
+#             current_tag_values = {t["tag"] for t in current_tags}
+#
+#             # Track if this item needs to be updated
+#             needs_update = False
+#
+#             # Process tags to remove
+#             if remove_tags:
+#                 new_tags = []
+#                 for tag_obj in current_tags:
+#                     tag = tag_obj["tag"]
+#                     if tag in remove_tags:
+#                         removed_tag_counts[tag] += 1
+#                         needs_update = True
+#                     else:
+#                         new_tags.append(tag_obj)
+#                 current_tags = new_tags
+#
+#             # Process tags to add
+#             if add_tags:
+#                 for tag in add_tags:
+#                     if tag and tag not in current_tag_values:
+#                         current_tags.append({"tag": tag})
+#                         added_tag_counts[tag] += 1
+#                         needs_update = True
+#
+#             # Update the item if needed
+#             # Since we are logging errors we might as well log the update.
+#             if needs_update:
+#                 try:
+#                     item["data"]["tags"] = current_tags
+#                     ctx.info(f"Updating item {item.get('key', 'unknown')} with tags: {current_tags}")
+#                     result = zot.update_item(item)
+#                     ctx.info(f"Update result: {result}")
+#                     updated_count += 1
+#                 except Exception as e:
+#                     ctx.error(f"Failed to update item {item.get('key', 'unknown')}: {str(e)}")
+#                     # Continue with other items instead of failing completely
+#                     skipped_count += 1
+#             else:
+#                 skipped_count += 1
+#
+#         # Format the response
+#         response = ["# Batch Tag Update Results", ""]
+#         response.append(f"Query: '{query}'")
+#         response.append(f"Items processed: {len(items)}")
+#         response.append(f"Items updated: {updated_count}")
+#         response.append(f"Items skipped: {skipped_count}")
+#
+#         if add_tags:
+#             response.append("\n## Tags Added")
+#             for tag, count in added_tag_counts.items():
+#                 response.append(f"- `{tag}`: {count} items")
+#
+#         if remove_tags:
+#             response.append("\n## Tags Removed")
+#             for tag, count in removed_tag_counts.items():
+#                 response.append(f"- `{tag}`: {count} items")
+#
+#         return "\n".join(response)
+#
+#     except Exception as e:
+#         ctx.error(f"Error in batch tag update: {str(e)}")
+#         return f"Error in batch tag update: {str(e)}"
 
 
 @mcp.tool(
