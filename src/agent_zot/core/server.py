@@ -1064,7 +1064,7 @@ def smart_unified_search(
 
 @mcp.tool(
     name="zot_decompose_query",
-    description="🔥 HIGH PRIORITY - 🔵 ADVANCED - Query decomposition for complex multi-concept queries.\n\n💡 Use when:\n✓ Query contains multiple distinct concepts (e.g., 'neural networks AND decision making')\n✓ Query uses boolean operators (AND, OR)\n✓ Query has natural conjunctions (and, with, or, versus)\n✓ Query combines different domains/methods (e.g., 'fMRI studies of memory in aging')\n✓ You want comprehensive coverage of multi-faceted topics\n\nHow it works:\n1. Analyzes query structure to identify multiple concepts\n2. Decomposes into simpler sub-queries based on patterns:\n   - Boolean operators (AND, OR)\n   - Natural conjunctions (and, with, plus, or, versus)\n   - Prepositions (in, about, regarding, concerning)\n   - Comma-separated concepts\n   - Multiple noun phrases\n3. Executes sub-queries in parallel\n4. Merges results using weighted scoring:\n   - Required concepts (AND) have higher importance (1.0)\n   - Optional concepts (OR) have lower importance (0.7)\n   - Supporting concepts have moderate importance (0.4-0.6)\n   - Papers appearing in multiple sub-queries rank higher\n\nDecomposition patterns:\n- 'X AND Y' → searches for X, Y separately (both required)\n- 'X OR Y' → searches for X, Y separately (either acceptable)\n- 'X in Y' → searches for 'X in Y', X, Y separately\n- 'X, Y, Z' → searches for full query + individual concepts\n\nOften finds more comprehensive results than single complex query because it:\n- Reduces query complexity for better matching\n- Increases recall by searching variants\n- Balances precision (full query) with coverage (sub-queries)\n\nNOT for:\n✗ Simple single-concept queries → use zot_semantic_search (faster)\n✗ Queries that shouldn't be split (e.g., proper names like 'New York') → use zot_semantic_search\n\n💡 Often combines with:\n- zot_unified_search - Combine for maximum multi-backend coverage\n- zot_ask_paper - Read content from papers found via sub-queries\n- zot_find_related_papers - Explore connections between results\n\nUse for: Complex multi-concept queries requiring comprehensive coverage across concepts",
+    description="🔥 HIGH PRIORITY - 🔵 ADVANCED - Query decomposition for complex multi-concept queries.\n\n💡 Use when:\n✓ Query contains multiple distinct concepts (e.g., 'neural networks AND decision making')\n✓ Query uses boolean operators (AND, OR)\n✓ Query has natural conjunctions (and, with, or, versus)\n✓ Query combines different domains/methods (e.g., 'fMRI studies of memory in aging')\n✓ You want comprehensive coverage of multi-faceted topics\n\nHow it works:\n1. Analyzes query structure to identify multiple concepts\n2. Decomposes into simpler sub-queries based on patterns:\n   - Boolean operators (AND, OR)\n   - Natural conjunctions (and, with, plus, or, versus)\n   - Prepositions (in, about, regarding, concerning)\n   - Comma-separated concepts\n   - Multiple noun phrases\n3. Executes sub-queries in parallel\n4. Merges results using weighted scoring:\n   - Required concepts (AND) have higher importance (1.0)\n   - Optional concepts (OR) have lower importance (0.7)\n   - Supporting concepts have moderate importance (0.4-0.6)\n   - Papers appearing in multiple sub-queries rank higher\n\nDecomposition patterns:\n- 'X AND Y' → searches for X, Y separately (both required)\n- 'X OR Y' → searches for X, Y separately (either acceptable)\n- 'X in Y' → searches for 'X in Y', X, Y separately\n- 'X, Y, Z' → searches for full query + individual concepts\n\nOften finds more comprehensive results than single complex query because it:\n- Reduces query complexity for better matching\n- Increases recall by searching variants\n- Balances precision (full query) with coverage (sub-queries)\n\nNOT for:\n✗ Simple single-concept queries → use zot_search (faster)\n✗ Queries that shouldn't be split (e.g., proper names like 'New York') → use zot_search\n\n💡 Often combines with:\n- zot_search (Comprehensive Mode) - Combine for maximum multi-backend coverage\n- zot_summarize - Understand content from papers found via sub-queries\n- zot_explore_graph - Explore connections between results\n\nUse for: Complex multi-concept queries requiring comprehensive coverage across concepts",
     annotations={
         "readOnlyHint": True,
         "title": "Query Decomposition (Multi-Concept)"
@@ -1405,7 +1405,7 @@ def _extract_item_key_from_input(value: str) -> Optional[str]:
 
 @mcp.tool(
     name="zot_hybrid_vector_graph_search",
-    description="🔥 HIGH PRIORITY - 🔵 PRIMARY - Combines semantic search with relationship discovery. Use when you want both content relevance AND network connections in results. Requires Neo4j.\n\n💡 Preferred over zot_unified_search for most queries combining content and relationships.\n⚠️ For content-only queries, use zot_semantic_search instead (faster).\n\nUse for: Combined semantic+relationship queries when both content and connections matter"
+    description="🔥 HIGH PRIORITY - 🔵 ADVANCED - Combines semantic search with relationship discovery with manual weight control. Use when you want both content relevance AND network connections with custom weighting. Requires Neo4j.\n\n💡 For most queries, use zot_search (Graph-enriched Mode) instead - it handles this automatically.\n💡 Use this tool when you need manual control over vector_weight (0.0-1.0) parameter.\n⚠️ For content-only queries, use zot_search (faster).\n\nUse for: Combined semantic+relationship queries when you need manual weight tuning (advanced users)"
 ,
     annotations={
         "readOnlyHint": True,
@@ -1595,14 +1595,13 @@ Smart intent-driven summarization that automatically:
 
 **Still use specialized tools for:**
 - `zot_search` - Finding papers (do this FIRST, then summarize)
-- `zot_ask_paper` - Direct chunk retrieval (if you want manual control)
 - `zot_get_item` - Just need metadata without reading content
-- `zot_get_item_fulltext` - Explicit full text export
+- `zot_explore_graph` - Exploring relationships and connections
 
 **This tool replaces:**
-- Multiple zot_ask_paper calls for comprehensive summaries
-- Deciding between get_item vs ask_paper vs get_item_fulltext
-- Manual orchestration of multi-question analyses
+- Manual orchestration of multiple questions for comprehensive summaries
+- Deciding between metadata vs content vs full text extraction
+- Guessing optimal summarization depth
 
 Use for: Default choice for understanding paper content - handles 90% of summarization needs intelligently""",
     annotations={
@@ -1824,9 +1823,9 @@ def smart_summarize_paper(
 
 Uses the paper's actual document embedding to find semantically similar papers. More accurate than semantic_search(abstract) because it uses the full document vector.
 
-💡 Different from zot_find_related_papers:
+💡 Different from graph-based relationships:
 - THIS TOOL: Content similarity via Qdrant vectors (what the paper discusses)
-- find_related_papers: Graph relationships via Neo4j (who/what it cites, shared authors)
+- zot_explore_graph (Related Papers Mode): Graph relationships via Neo4j (who/what it cites, shared authors)
 
 Use when:
 ✓ 'Find papers similar to this one'
@@ -1834,8 +1833,8 @@ Use when:
 ✓ 'Papers with similar methodology/approach'
 
 NOT for:
-✗ 'Papers citing this' → use zot_find_citation_chain
-✗ 'Papers by same author' → use zot_find_collaborator_network
+✗ 'Papers citing this' → use zot_explore_graph (Citation Chain Mode)
+✗ 'Papers by same author' → use zot_explore_graph (Collaboration Mode)
 
 Use for: Content-based 'More Like This' discovery using document vectors""",
     annotations={
@@ -1933,7 +1932,7 @@ def find_similar_papers(
 
 @mcp.tool(
     name="zot_enhanced_semantic_search",
-    description="🔥 HIGH PRIORITY - 🔵 ADVANCED - Implements Figure 3 pattern from Qdrant GraphRAG documentation.\n\nHow it works (4 steps):\n1. Semantic search in Qdrant finds relevant chunks\n2. Extracts chunk IDs (e.g., 'ABCD1234_chunk_5')\n3. Queries Neo4j for entities in those EXACT chunks\n4. Returns papers + matched text + entities from that text\n\n💡 Most precise search available. Use when you need to know:\n- 'Which concepts appear in papers about [topic]?'\n- 'What methods are used for [purpose] in the literature?'\n- 'Which theories are discussed alongside [concept]?'\n\nExample queries:\n✓ \"which methods appear in papers about [topic]?\"\n✓ \"what theories are discussed in [field] research?\"\n✓ \"which techniques are used for [purpose]?\"\n\nNOT for:\n✗ \"just find papers about [topic]\" → use zot_semantic_search (faster)\n✗ \"who worked with [author]\" → use zot_graph_search\n\n⚠️ Requires Neo4j population. If unpopulated (currently 0.5%), uses standard semantic search instead.\n\nUse for: Entity-aware semantic search, discovering what concepts/methods/theories appear in relevant passages",
+    description="🔥 HIGH PRIORITY - 🔵 ADVANCED - Implements Figure 3 pattern from Qdrant GraphRAG documentation.\n\nHow it works (4 steps):\n1. Semantic search in Qdrant finds relevant chunks\n2. Extracts chunk IDs (e.g., 'ABCD1234_chunk_5')\n3. Queries Neo4j for entities in those EXACT chunks\n4. Returns papers + matched text + entities from that text\n\n💡 Most precise search available. Use when you need to know:\n- 'Which concepts appear in papers about [topic]?'\n- 'What methods are used for [purpose] in the literature?'\n- 'Which theories are discussed alongside [concept]?'\n\nExample queries:\n✓ \"which methods appear in papers about [topic]?\"\n✓ \"what theories are discussed in [field] research?\"\n✓ \"which techniques are used for [purpose]?\"\n\nNOT for:\n✗ \"just find papers about [topic]\" → use zot_search (faster)\n✗ \"who worked with [author]\" → use zot_explore_graph (Collaboration Mode)\n\n⚠️ Requires Neo4j population. If unpopulated (currently 0.5%), uses standard semantic search instead.\n\nUse for: Entity-aware semantic search, discovering what concepts/methods/theories appear in relevant passages",
     annotations={
         "readOnlyHint": True,
         "title": "Enhanced Semantic Search (Vector)"
@@ -2956,7 +2955,7 @@ For content-based search, use `zot_search` instead."""
 
 @mcp.tool(
     name="zot_search_items",
-    description="📊 MEDIUM PRIORITY - ⚪ FALLBACK - Direct Zotero API keyword-based metadata search. Use ONLY for exact title/author/year lookups when you don't have item keys yet.\n\n⚠️ DO NOT use after zot_semantic_search - you already have item keys! Use zot_get_item() for metadata or zot_ask_paper() for content instead.\n\n⚠️ This is literal keyword matching, NOT semantic. Always try zot_semantic_search first for research queries.\n\nUse for: Finding papers when you know exact author name/title phrase but don't have item key yet",
+    description="📊 MEDIUM PRIORITY - ⚪ FALLBACK - Direct Zotero API keyword-based metadata search. Use ONLY for exact title/author/year lookups when you don't have item keys yet.\n\n⚠️ DO NOT use after zot_search - you already have item keys! Use zot_get_item() for metadata or zot_summarize() for content instead.\n\n⚠️ This is literal keyword matching, NOT semantic. Always try zot_search first for research queries.\n\nUse for: Finding papers when you know exact author name/title phrase but don't have item key yet",
     annotations={
         "readOnlyHint": True,
         "title": "Search Items (Zotero)"
@@ -3052,7 +3051,7 @@ def search_items(
 
 @mcp.tool(
     name="zot_search_by_tag",
-    description="📊 MEDIUM PRIORITY - ⚪ FALLBACK - Search for items by tag with advanced operators. Use when filtering by tags/metadata, not for semantic content search.\n\nSupports disjunction (tag1 || tag2), exclusion (-tag), and AND logic across conditions.\n\n⚠️ For semantic research queries, use zot_semantic_search first.\n\nUse for: Complex tag-based filtering like ['important || urgent', '-draft'] for (important OR urgent) AND NOT draft",
+    description="📊 MEDIUM PRIORITY - ⚪ FALLBACK - Search for items by tag with advanced operators. Use when filtering by tags/metadata, not for semantic content search.\n\nSupports disjunction (tag1 || tag2), exclusion (-tag), and AND logic across conditions.\n\n⚠️ For semantic research queries, use zot_search first.\n\nUse for: Complex tag-based filtering like ['important || urgent', '-draft'] for (important OR urgent) AND NOT draft",
     annotations={
         "readOnlyHint": True,
         "title": "Search by Tag (Zotero)"
@@ -3508,8 +3507,8 @@ def remove_from_collection(
     name="zot_get_item",
     description="""🔥 HIGH PRIORITY - 🔵 PRIMARY - Get bibliographic metadata for a Zotero item (title, authors, journal, abstract, DOI, etc.) plus list of child items (attachments, notes).
 
-⚠️ For paper CONTENT analysis, use zot_ask_paper instead (more efficient, targeted chunk retrieval).
-⚠️ For raw full PDF text, use zot_get_item_fulltext (expensive operation, 10k-100k tokens).
+⚠️ For paper CONTENT analysis, use zot_summarize instead (intelligent depth detection and cost optimization).
+⚠️ For raw full PDF text, use zot_summarize with force_mode='full' (expensive operation, 10k-100k tokens).
 
 Returns:
 - Bibliographic metadata (title, authors, year, journal, DOI)
