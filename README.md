@@ -114,12 +114,14 @@ Agent-Zot transforms your Zotero research library into an intelligent, searchabl
 - **Four Execution Modes**: Quick (~500-800 tokens), Targeted (~2k-5k tokens), Comprehensive (~8k-15k tokens), Full (10k-100k tokens)
 - **Smart Escalation**: Recommends mode upgrade when needed
 
-### Smart Unified Graph Exploration Tool
-- **🆕 `zot_explore_graph`**: New intelligent graph exploration tool that consolidates 7 legacy graph tools into one intelligent interface
-- **Intent Detection**: Automatically recognizes query type (citation/collaboration/concept/temporal/influence/venue)
+### Smart Unified Exploration Tool (Graph + Content)
+- **🆕 `zot_explore_graph`**: New intelligent exploration tool that consolidates 9 legacy tools (8 graph + 1 content)
+- **Dual Backend**: Neo4j for graph-based exploration (citations, collaborations) + Qdrant for content-based similarity
+- **Intent Detection**: Automatically recognizes query type (citation/collaboration/concept/temporal/influence/venue/content_similarity)
 - **Parameter Extraction**: Extracts author names, years, concepts from natural language queries
-- **Smart Mode Selection**: Chooses optimal Neo4j traversal strategy automatically
-- **Seven Execution Modes**: Citation Chain, Influence (PageRank), Related Papers, Collaboration, Concept Network, Temporal, Venue Analysis, plus Comprehensive
+- **Smart Mode Selection**: Chooses optimal exploration strategy (graph OR content) automatically
+- **Nine Execution Modes**: Citation Chain, Influence (PageRank), Content Similarity (vector-based), Related Papers, Collaboration, Concept Network, Temporal, Venue Analysis, plus Comprehensive
+- **Clear Distinction**: "Similar" (content-based via Qdrant) vs "Related" (graph-based via Neo4j)
 - **Multi-Strategy Exploration**: Comprehensive mode runs multiple strategies and merges results
 
 ### Resource Management & Stability

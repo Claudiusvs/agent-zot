@@ -1817,121 +1817,128 @@ def smart_summarize_paper(
 #     except Exception as e:
 #         ctx.error(f"Error in ask_paper: {str(e)}")
 #         return f"Error querying paper: {str(e)}"
-# 
-# 
+#
+#
 # ========== END DISABLED: zot_ask_paper ==========
 
-@mcp.tool(
-    name="zot_find_similar_papers",
-    description="""🔥 HIGH PRIORITY - 🔵 PRIMARY - Find papers similar to a given paper using content-based vector similarity (More Like This query).
-
-Uses the paper's actual document embedding to find semantically similar papers. More accurate than semantic_search(abstract) because it uses the full document vector.
-
-💡 Different from graph-based relationships:
-- THIS TOOL: Content similarity via Qdrant vectors (what the paper discusses)
-- zot_explore_graph (Related Papers Mode): Graph relationships via Neo4j (who/what it cites, shared authors)
-
-Use when:
-✓ 'Find papers similar to this one'
-✓ 'More papers like ABC123'
-✓ 'Papers with similar methodology/approach'
-
-NOT for:
-✗ 'Papers citing this' → use zot_explore_graph (Citation Chain Mode)
-✗ 'Papers by same author' → use zot_explore_graph (Collaboration Mode)
-
-Use for: Content-based 'More Like This' discovery using document vectors""",
-    annotations={
-        "readOnlyHint": True,
-        "title": "Find Similar Papers (Vector)"
-    }
-)
-def find_similar_papers(
-    item_key: str,
-    limit: int = 10,
-    *,
-    ctx: Context
-) -> str:
-    """
-    Find papers similar to the given paper using vector similarity.
-
-    Args:
-        item_key: Zotero item key of the reference paper
-        limit: Maximum number of similar papers to return (default: 10)
-        ctx: MCP context
-
-    Returns:
-        Markdown-formatted list of similar papers with similarity scores
-    """
-    try:
-        from pathlib import Path
-        from agent_zot.search.semantic import create_semantic_search
-
-        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
-        search = create_semantic_search(str(config_path))
-
-        if not search or not search.qdrant_client:
-            return "Semantic search is not initialized. Please run 'agent-zot update-db' first."
-
-        ctx.info(f"Finding papers similar to {item_key}")
-
-        # Fallback approach: Get the item and use its abstract for search
-        ctx.info("Using abstract-based semantic search for similarity")
-        zot = get_zotero_client()
-        item = get_item_with_fallback(zot, item_key)
-
-        if not item:
-            return f"No item found with key: {item_key}"
-
-        abstract = item.get("data", {}).get("abstractNote", "")
-        if not abstract:
-            return f"Item {item_key} has no abstract for similarity search.\n\n💡 Suggestion: Use zot_find_related_papers for graph-based relationships instead."
-
-        # Use semantic search with the abstract
-        results = search.search(query=abstract, limit=limit + 1)  # +1 to exclude the source paper
-
-        # Format results
-        output = [f"# Papers Similar to: {item_key}", ""]
-
-        if "results" in results and results["results"]:
-            # Filter out the source paper if it appears in results
-            filtered_results = [p for p in results["results"] if p.get("item_key") != item_key][:limit]
-
-            for i, paper in enumerate(filtered_results, 1):
-                title = paper.get("title", "Untitled")
-                authors = paper.get("creators_str", "Unknown authors")
-                year = paper.get("year", "N/A")
-                key = paper.get("item_key", "")
-                score = paper.get("similarity_score", 0.0)
-
-                output.append(f"## {i}. {title}")
-                output.append(f"**Authors:** {authors}")
-                output.append(f"**Year:** {year}")
-                output.append(f"**Item Key:** `{key}`")
-                output.append(f"**Similarity:** {score:.3f}")
-
-                # Include abstract preview if available
-                abs_text = paper.get("abstract", "")
-                if abs_text:
-                    preview = abs_text[:200] + "..." if len(abs_text) > 200 else abs_text
-                    output.append(f"**Abstract:** {preview}")
-
-                output.append("")
-
-            output.append(f"\n**Total found:** {len(filtered_results)}")
-        else:
-            output.append("No similar papers found.")
-            output.append("\n💡 Try:")
-            output.append("- zot_semantic_search for topic-based discovery")
-            output.append("- zot_find_related_papers for graph-based relationships")
-
-        return "\n".join(output)
-
-    except Exception as e:
-        import traceback
-        ctx.error(f"Error finding similar papers: {str(e)}")
-        ctx.error(f"Traceback: {traceback.format_exc()}")
-        return f"Error finding similar papers: {str(e)}"
+# ========== DISABLED: zot_find_similar_papers ==========
+# @mcp.tool(
+#     name="zot_find_similar_papers",
+#     description="""⚠️ DEPRECATED - Use `zot_explore_graph` instead (Content Similarity Mode)
+#
+# 📊 LEGACY TOOL - Content-based vector similarity discovery.
+#
+# **Recommendation**: Use `zot_explore_graph` instead, which provides:
+# - Automatic content similarity intent detection ("find papers similar to X")
+# - Content Similarity Mode (Qdrant vector similarity on full document)
+# - Integrated with all 9 exploration modes
+# - Clear distinction between content similarity (Qdrant) and graph relationships (Neo4j)
+# - Consistent interface with other exploration strategies
+#
+# 💡 Only use this tool if:
+# ✓ Explicitly need manual control over vector similarity parameters
+# ✓ Bypassing automatic intent detection for testing
+# ✓ Debugging content similarity directly
+#
+# ⚠️ Limitations:
+# ✗ No automatic intent detection
+# ✗ No integration with graph exploration
+# ✗ No multi-backend orchestration
+# ✗ Confusion about "similar" vs "related"
+#
+# Use for: Legacy support only - prefer zot_explore_graph for all exploration (graph AND content)""",
+#     annotations={
+#         "readOnlyHint": True,
+#         "title": "Find Similar Papers (Vector)"
+#     }
+# )
+# def find_similar_papers(
+#     item_key: str,
+#     limit: int = 10,
+#     *,
+#     ctx: Context
+# ) -> str:
+#     """
+#     Find papers similar to the given paper using vector similarity.
+#
+#     Args:
+#         item_key: Zotero item key of the reference paper
+#         limit: Maximum number of similar papers to return (default: 10)
+#         ctx: MCP context
+#
+#     Returns:
+#         Markdown-formatted list of similar papers with similarity scores
+#     """
+#     try:
+#         from pathlib import Path
+#         from agent_zot.search.semantic import create_semantic_search
+#
+#         config_path = Path.home() / ".config" / "agent-zot" / "config.json"
+#         search = create_semantic_search(str(config_path))
+#
+#         if not search or not search.qdrant_client:
+#             return "Semantic search is not initialized. Please run 'agent-zot update-db' first."
+#
+#         ctx.info(f"Finding papers similar to {item_key}")
+#
+#         # Fallback approach: Get the item and use its abstract for search
+#         ctx.info("Using abstract-based semantic search for similarity")
+#         zot = get_zotero_client()
+#         item = get_item_with_fallback(zot, item_key)
+#
+#         if not item:
+#             return f"No item found with key: {item_key}"
+#
+#         abstract = item.get("data", {}).get("abstractNote", "")
+#         if not abstract:
+#             return f"Item {item_key} has no abstract for similarity search.\n\n💡 Suggestion: Use zot_find_related_papers for graph-based relationships instead."
+#
+#         # Use semantic search with the abstract
+#         results = search.search(query=abstract, limit=limit + 1)  # +1 to exclude the source paper
+#
+#         # Format results
+#         output = [f"# Papers Similar to: {item_key}", ""]
+#
+#         if "results" in results and results["results"]:
+#             # Filter out the source paper if it appears in results
+#             filtered_results = [p for p in results["results"] if p.get("item_key") != item_key][:limit]
+#
+#             for i, paper in enumerate(filtered_results, 1):
+#                 title = paper.get("title", "Untitled")
+#                 authors = paper.get("creators_str", "Unknown authors")
+#                 year = paper.get("year", "N/A")
+#                 key = paper.get("item_key", "")
+#                 score = paper.get("similarity_score", 0.0)
+#
+#                 output.append(f"## {i}. {title}")
+#                 output.append(f"**Authors:** {authors}")
+#                 output.append(f"**Year:** {year}")
+#                 output.append(f"**Item Key:** `{key}`")
+#                 output.append(f"**Similarity:** {score:.3f}")
+#
+#                 # Include abstract preview if available
+#                 abs_text = paper.get("abstract", "")
+#                 if abs_text:
+#                     preview = abs_text[:200] + "..." if len(abs_text) > 200 else abs_text
+#                     output.append(f"**Abstract:** {preview}")
+#
+#                 output.append("")
+#
+#             output.append(f"\n**Total found:** {len(filtered_results)}")
+#         else:
+#             output.append("No similar papers found.")
+#             output.append("\n💡 Try:")
+#             output.append("- zot_semantic_search for topic-based discovery")
+#             output.append("- zot_find_related_papers for graph-based relationships")
+#
+#         return "\n".join(output)
+#
+#     except Exception as e:
+#         import traceback
+#         ctx.error(f"Error finding similar papers: {str(e)}")
+#         ctx.error(f"Traceback: {traceback.format_exc()}")
+#         return f"Error finding similar papers: {str(e)}"
+# ========== END DISABLED: zot_find_similar_papers ==========
 
 
 # ========== DISABLED: zot_enhanced_semantic_search ==========
@@ -2112,46 +2119,51 @@ Smart intent-driven graph exploration that automatically:
 - Extracts parameters from natural language queries
 - Executes multi-strategy exploration for comprehensive analysis
 
-## Seven Execution Modes (automatic selection):
+## Nine Execution Modes (automatic selection):
 
 **Citation Chain Mode** (paper → citing papers → second-level citations)
 - For citation queries: "Find papers citing papers that cite X"
-- 2-3 hop citation network traversal
+- Backend: Neo4j 2-3 hop citation network traversal
 - Returns: Extended citation chain with paper details
 
 **Influence Mode** (PageRank-based paper ranking)
 - For influential papers: "Find seminal/influential/highly-cited papers"
-- Citation graph PageRank analysis
+- Backend: Neo4j citation graph PageRank analysis
 - Returns: Top papers ranked by citation impact
+
+**Content Similarity Mode** (vector-based 'More Like This')
+- For similarity queries: "Find papers similar to X", "More papers like this"
+- Backend: Qdrant vector similarity on full document
+- Returns: Papers with similar content (what they discuss)
 
 **Related Papers Mode** (shared entity connections)
 - For relationship queries: "Papers related to X", "Connected work"
-- Shared authors, concepts, methods
-- Returns: Papers with shared entities
+- Backend: Neo4j shared authors, concepts, methods
+- Returns: Papers with shared entities (graph-based)
 
 **Collaboration Mode** (co-authorship networks)
 - For author queries: "Who collaborated with [author]?"
-- Multi-hop co-authorship traversal
+- Backend: Neo4j multi-hop co-authorship traversal
 - Returns: Extended collaboration network
 
 **Concept Network Mode** (concept propagation)
 - For concept queries: "Concepts related to X", "What connects A and B?"
-- Multi-hop concept relationships
+- Backend: Neo4j multi-hop concept relationships
 - Returns: Related concepts through intermediate papers
 
 **Temporal Mode** (topic evolution over time)
 - For evolution queries: "Track how [topic] evolved from [year] to [year]"
-- Temporal analysis with yearly trends
+- Backend: Neo4j temporal analysis with yearly trends
 - Returns: Evolution timeline with emerging concepts
 
 **Venue Analysis Mode** (publication outlet ranking)
 - For venue queries: "Top journals/conferences in [field]"
-- Publication venue statistics
+- Backend: Neo4j publication venue statistics
 - Returns: Ranked venues with paper counts
 
 **Comprehensive Mode** (multi-strategy exploration)
 - For broad exploration: "Explore everything about X"
-- Runs multiple strategies and merges results
+- Backend: Multiple strategies merged
 - Returns: Combined analysis from all relevant modes
 
 ## Key Features:
@@ -2172,14 +2184,15 @@ Smart intent-driven graph exploration that automatically:
 **This tool replaces:**
 - `zot_find_citation_chain` - Citation Chain Mode
 - `zot_find_seminal_papers` - Influence Mode
+- `zot_find_similar_papers` - Content Similarity Mode
 - `zot_find_related_papers` - Related Papers Mode
 - `zot_find_collaborator_network` - Collaboration Mode
 - `zot_explore_concept_network` - Concept Network Mode
 - `zot_track_topic_evolution` - Temporal Mode
 - `zot_analyze_venues` - Venue Analysis Mode
-- Manual orchestration of multiple graph queries
+- Manual orchestration of multiple exploration queries
 
-Use for: Default choice for graph exploration - handles 95% of network analysis needs intelligently""",
+Use for: Default choice for ALL exploration (graph AND content) - handles 99% of exploration needs intelligently""",
     annotations={
         "readOnlyHint": True,
         "title": "Smart Explore Graph (Recommended)"
@@ -2212,7 +2225,7 @@ def smart_explore_graph_tool(
         start_year: Optional start year for temporal queries
         end_year: Optional end year for temporal queries
         field: Optional field filter for influence/venue queries
-        force_mode: Optional mode override ("citation", "influence", "related", "collaboration", "concept", "temporal", "venue", "comprehensive")
+        force_mode: Optional mode override ("citation", "influence", "content_similarity", "related", "collaboration", "concept", "temporal", "venue", "comprehensive")
         limit: Maximum number of results (default: 10)
         max_hops: Number of hops for multi-hop traversals (default: 2)
         ctx: MCP context
@@ -2244,10 +2257,15 @@ For content-based search, use `zot_search` instead."""
 
         neo4j_client = search.neo4j_client
 
+        # Get Zotero client for Content Similarity Mode
+        zot = get_zotero_client()
+
         # Call the smart exploration function
         result = smart_explore_graph(
             query=query,
             neo4j_client=neo4j_client,
+            semantic_search_instance=search,  # For Content Similarity Mode
+            zotero_client=zot,  # For Content Similarity Mode metadata
             paper_key=paper_key,
             author=author,
             concept=concept,

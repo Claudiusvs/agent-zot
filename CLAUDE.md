@@ -1083,6 +1083,263 @@ User challenged: "isn't Get Item as well as Search Items already included in the
 
 ---
 
+## Content Similarity Mode Integration (Completed 2025-10-25)
+
+### Overview
+Completed final consolidation by integrating `zot_find_similar_papers` into `zot_explore_graph` as Content Similarity Mode. This achieves **19 → 3 tools (84% reduction)** and creates a truly unified exploration tool that handles both graph-based (Neo4j) AND content-based (Qdrant) exploration.
+
+### Architectural Vision
+
+**Key Insight:** Content similarity IS exploration (just a different strategy). Finding "similar" papers (vector-based) vs "related" papers (graph-based) should both be in the same tool, differentiated by intent detection.
+
+**Dual-Backend Architecture:**
+- **8 Graph Modes** (Neo4j): Citation Chain, Influence, Related Papers, Collaboration, Concept Network, Temporal, Venue Analysis, Comprehensive
+- **1 Content Mode** (Qdrant): Content Similarity (vector-based "More Like This")
+
+### Implementation Details
+
+**New Module Updates:** `src/agent_zot/search/unified_graph.py`
+
+**1. Intent Detection Patterns (Lines 49-57)**
+```python
+# Content Similarity Mode patterns (check BEFORE Related Papers - more specific)
+CONTENT_SIMILARITY_PATTERNS = [
+    r'\b(similar|like|resembling)\s+(to|this)\b',
+    r'\bmore\s+(like|similar)\b',
+    r'\bpapers?\s+(like|similar\s+to)\s+(this|[A-Z0-9]{8})\b',
+    r'\bcontent-based\s+similarit',
+    r'\bsemantically\s+similar\b',
+    r'\b(methodology|approach)\s+similar\b',
+]
+```
+
+**Pattern Priority:** Content Similarity patterns (confidence 0.85) check BEFORE Related Papers patterns (confidence 0.75) to prioritize "similar/like" queries for vector similarity.
+
+**2. Related Papers Patterns Updated (Lines 59-65)**
+```python
+# Related Papers Mode patterns (graph-based relationships)
+RELATED_PATTERNS = [
+    r'\b(related|connected)\s+(papers?|to)\b',  # Removed "similar" - now in Content Similarity
+    r'\bpapers?\s+(related|connected)\s+to\b',
+    r'\bshared\s+(entities|authors?|concepts?)\b',
+    r'\bwhat\s+(else|other\s+papers?)\s+(is|are)\s+(related|connected)\b',
+]
+```
+
+**Key Change:** Removed "similar" from Related Papers patterns to avoid overlap with Content Similarity Mode.
+
+**3. Intent Detection Update (Lines 136-140)**
+```python
+# Check Content Similarity patterns (before Related Papers - more specific)
+for pattern in CONTENT_SIMILARITY_PATTERNS:
+    if re.search(pattern, query_lower):
+        logger.info(f"Detected CONTENT_SIMILARITY intent: pattern '{pattern}' matched")
+        return ("content_similarity", 0.85, extracted_params)
+```
+
+**4. Content Similarity Mode Function (Lines 607-708)**
+```python
+def run_content_similarity_mode(
+    semantic_search_instance,
+    zotero_client,
+    paper_key: str,
+    limit: int = 10
+) -> Dict[str, Any]:
+    """
+    Content Similarity Mode: Find papers with similar content using vector similarity.
+
+    Uses Qdrant 'More Like This' on the paper's abstract to find semantically similar papers.
+    This is content-based (what the paper discusses), not graph-based (citations/authors).
+    """
+    # Get the reference paper's abstract
+    item = get_item_with_fallback(zotero_client, paper_key)
+    abstract = item.get("data", {}).get("abstractNote", "")
+
+    # Use semantic search with the abstract
+    results = semantic_search_instance.search(query=abstract, limit=limit + 1)
+
+    # Filter out the source paper
+    filtered_results = [p for p in results["results"] if p.get("item_key") != paper_key][:limit]
+
+    # Format as markdown with similarity scores
+    output = [f"# Papers Similar to: {ref_title}\n"]
+    for i, paper in enumerate(filtered_results, 1):
+        output.append(f"## {i}. {title}")
+        output.append(f"- **Similarity Score**: {score:.3f}")
+
+    return {
+        "success": True,
+        "mode": "content_similarity",
+        "content": "\n".join(output),
+        "papers_found": len(filtered_results),
+        "strategy": "Vector-based content similarity (Qdrant More Like This)",
+        "reference_paper": paper_key
+    }
+```
+
+**Key Features:**
+- Uses abstract for similarity search (full document embeddings not available)
+- Filters out source paper from results
+- Returns formatted markdown with similarity scores
+- Provides clear error messages if abstract missing
+
+**5. smart_explore_graph() Signature Update (Lines 795-809)**
+```python
+def smart_explore_graph(
+    query: str,
+    neo4j_client,
+    semantic_search_instance=None,  # NEW: For Content Similarity Mode
+    zotero_client=None,  # NEW: For Content Similarity Mode metadata
+    paper_key: Optional[str] = None,
+    # ... other parameters
+) -> Dict[str, Any]:
+```
+
+**6. Mode Routing (Lines 877-896)**
+```python
+elif mode == "content_similarity":
+    if not paper_key:
+        return {"success": False, "error": "Content Similarity Mode requires a paper_key parameter"}
+    if not semantic_search_instance:
+        return {"success": False, "error": "Content Similarity Mode requires semantic_search_instance"}
+    if not zotero_client:
+        return {"success": False, "error": "Content Similarity Mode requires zotero_client"}
+
+    result = run_content_similarity_mode(semantic_search_instance, zotero_client, paper_key, limit)
+```
+
+### MCP Tool Updates
+
+**File:** `src/agent_zot/core/server.py:2115-2271`
+
+**1. Description Updated - Nine Modes:**
+- Added Content Similarity Mode as Mode #3
+- Clear distinction: "Content-based (what the paper discusses)" vs "Graph-based (citations/shared authors)"
+
+**2. "This tool replaces" Section Updated:**
+```python
+**This tool replaces:**
+- `zot_find_citation_chain` - Citation Chain Mode
+- `zot_find_seminal_papers` - Influence Mode
+- `zot_find_similar_papers` - Content Similarity Mode  # NEW
+- `zot_find_related_papers` - Related Papers Mode
+- ...
+```
+
+**3. Added semantic_search_instance and zotero_client to Tool Call:**
+```python
+neo4j_client = search.neo4j_client
+zot = get_zotero_client()  # For Content Similarity Mode
+
+result = smart_explore_graph(
+    query=query,
+    neo4j_client=neo4j_client,
+    semantic_search_instance=search,  # For Content Similarity Mode
+    zotero_client=zot,  # For Content Similarity Mode metadata
+    paper_key=paper_key,
+    # ...
+)
+```
+
+**4. Disabled zot_find_similar_papers (Lines 1824-1941):**
+- 118 lines commented
+- Deprecation notice directs users to `zot_explore_graph` Content Similarity Mode
+
+### Documentation Updates
+
+**Files Updated:**
+1. **`README.md`** (Lines 117-125)
+   - Updated "Smart Unified Exploration Tool (Graph + Content)" section
+   - Added "Dual Backend" description
+   - Added "Nine Execution Modes" (was "Seven")
+
+2. **`docs/development/TOOL_HIERARCHY.md`**
+   - Updated table: "9 modes total (8 graph + 1 content)"
+   - Updated "Replaces 9 legacy tools" (was 7)
+   - Added Content Similarity to intent detection table
+   - Updated execution modes section (9 modes with backend labels)
+   - Removed zot_find_similar_papers from Tier 2 tools
+   - Updated migration summary: 19 → 3 tools (84% reduction)
+   - Updated benefits section with "Dual-backend exploration"
+
+3. **`docs/QUICK_REFERENCE.md`**
+   - Updated zot_explore_graph description with 9 modes
+   - Added zot_find_similar_papers to deprecated list
+
+4. **`CLAUDE.md`** (This file)
+   - Added this consolidation section
+
+### Clear Distinction: Similar vs Related
+
+**Critical Design Decision:** Pattern-based disambiguation
+
+**Content Similarity Mode (Qdrant vector similarity):**
+- Queries: "similar to", "like this", "more papers like X"
+- Backend: Qdrant vector search on abstract
+- Returns: Papers with similar content/topics
+- Example: "Find papers similar to ABC12345"
+
+**Related Papers Mode (Neo4j graph relationships):**
+- Queries: "related to", "connected to", "shared entities"
+- Backend: Neo4j shared authors/concepts/citations
+- Returns: Papers with graph connections
+- Example: "Find papers related to ABC12345"
+
+**Why This Matters:**
+- "Similar" suggests semantic/content similarity → vector search
+- "Related" suggests structural relationships → graph traversal
+- Clear mental model for users
+- Consistent with multi-backend architecture in `zot_search`
+
+### Final Consolidation Achievement
+
+**19 Legacy Tools → 3 Intelligent Tools (84% Reduction):**
+
+**Consolidated into zot_search (7 tools):**
+1. zot_semantic_search → Fast Mode
+2. zot_unified_search → Comprehensive Mode
+3. zot_refine_search → Built-in refinement + escalation
+4. zot_enhanced_semantic_search → Entity-enriched Mode
+5. zot_decompose_query → Phase 0 automatic decomposition
+6. zot_search_items → Metadata-enriched Mode
+7. zot_get_item (metadata only) → Metadata-enriched Mode
+
+**Consolidated into zot_summarize (3 tools):**
+1. zot_ask_paper → Targeted Mode
+2. zot_get_item (content) → Quick Mode
+3. zot_get_item_fulltext → Full Mode
+
+**Consolidated into zot_explore_graph (9 tools):** ⭐ **NEW: +1 tool**
+1. zot_graph_search → Automatic mode selection
+2. zot_find_citation_chain → Citation Chain Mode
+3. zot_find_seminal_papers → Influence Mode
+4. **zot_find_similar_papers → Content Similarity Mode** ⭐ **NEW**
+5. zot_find_related_papers → Related Papers Mode
+6. zot_find_collaborator_network → Collaboration Mode
+7. zot_explore_concept_network → Concept Network Mode
+8. zot_track_topic_evolution → Temporal Mode
+9. zot_analyze_venues → Venue Analysis Mode
+
+### User Experience Impact
+
+**Before:**
+- `zot_find_similar_papers` - Manual content similarity (Qdrant only)
+- `zot_find_related_papers` - Manual graph relationships (Neo4j only)
+- Confusion about "similar" vs "related"
+- Separate tools for content vs graph exploration
+
+**After:**
+- `zot_explore_graph` - Unified exploration (9 modes, 2 backends)
+- Automatic intent detection ("similar" → Content Similarity, "related" → Related Papers)
+- Clear distinction based on query patterns
+- Single entry point for ALL exploration (graph AND content)
+
+### Commits
+
+- **`XXXXXXX`** (2025-10-25) - Integrate zot_find_similar_papers as Content Similarity Mode (pending)
+
+---
+
 ## Backup System & Data Quality Fixes (Completed 2025-10-24)
 
 ### Overview
