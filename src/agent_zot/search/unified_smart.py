@@ -40,7 +40,9 @@ def detect_query_intent(query: str) -> Tuple[str, float]:
 
     # Relationship intent patterns (highest priority)
     relationship_patterns = [
-        r'\b(collaborat|co-author|co author)\b',
+        r'\bcollaborat\w*\b',  # collaborate, collaborated, collaboration, collaborating, etc.
+        r'\bco-author\b',  # co-author (hyphenated)
+        r'\bco author\b',  # co author (space)
         r'\b(citation|cited|citing|cites)\b',
         r'\b(network|connection|related to)\b',
         r'\b(who worked with|influenced by|builds on)\b',
