@@ -435,7 +435,7 @@ Smart intent-driven search that automatically:
 Use for: Default choice for ALL paper discovery - handles 99% of search queries intelligently""",
     annotations={
         "readOnlyHint": True,
-        "title": "Smart Search (Recommended)"
+        "title": "Smart Search"
     }
 )
 def smart_unified_search(
@@ -1226,7 +1226,7 @@ def smart_unified_search(
     description="🔧 LOW PRIORITY - ⚪ FALLBACK - Index or re-index the Zotero library for semantic search. Extracts full PDF text using AI-powered parsing (Docling with OCR). Use this when the user asks to 'index my library', 'update the search database', or 'enable semantic search'. Automatically handles full-text extraction from PDFs.\n\nUse for: Rebuilding semantic search database after adding new papers",
     annotations={
         "readOnlyHint": False,
-        "title": "Update Search Index (Vector)"
+        "title": "Update Search Index"
     }
 )
 def update_search_database(
@@ -1311,7 +1311,7 @@ def update_search_database(
 ,
     annotations={
         "readOnlyHint": True,
-        "title": "Get Search Database Status (Vector)"
+        "title": "Get Search Database Status"
     }
 )
 def get_search_database_status(*, ctx: Context) -> str:
@@ -1610,7 +1610,7 @@ Smart intent-driven summarization that automatically:
 Use for: Default choice for ALL paper understanding - handles 99% of summarization needs intelligently""",
     annotations={
         "readOnlyHint": True,
-        "title": "Smart Summarize (Recommended)"
+        "title": "Smart Summarize"
     }
 )
 def smart_summarize_paper(
@@ -2195,7 +2195,7 @@ Smart intent-driven graph exploration that automatically:
 Use for: Default choice for ALL exploration (graph AND content) - handles 99% of exploration needs intelligently""",
     annotations={
         "readOnlyHint": True,
-        "title": "Smart Explore Graph (Recommended)"
+        "title": "Smart Explore Graph"
     }
 )
 def smart_explore_graph_tool(
@@ -4105,7 +4105,7 @@ def smart_export_tool(
     description="📊 MEDIUM PRIORITY - ⚪ FALLBACK - Get recently added/modified items from Zotero API by timestamp.\n\n⚠️ For semantic queries about recent research on a topic, use zot_find_recent_developments instead.\n\nUse for: Chronologically listing items you recently added to your library (not topic-specific)",
     annotations={
         "readOnlyHint": True,
-        "title": "Get Recent Items (Zotero)"
+        "title": "Get Recent Items"
     }
 )
 def get_recent(
