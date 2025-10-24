@@ -124,6 +124,27 @@ Agent-Zot transforms your Zotero research library into an intelligent, searchabl
 - **Clear Distinction**: "Similar" (content-based via Qdrant) vs "Related" (graph-based via Neo4j)
 - **Multi-Strategy Exploration**: Comprehensive mode runs multiple strategies and merges results
 
+### Smart Unified Management Tools (Complete Consolidation)
+- **🆕 Complete Tool Consolidation**: 34 legacy tools → 7 unified intelligent tools (79% reduction)
+  - **Research Tools**: 19 → 3 (84% reduction)
+  - **Management Tools**: 15 → 4 (73% reduction)
+- **🆕 `zot_manage_collections`**: Unified collections management (5 modes)
+  - Natural language interface: "list my collections", "create collection X", "show items in collection Y"
+  - Automatic intent detection and fuzzy collection name matching
+  - Replaces 5 legacy tools: zot_get_collections, zot_create_collection, zot_get_collection_items, zot_add_to_collection, zot_remove_from_collection
+- **🆕 `zot_manage_tags`**: Unified tags management (4 modes)
+  - Advanced operators support: || for OR, - for NOT
+  - Natural language queries: "list all tags", "find papers tagged with X", "add tag Y to items"
+  - Replaces 3 legacy tools: zot_get_tags, zot_search_by_tag, zot_batch_update_tags
+- **🆕 `zot_manage_notes`**: Unified notes and annotations management (4 modes)
+  - Handles both notes and PDF annotations
+  - Natural language queries: "show my annotations", "search notes for X", "create note for paper Y"
+  - Replaces 4 legacy tools: zot_get_annotations, zot_get_notes, zot_search_notes, zot_create_note
+- **🆕 `zot_export`**: Unified export with automatic format detection (3 modes)
+  - Automatically detects format from file extension (.md, .bib, .graphml)
+  - Supports filtered exports by query or collection
+  - Replaces 3 legacy tools: zot_export_markdown, zot_export_bibtex, zot_export_graph
+
 ### Resource Management & Stability
 - **Sequential Execution**: Comprehensive Mode (3 backends) runs sequentially instead of parallel to prevent memory exhaustion and system freezes
 - **Parallel Optimization**: Fast/Graph-enriched/Metadata-enriched modes (1-2 backends) still run in parallel for speed
