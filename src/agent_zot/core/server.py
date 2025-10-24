@@ -4638,16 +4638,17 @@ def get_annotations(
         return f"Error fetching annotations: {str(e)}"
 
 
-@mcp.tool(
-    name="zot_get_notes",
-    description="📊 MEDIUM PRIORITY - 🔸 SECONDARY - Retrieve notes from your Zotero library, with options to filter by parent item.\n\nUse for: Fetching standalone notes or notes attached to items"
-,
-    annotations={
-        "readOnlyHint": True,
-        "title": "Get Notes (Zotero)"
-    }
-)
-def get_notes(
+# ⚠️ DEPRECATED: Use zot_manage_notes instead (List Notes Mode)
+# @mcp.tool(
+#     name="zot_get_notes",
+#     description="📊 MEDIUM PRIORITY - 🔸 SECONDARY - Retrieve notes from your Zotero library, with options to filter by parent item.\n\nUse for: Fetching standalone notes or notes attached to items"
+# ,
+#     annotations={
+#         "readOnlyHint": True,
+#         "title": "Get Notes (Zotero)"
+#     }
+# )
+def _deprecated_get_notes(
     item_key: Optional[str] = None,
     limit: Optional[int] = 20,
     *,
@@ -4728,16 +4729,17 @@ def get_notes(
         return f"Error fetching notes: {str(e)}"
 
 
-@mcp.tool(
-    name="zot_search_notes",
-    description="📊 MEDIUM PRIORITY - 🔸 SECONDARY - Search for notes across your Zotero library.\n\nUse for: Finding notes by text content across library"
-,
-    annotations={
-        "readOnlyHint": True,
-        "title": "Search Notes (Zotero)"
-    }
-)
-def search_notes(
+# ⚠️ DEPRECATED: Use zot_manage_notes instead (Search Mode)
+# @mcp.tool(
+#     name="zot_search_notes",
+#     description="📊 MEDIUM PRIORITY - 🔸 SECONDARY - Search for notes across your Zotero library.\n\nUse for: Finding notes by text content across library"
+# ,
+#     annotations={
+#         "readOnlyHint": True,
+#         "title": "Search Notes (Zotero)"
+#     }
+# )
+def _deprecated_search_notes(
     query: str,
     limit: Optional[int] = 20,
     *,
@@ -4889,16 +4891,17 @@ def search_notes(
         return f"Error searching notes: {str(e)}"
 
 
-@mcp.tool(
-    name="zot_create_note",
-    description="📊 MEDIUM PRIORITY - 🔸 SECONDARY - Create a new note for a Zotero item.\n\nUse for: Adding research notes to items or library"
-,
-    annotations={
-        "readOnlyHint": True,
-        "title": "Create Note (Zotero)"
-    }
-)
-def create_note(
+# ⚠️ DEPRECATED: Use zot_manage_notes instead (Create Mode)
+# @mcp.tool(
+#     name="zot_create_note",
+#     description="📊 MEDIUM PRIORITY - 🔸 SECONDARY - Create a new note for a Zotero item.\n\nUse for: Adding research notes to items or library"
+# ,
+#     annotations={
+#         "readOnlyHint": True,
+#         "title": "Create Note (Zotero)"
+#     }
+# )
+def _deprecated_create_note(
     item_key: str,
     note_title: str,
     note_text: str,
@@ -4975,15 +4978,17 @@ def create_note(
 # ============================================================================
 # EXPORT TOOLS - Data Export
 # ============================================================================
-@mcp.tool(
-    name="zot_export_markdown",
-    description="📊 MEDIUM PRIORITY - 🔸 SECONDARY - Export Zotero items to Markdown files with YAML frontmatter (Obsidian-compatible). Exports items matching a query or from a collection to a specified directory.\n\nUse for: Converting bibliographic data to markdown format for documentation",
-    annotations={
-        "readOnlyHint": True,
-        "title": "Export to Markdown (Export)"
-    }
-)
-def export_markdown(
+
+# ⚠️ DEPRECATED: Use zot_export instead (Markdown Mode)
+# @mcp.tool(
+#     name="zot_export_markdown",
+#     description="📊 MEDIUM PRIORITY - 🔸 SECONDARY - Export Zotero items to Markdown files with YAML frontmatter (Obsidian-compatible). Exports items matching a query or from a collection to a specified directory.\n\nUse for: Converting bibliographic data to markdown format for documentation",
+#     annotations={
+#         "readOnlyHint": True,
+#         "title": "Export to Markdown (Export)"
+#     }
+# )
+def _deprecated_export_markdown(
     output_dir: str,
     query: str = None,
     collection_key: str = None,
@@ -5154,16 +5159,17 @@ def export_markdown(
         return f"Error during markdown export: {str(e)}"
 
 
-@mcp.tool(
-    name="zot_export_bibtex",
-    description="📊 MEDIUM PRIORITY - 🔸 SECONDARY - Export Zotero items to BibTeX format. Can export items matching a query or from a collection to a .bib file.\n\nUse for: Generating BibTeX citations for LaTeX documents"
-,
-    annotations={
-        "readOnlyHint": True,
-        "title": "Export BibTeX (Export)"
-    }
-)
-def export_bibtex(
+# ⚠️ DEPRECATED: Use zot_export instead (BibTeX Mode)
+# @mcp.tool(
+#     name="zot_export_bibtex",
+#     description="📊 MEDIUM PRIORITY - 🔸 SECONDARY - Export Zotero items to BibTeX format. Can export items matching a query or from a collection to a .bib file.\n\nUse for: Generating BibTeX citations for LaTeX documents"
+# ,
+#     annotations={
+#         "readOnlyHint": True,
+#         "title": "Export BibTeX (Export)"
+#     }
+# )
+def _deprecated_export_bibtex(
     output_file: str,
     query: str = None,
     collection_key: str = None,
@@ -5263,16 +5269,17 @@ def export_bibtex(
         return f"Error during BibTeX export: {str(e)}"
 
 
-@mcp.tool(
-    name="zot_export_graph",
-    description="🔧 LOW PRIORITY - ⚪ FALLBACK - Export Neo4j knowledge graph to GraphML format for visualization in Gephi or Cytoscape. Requires Neo4j GraphRAG to be enabled.\n\nUse for: Exporting Neo4j graph data for external analysis"
-,
-    annotations={
-        "readOnlyHint": True,
-        "title": "Export Graph (Export)"
-    }
-)
-def export_graph(
+# ⚠️ DEPRECATED: Use zot_export instead (GraphML Mode)
+# @mcp.tool(
+#     name="zot_export_graph",
+#     description="🔧 LOW PRIORITY - ⚪ FALLBACK - Export Neo4j knowledge graph to GraphML format for visualization in Gephi or Cytoscape. Requires Neo4j GraphRAG to be enabled.\n\nUse for: Exporting Neo4j graph data for external analysis"
+# ,
+#     annotations={
+#         "readOnlyHint": True,
+#         "title": "Export Graph (Export)"
+#     }
+# )
+def _deprecated_export_graph(
     output_file: str,
     node_types: List[str] = None,
     max_nodes: int = None,
