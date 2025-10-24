@@ -265,11 +265,225 @@ Choose tools based on what the query needs, not a predetermined sequence.
 
 
 # ============================================================================
-# QUERY TOOLS - Semantic/Vector Search (Qdrant)
+# QUERY TOOLS - Smart Unified Search (RECOMMENDED DEFAULT)
+# ============================================================================
+@mcp.tool(
+    name="zot_search",
+    description="""🔥 HIGHEST PRIORITY - 🟢 RECOMMENDED DEFAULT for all research queries.
+
+**Use this as your primary search tool for almost all queries.**
+
+Smart intent-driven search that automatically:
+- Detects query intent (relationship/metadata/semantic)
+- Expands vague queries with domain-specific terms
+- Selects optimal backend combination
+- Escalates to comprehensive search if results are inadequate
+- Provides result provenance (which backends found each paper)
+
+## Four Execution Modes (automatic selection):
+
+**Fast Mode** (Qdrant only)
+- For simple semantic queries about concepts/topics
+- ~2 seconds, minimal cost
+- Example: "papers about working memory"
+
+**Graph-enriched Mode** (Qdrant + Neo4j)
+- For relationship/network queries
+- ~4 seconds, moderate cost
+- Example: "who collaborated with John Smith"
+
+**Metadata-enriched Mode** (Qdrant + Zotero API)
+- For author/journal/year queries
+- ~4 seconds, moderate cost
+- Example: "papers by Jane Doe published in Nature"
+
+**Comprehensive Mode** (All three backends)
+- Automatic fallback when quality is inadequate
+- ~5 seconds, higher cost (Zotero API)
+- Example: Escalation from low-quality Fast Mode results
+
+## Key Features:
+
+✅ **Query refinement** - Expands vague queries with domain terms
+✅ **Intent detection** - Matches backends to query type
+✅ **Smart escalation** - Adds backends if results inadequate
+✅ **Deduplication** - Removes duplicate papers
+✅ **Provenance tracking** - Shows which backends found each paper
+✅ **Neo4j checking** - Skips graph search if unavailable
+
+## When to use other tools:
+
+**Use specialized tools only when:**
+- `zot_ask_paper` - Need to read paper content (always use after finding papers)
+- `zot_graph_search` - Pure graph queries (rare - usually zot_search handles it)
+- `zot_decompose_query` - Complex multi-concept boolean queries
+- `zot_get_item` - Need metadata for specific paper you already know
+
+**Legacy tools (deprecated):**
+- `zot_semantic_search` - Use zot_search instead (Fast Mode)
+- `zot_unified_search` - Use zot_search instead (Comprehensive Mode)
+- `zot_refine_search` - Use zot_search instead (has built-in refinement)
+
+Use for: Default choice for research discovery - handles 95% of queries intelligently""",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Smart Search (Recommended)"
+    }
+)
+def smart_unified_search(
+    query: str,
+    limit: int = 10,
+    force_mode: Optional[str] = None,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Perform intent-driven smart search with automatic backend selection.
+
+    This is the recommended default search tool that replaces:
+    - zot_semantic_search (Fast Mode)
+    - zot_unified_search (Comprehensive Mode)
+    - zot_refine_search (includes refinement)
+
+    Args:
+        query: Search query text
+        limit: Maximum number of results to return (default: 10)
+        force_mode: Optional mode override - "fast" or "comprehensive"
+        ctx: MCP context
+
+    Returns:
+        Markdown-formatted search results with intent, mode, and provenance
+    """
+    try:
+        if not query.strip():
+            return "Error: Search query cannot be empty"
+
+        ctx.info(f"Performing smart search for: '{query}'")
+
+        # Import smart search module
+        from agent_zot.search.unified_smart import smart_search
+        from agent_zot.search.semantic import create_semantic_search
+        from pathlib import Path
+
+        # Determine config path
+        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
+
+        # Create semantic search instance (needed by smart_search)
+        search_instance = create_semantic_search(str(config_path))
+
+        # Perform smart search
+        results = smart_search(
+            search_instance,
+            query=query,
+            limit=limit,
+            force_mode=force_mode
+        )
+
+        if results.get("error"):
+            return f"Smart search error: {results['error']}"
+
+        search_results = results.get("results", [])
+
+        if not search_results:
+            return f"No items found for query: '{query}'"
+
+        # Format results as markdown
+        output = [f"# Smart Search Results for '{query}'", ""]
+
+        # Show query expansion if it happened
+        if expanded_query := results.get("expanded_query"):
+            output.append(f"**Query expanded**: `{query}` → `{expanded_query}`")
+            output.append("")
+
+        # Show intent and mode
+        intent = results.get("intent", "unknown")
+        intent_confidence = results.get("intent_confidence", 0)
+        mode = results.get("mode", "unknown")
+        backends_used = results.get("backends_used", [])
+
+        output.append(f"**Intent detected**: {intent} (confidence: {intent_confidence:.2f})")
+        output.append(f"**Mode**: {mode}")
+        output.append(f"**Backends used**: {', '.join(backends_used)}")
+        output.append("")
+
+        # Show quality metrics
+        if quality := results.get("quality_metrics"):
+            output.append(f"**Quality**: Confidence={quality['confidence']}, Coverage={quality['coverage']:.0%}")
+            output.append("")
+
+        output.append(f"Found {len(search_results)} items:")
+        output.append("")
+
+        for i, result in enumerate(search_results, 1):
+            item_key = result.get("item_key", "")
+
+            # Get Zotero item data
+            zotero_item = result.get("zotero_item", {})
+            data = zotero_item.get("data", {})
+
+            title = data.get("title", "Untitled")
+            creators = data.get("creators", [])
+
+            # Format creators
+            from agent_zot.utils.common import format_creators
+            creators_str = format_creators(creators)
+
+            # Get scores
+            similarity = result.get("similarity_score")
+            rrf_score = result.get("rrf_score")
+
+            # Get provenance
+            found_in = result.get("found_in", [])
+
+            output.append(f"## {i}. {title}")
+            output.append("")
+            output.append(f"- **Item Key**: `{item_key}`")
+            if creators_str:
+                output.append(f"- **Authors**: {creators_str}")
+
+            # Show scores
+            if similarity:
+                output.append(f"- **Similarity**: {similarity:.3f}")
+            if rrf_score:
+                output.append(f"- **RRF Score**: {rrf_score:.4f}")
+
+            # Show provenance
+            if found_in:
+                output.append(f"- **Found in**: {', '.join(found_in)}")
+
+            # Add year and type
+            if year := data.get("date"):
+                output.append(f"- **Year**: {year}")
+            if item_type := data.get("itemType"):
+                output.append(f"- **Type**: {item_type}")
+
+            output.append("")
+
+        # Show any errors
+        if errors := results.get("errors_by_backend"):
+            output.append("## Backend Errors")
+            output.append("")
+            for backend, error in errors.items():
+                output.append(f"- **{backend}**: {error}")
+            output.append("")
+
+        output.append("---")
+        output.append(f"💡 **Tip**: Use `zot_ask_paper(item_key, question)` to read specific papers")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        ctx.error(f"Smart search failed: {str(e)}")
+        import traceback
+        return f"Error performing smart search: {str(e)}\n\n{traceback.format_exc()}"
+
+
+# ============================================================================
+# QUERY TOOLS - Semantic/Vector Search (Qdrant) - LEGACY
 # ============================================================================
 @mcp.tool(
     name="zot_semantic_search",
-    description="🔥 HIGH PRIORITY - 🔵 PRIMARY for simple content/topic discovery.\n\nFast semantic search over 2,400+ papers using BGE-M3 embeddings.\n\n💡 Use when:\n✓ Simple, well-formed query about specific concept/topic\n✓ You want fast results (single backend)\n✓ \"papers about [topic]\" or \"research on [method]\"\n✓ User requests \"quick\" or \"fast\" search\n✓ You expect good Qdrant coverage for this topic\n\nNOT for:\n✗ Complex multi-backend queries → use zot_unified_search (recommended default)\n✗ Poor initial results → use zot_refine_search  \n✗ Relationship queries → use zot_graph_search\n\n💡 Often combines with:\n- zot_ask_paper - Read content from found papers\n- zot_refine_search - If results need improvement\n- zot_unified_search - If coverage seems incomplete\n\n⚠️ Limitation: Only searches Qdrant vector DB. For comprehensive coverage, use zot_unified_search.\n\n📊 Search Levels:\n- Level 1 (THIS): Basic semantic search - fastest\n- Level 2 (zot_hybrid_vector_graph_search): Semantic + graph relationships\n- Level 3 (zot_enhanced_semantic_search): Semantic + chunk-level entities\n\nExample queries:\n✓ \"papers about [concept/topic]\"\n✓ \"research on [method/approach]\"\n✓ \"studies using [technique]\"\n\nUse for: Fast, simple semantic discovery when you expect good coverage",
+    description="⚠️ DEPRECATED - Use `zot_search` instead (Fast Mode)\n\n🔵 LEGACY TOOL - Fast semantic search over 2,400+ papers using BGE-M3 embeddings.\n\n**Recommendation**: Use `zot_search` instead, which provides:\n- Same fast semantic search (Fast Mode)\n- Automatic intent detection\n- Query refinement for vague queries\n- Smart escalation to additional backends if needed\n- Result provenance tracking\n\n💡 Only use this tool if:\n✓ Explicitly need basic semantic-only search\n✓ Want to bypass intent detection and smart features\n✓ Testing/debugging purposes\n\n⚠️ Limitations:\n✗ No intent detection\n✗ No query refinement\n✗ No automatic escalation\n✗ No provenance tracking\n✗ Only searches Qdrant (no Neo4j or Zotero API)\n\nUse for: Legacy support only - prefer zot_search for all new queries",
     annotations={
         "readOnlyHint": True,
         "title": "Semantic Search (Vector)"
@@ -428,7 +642,7 @@ def semantic_search(
 
 @mcp.tool(
     name="zot_unified_search",
-    description="🔥 HIGH PRIORITY - 🔵 RECOMMENDED DEFAULT - Unified search using Reciprocal Rank Fusion.\n\n**Use this as your primary research discovery tool.**\n\nCombines three backends for maximum coverage:\n- Qdrant (semantic vector search) - content similarity\n- Neo4j (knowledge graph) - relationship discovery  \n- Zotero API (metadata search) - keyword matching\n\nResults merged using Reciprocal Rank Fusion (RRF):\n- Papers appearing in multiple backends rank higher\n- Balances relevance across different retrieval methods\n- Often outperforms single-backend search\n\n💡 Best for:\n✓ Comprehensive research queries (recommended default)\n✓ Multi-faceted topics requiring diverse retrieval methods\n✓ Maximizing recall (finding ALL relevant papers)\n✓ When semantic search alone has poor coverage\n✓ Complex queries like 'neural mechanisms AND clinical applications'\n\nNOT for:\n✗ Simple queries where speed > completeness → use zot_semantic_search (faster)\n✗ Purely relationship-based queries → use zot_graph_search\n\n💡 Often combines with:\n- zot_ask_paper - Read content from found papers\n- zot_find_related_papers - Explore citation connections\n- Neo4j graph tools - Analyze relationships between results\n\n💡 Example: 'dissociation cognitive control' finds papers across content, citations, and metadata that might be missed by semantic search alone.\n\n⚠️ Note: This is now the recommended starting point for most research queries. Use zot_semantic_search only when speed is critical and you expect good Qdrant coverage.\n\nUse for: Comprehensive multi-backend search with intelligent result merging",
+    description="⚠️ DEPRECATED - Use `zot_search` instead (Comprehensive Mode)\n\n🔵 LEGACY TOOL - Unified search using Reciprocal Rank Fusion (RRF).\n\n**Recommendation**: Use `zot_search` instead, which provides:\n- Same RRF-based comprehensive search (Comprehensive Mode)\n- Automatic intent detection (only uses backends when needed)\n- Query refinement for vague queries\n- Smart mode selection (doesn't always use all 3 backends)\n- Cost optimization (avoids Zotero API when unnecessary)\n- Result provenance tracking\n\n💡 Only use this tool if:\n✓ Explicitly need all three backends simultaneously\n✓ Want to bypass smart mode selection\n✓ Testing/debugging purposes\n\n⚠️ Limitations:\n✗ Always uses all backends (inefficient, expensive)\n✗ No intent detection\n✗ No query refinement\n✗ No cost optimization\n✗ No provenance tracking\n\nUse for: Legacy support only - prefer zot_search for all new queries",
     annotations={
         "readOnlyHint": True,
         "title": "Unified Search (RRF)"
@@ -560,7 +774,7 @@ def unified_search_tool(
 
 @mcp.tool(
     name="zot_refine_search",
-    description="🔥 HIGH PRIORITY - 🔵 ADVANCED - Iterative retrieval with automatic query refinement and intelligent fallback.\n\n💡 Use when:\n✓ Initial search returned poor-quality results (low confidence/coverage)\n✓ Query is vague or exploratory and needs automatic improvement\n✓ You want the system to learn from initial results and improve the query\n✓ Quality metrics indicate need for refinement\n\nHow it works:\n1. Performs initial semantic search (Qdrant vector DB)\n2. Analyzes quality metrics (confidence, coverage, similarity)\n3. If quality is low:\n   - Extracts key concepts from top results\n   - Adds domain-specific terms (e.g., 'dissociation' → 'depersonalization, derealization')\n   - Detects methodology/domain from paper content (e.g., adds 'fMRI' if papers mention neuroimaging)\n   - Generates refined query variants\n4. Re-searches with improved queries\n5. Merges and ranks all results\n6. **🆕 Smart Fallback**: If semantic search finds 0 results after refinement, automatically escalates to unified search (Qdrant + Neo4j + Zotero API)\n\nRefinement strategies:\n- Domain-specific expansion (cognitive neuroscience/psychology terms)\n- Methodology extraction (fMRI, EEG, behavioral, clinical)\n- Concept extraction from relevant papers\n- Synonym expansion for cognitive/clinical terms\n\nOften more effective than manual query reformulation because it learns from actual paper content.\n\nNOT for:\n✗ High-quality initial results (confidence=high, coverage>60%) → unnecessary\n✗ When you want exact control over query formulation → use zot_semantic_search\n\n💡 Often combines with:\n- zot_semantic_search - Start here first, then refine if quality is low\n- zot_ask_paper - Read content from refined results\n- zot_unified_search - Or use this directly for maximum coverage from the start\n\n⚠️ Note: Primarily uses semantic search. For maximum coverage across all backends from the start, use zot_unified_search instead.\n\nUse for: Automatic query improvement when initial search quality is insufficient, with intelligent fallback to multi-backend search",
+    description="⚠️ DEPRECATED - Use `zot_search` instead (includes refinement)\n\n🔵 LEGACY TOOL - Iterative retrieval with automatic query refinement and intelligent fallback.\n\n**Recommendation**: Use `zot_search` instead, which provides:\n- Same automatic query refinement\n- Domain-specific term expansion\n- Intent-based backend selection (more efficient)\n- Smart escalation with better quality assessment\n- Result provenance tracking\n- Cost optimization\n\n💡 Only use this tool if:\n✓ Explicitly need iterative semantic-only refinement\n✓ Want to bypass intent detection\n✓ Testing/debugging purposes\n\n⚠️ Limitations:\n✗ Only refines for semantic search (no intent awareness)\n✗ Less efficient backend selection\n✗ No cost optimization\n✗ No provenance tracking\n✗ Fallback always uses all 3 backends (expensive)\n\nUse for: Legacy support only - prefer zot_search for all new queries",
     annotations={
         "readOnlyHint": True,
         "title": "Iterative Search (Auto-Refine)"
