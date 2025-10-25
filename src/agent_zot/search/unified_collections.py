@@ -42,30 +42,31 @@ CREATE_PATTERNS = [
 ]
 
 SHOW_ITEMS_PATTERNS = [
-    r'\bshow\s+(items?|papers?)\s+in\s+collection\b',
-    r'\b(list|get|display)\s+(items?|papers?|contents?)\s+(in|of|from)\s+collection\b',
-    r'\bwhat\'?s\s+in\s+(the\s+)?collection\b',
-    r'\bcollection\s+contents?\b',
+    r'\bshow\s+(items?|papers?|contents?)\s+(in|of|from)\s+.*\bcollection\b',  # Must mention collection
+    r'\b(list|get|display)\s+(items?|papers?|contents?)\s+(in|of|from)\s+.*\bcollection\b',  # Must mention collection
+    r'\bwhat\'?s\s+in\s+(the\s+)?.*\bcollection\b',  # "what's in the ML collection"
+    r'\bcollection\s+contents?\b',  # "collection contents"
 ]
 
 ADD_PATTERNS = [
-    r'\badd\s+(papers?|items?)\s+.*\s+to\s+collection\b',
-    r'\bput\s+(papers?|items?)\s+.*\s+(in|into)\s+collection\b',
-    r'\bmove\s+(papers?|items?)\s+.*\s+to\s+collection\b',
+    r'\badd\s+(papers?|items?)\b.*\b(to|into)\s+.*\bcollection\b',  # "add items X to the ML collection"
+    r'\bput\s+(papers?|items?)\b.*\b(in|into)\s+.*\bcollection\b',  # "put paper X in the Research collection"
+    r'\bmove\s+(papers?|items?)\b.*\bto\s+.*\bcollection\b',  # "move items X to collection Y"
 ]
 
 REMOVE_PATTERNS = [
-    r'\bremove\s+(papers?|items?)\s+from\s+collection\b',
-    r'\bdelete\s+(papers?|items?)\s+from\s+collection\b',
-    r'\btake\s+(papers?|items?)\s+out\s+of\s+collection\b',
+    r'\bremove\s+(papers?|items?)\b.*\bfrom\s+.*\bcollection\b',  # "remove items X from the ML collection"
+    r'\bdelete\s+(papers?|items?)\b.*\bfrom\s+.*\bcollection\b',  # "delete papers X from collection Y"
+    r'\btake\s+(papers?|items?)\b.*\bout\s+of\s+.*\bcollection\b',  # "take items out of collection"
+    r'\btake\s+out\b.*\bfrom\s+.*\bcollection\b',  # "take out X from the NLP collection" (phrasal verb)
 ]
 
 RECENT_PATTERNS = [
-    r'\b(show|list|get|display)\s+(my\s+)?(recent|latest)\s+(items?|papers?|additions?)\b',
-    r'\bwhat\s+(did\s+I|have\s+I)\s+(recently\s+)?(add|import)\b',
-    r'\brecent(ly)?\s+added\b',
-    r'\blatest\s+(items?|papers?)\b',
-    r'\bjust\s+(added|imported)\b',
+    r'\b(recent|latest)\s+(items?|papers?|additions?)\b',  # "recent papers", "latest items"
+    r'\b(show|list|get|display)\s+.*\b(recent|latest)\b',  # "show 20 recent", "list recent papers"
+    r'\bwhat\s+(did\s+i|have\s+i)\s+.*(add|import|just)',  # "what did I just import" (lowercase i)
+    r'\brecent(ly)?\s+added\b',  # "recently added"
+    r'\bjust\s+(added|imported)\b',  # "just added"
 ]
 
 
