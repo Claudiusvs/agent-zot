@@ -221,7 +221,7 @@ questions = [
 
 | Tool | Modes | Purpose |
 |------|-------|---------|
-| **`zot_manage_collections`** | 5 modes | List, Create, Show Items, Add, Remove collections |
+| **`zot_manage_collections`** | 6 modes | List, Create, Show Items, Add, Remove collections, Recent (library maintenance) |
 | **`zot_manage_tags`** | 4 modes | List, Search, Add, Remove tags |
 | **`zot_manage_notes`** | 4 modes | List Annotations, List Notes, Search, Create notes |
 | **`zot_export`** | 3 modes | Markdown, BibTeX, GraphML export |
@@ -238,7 +238,6 @@ questions = [
 | `zot_get_item` | 🔧 LOW | Retrieve paper metadata (fallback) |
 | `zot_update_search_database` | 🔧 LOW | Rebuild semantic search index |
 | `zot_get_search_database_status` | 🔧 LOW | Check index health |
-| `zot_get_recent` | 🔧 LOW | Recently added items |
 
 ---
 
@@ -272,7 +271,7 @@ User Query
 
 ## 📈 Complete Migration Summary
 
-### Before: 34 Legacy Tools
+### Before: 35 Legacy Tools
 
 **Research Tools (19):**
 ```
@@ -302,14 +301,15 @@ Graph/Exploration (9):
 - zot_analyze_venues → zot_explore_graph
 ```
 
-**Management Tools (15):**
+**Management Tools (16):**
 ```
-Collections (5):
+Collections (6):
 - zot_get_collections → zot_manage_collections
 - zot_create_collection → zot_manage_collections
 - zot_get_collection_items → zot_manage_collections
 - zot_add_to_collection → zot_manage_collections
 - zot_remove_from_collection → zot_manage_collections
+- zot_get_recent → zot_manage_collections
 
 Tags (3):
 - zot_get_tags → zot_manage_tags
@@ -339,7 +339,7 @@ Export (3):
 
 **Management Tools (4):**
 ```
-✅ zot_manage_collections (5 modes)
+✅ zot_manage_collections (6 modes)
 ✅ zot_manage_tags (4 modes)
 ✅ zot_manage_notes (4 modes)
 ✅ zot_export (3 modes: markdown, bibtex, graphml)
@@ -347,9 +347,9 @@ Export (3):
 
 ### Complete Benefits
 
-- ✅ **79% total reduction in tool count** (34 → 7 unified tools)
+- ✅ **80% total reduction in tool count** (35 → 7 unified tools)
 - ✅ **Research: 84% reduction** (19 → 3 for core workflows)
-- ✅ **Management: 73% reduction** (15 → 4 for organization)
+- ✅ **Management: 75% reduction** (16 → 4 for organization)
 - ✅ **Natural language interface** replaces function signatures
 - ✅ **Automatic intent detection** (no manual mode selection)
 - ✅ **Automatic decomposition** (Phase 0 multi-concept queries)
@@ -358,7 +358,7 @@ Export (3):
 - ✅ **Dual-backend architecture** (Neo4j + Qdrant)
 - ✅ **Consistent interface** (same query → consistent routing)
 - ✅ **Compound operations** (multi-step workflows in single request)
-- ✅ **Reduced cognitive load** (LLM chooses from 7 vs 34+ options)
+- ✅ **Reduced cognitive load** (LLM chooses from 7 vs 35+ options)
 - ✅ **Cost optimization** (uses cheapest/fastest mode that works)
 
 ---
