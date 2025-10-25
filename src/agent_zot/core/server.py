@@ -3191,7 +3191,31 @@ For content-based search, use `zot_search` instead."""
 # ========== UNIFIED COLLECTIONS MANAGEMENT ==========
 @mcp.tool(
     name="zot_manage_collections",
-    description="""🔥 HIGHEST PRIORITY - Unified collections management. Replaces: zot_get_collections, zot_create_collection, zot_get_collection_items, zot_add_to_collection, zot_remove_from_collection""",
+    description="""🔥 HIGHEST PRIORITY - Unified collections and library browsing management.
+
+**Replaces 6 legacy tools:**
+- zot_get_collections → List Mode
+- zot_create_collection → Create Mode
+- zot_get_collection_items → Show Items Mode
+- zot_add_to_collection → Add Mode
+- zot_remove_from_collection → Remove Mode
+- zot_get_recent → Recent Mode (library maintenance utility)
+
+**Six Execution Modes (automatic detection):**
+
+**1. List Mode** - List all collections
+**2. Create Mode** - Create a new collection
+**3. Show Items Mode** - Show items in a specific collection
+**4. Add Mode** - Add items to a collection
+**5. Remove Mode** - Remove items from a collection
+**6. Recent Mode** - Show recently added/modified items (library maintenance utility)
+
+**Recent Mode Use Case:**
+- "What did I just import?" type queries
+- Shows items sorted by when YOU added them to Zotero (not paper publication date)
+- Returns basic metadata for chronological browsing
+
+Use for: All collection operations + browsing recently imported items""",
     annotations={"readOnlyHint": False, "title": "Manage Collections"}
 )
 def smart_manage_collections_tool(query: str, collection_key: Optional[str] = None, collection_name: Optional[str] = None,
@@ -4100,15 +4124,16 @@ def smart_export_tool(
 #         return f"Error fetching tags: {str(e)}"
 
 
-@mcp.tool(
-    name="zot_get_recent",
-    description="📊 MEDIUM PRIORITY - ⚪ FALLBACK - Get recently added/modified items from Zotero API by timestamp.\n\n⚠️ For semantic queries about recent research on a topic, use zot_find_recent_developments instead.\n\nUse for: Chronologically listing items you recently added to your library (not topic-specific)",
-    annotations={
-        "readOnlyHint": True,
-        "title": "Get Recent Items"
-    }
-)
-def get_recent(
+# ⚠️ DEPRECATED: Use zot_manage_collections instead (Recent Mode)
+# @mcp.tool(
+#     name="zot_get_recent",
+#     description="📊 MEDIUM PRIORITY - ⚪ FALLBACK - Get recently added/modified items from Zotero API by timestamp.\n\n⚠️ For semantic queries about recent research on a topic, use zot_find_recent_developments instead.\n\nUse for: Chronologically listing items you recently added to your library (not topic-specific)",
+#     annotations={
+#         "readOnlyHint": True,
+#         "title": "Get Recent Items"
+#     }
+# )
+def _deprecated_get_recent(
     limit: int = 10,
     *,
     ctx: Context
