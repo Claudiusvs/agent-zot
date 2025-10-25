@@ -4,19 +4,21 @@ Unified intelligent collections management tool for Agent-Zot.
 Consolidates all collection management tools into a single intelligent interface that
 automatically detects intent and executes the appropriate collection operation.
 
-Five Execution Modes:
+Six Execution Modes:
 1. List Mode - List all collections in the library
 2. Create Mode - Create a new collection
 3. Show Items Mode - Show items in a specific collection
 4. Add Mode - Add items to a collection
 5. Remove Mode - Remove items from a collection
+6. Recent Mode - Show recently added/modified items (library maintenance utility)
 
-Replaces 5 legacy tools:
+Replaces 6 legacy tools:
 - zot_get_collections → List Mode
 - zot_create_collection → Create Mode
 - zot_get_collection_items → Show Items Mode
 - zot_add_to_collection → Add Mode
 - zot_remove_from_collection → Remove Mode
+- zot_get_recent → Recent Mode
 """
 
 import re
@@ -58,6 +60,14 @@ REMOVE_PATTERNS = [
     r'\btake\s+(papers?|items?)\s+out\s+of\s+collection\b',
 ]
 
+RECENT_PATTERNS = [
+    r'\b(show|list|get|display)\s+(my\s+)?(recent|latest)\s+(items?|papers?|additions?)\b',
+    r'\bwhat\s+(did\s+I|have\s+I)\s+(recently\s+)?(add|import)\b',
+    r'\brecent(ly)?\s+added\b',
+    r'\blatest\s+(items?|papers?)\b',
+    r'\bjust\s+(added|imported)\b',
+]
+
 
 def detect_collection_intent(query: str) -> tuple[str, float, Dict[str, Any]]:
     """
@@ -70,9 +80,20 @@ def detect_collection_intent(query: str) -> tuple[str, float, Dict[str, Any]]:
         - "show_items" - Show items in a collection
         - "add" - Add items to a collection
         - "remove" - Remove items from a collection
+        - "recent" - Show recently added items
     """
     query_lower = query.lower()
     extracted_params = {}
+
+    # Check Recent patterns (high priority - specific intent)
+    for pattern in RECENT_PATTERNS:
+        if re.search(pattern, query_lower):
+            # Extract limit if specified
+            limit_match = re.search(r'(\d+)\s+(recent|latest|last)', query_lower)
+            if limit_match:
+                extracted_params["limit"] = int(limit_match.group(1))
+            logger.info(f"Detected RECENT intent: pattern '{pattern}' matched")
+            return ("recent", 0.90, extracted_params)
 
     # Check List patterns (highest priority for simple queries)
     for pattern in LIST_PATTERNS:
@@ -432,6 +453,81 @@ def run_remove_mode(zotero_client, collection_key: str, item_keys: List[str]) ->
         }
 
 
+def run_recent_mode(zotero_client, limit: int = 10) -> Dict[str, Any]:
+    """Recent Mode: Show recently added/modified items from your library."""
+    logger.info(f"Running RECENT Mode: limit={limit}")
+
+    try:
+        # Ensure limit is reasonable
+        if limit <= 0:
+            limit = 10
+        elif limit > 100:
+            limit = 100
+
+        # Get recent items sorted by dateAdded
+        items = zotero_client.items(limit=limit, sort="dateAdded", direction="desc")
+
+        if not items:
+            return {
+                "success": True,
+                "mode": "recent",
+                "content": "No items found in your Zotero library.",
+                "items_found": 0
+            }
+
+        # Format creators helper
+        def format_creators(creators):
+            if not creators:
+                return "No authors"
+            author_list = []
+            for creator in creators[:3]:  # Limit to first 3 authors
+                last = creator.get("lastName", "")
+                first = creator.get("firstName", "")
+                if last and first:
+                    author_list.append(f"{last}, {first}")
+                elif last:
+                    author_list.append(last)
+            if len(creators) > 3:
+                author_list.append("et al.")
+            return "; ".join(author_list) if author_list else "No authors"
+
+        # Format as markdown
+        output = [f"# {limit} Most Recently Added Items\n"]
+
+        for i, item in enumerate(items, 1):
+            data = item.get("data", {})
+            title = data.get("title", "Untitled")
+            item_type = data.get("itemType", "unknown")
+            date = data.get("date", "No date")
+            key = item.get("key", "")
+            date_added = data.get("dateAdded", "Unknown")
+
+            creators_str = format_creators(data.get("creators", []))
+
+            output.append(f"## {i}. {title}")
+            output.append(f"**Type:** {item_type}")
+            output.append(f"**Item Key:** `{key}`")
+            output.append(f"**Date:** {date}")
+            output.append(f"**Added:** {date_added}")
+            output.append(f"**Authors:** {creators_str}")
+            output.append("")  # Empty line between items
+
+        return {
+            "success": True,
+            "mode": "recent",
+            "content": "\n".join(output),
+            "items_found": len(items)
+        }
+
+    except Exception as e:
+        logger.error(f"Recent Mode failed: {e}")
+        return {
+            "success": False,
+            "mode": "recent",
+            "error": str(e)
+        }
+
+
 def smart_manage_collections(
     query: str,
     zotero_client,
@@ -451,6 +547,7 @@ def smart_manage_collections(
     - Show items in a collection
     - Add items to a collection
     - Remove items from a collection
+    - Show recently added items (library maintenance utility)
 
     Args:
         query: User's natural language query
@@ -459,8 +556,8 @@ def smart_manage_collections(
         collection_name: Optional collection name for fuzzy matching
         item_keys: Optional list of item keys to add/remove
         parent_collection_key: Optional parent collection for nested collections
-        limit: Optional limit for list/show operations
-        force_mode: Optional mode override ("list", "create", "show_items", "add", "remove")
+        limit: Optional limit for list/show/recent operations
+        force_mode: Optional mode override ("list", "create", "show_items", "add", "remove", "recent")
 
     Returns:
         Dict with:
@@ -495,6 +592,11 @@ def smart_manage_collections(
     elif mode == "create":
         coll_name = extracted_params.get("collection_name", collection_name)
         return run_create_mode(zotero_client, coll_name, parent_collection_key)
+
+    elif mode == "recent":
+        # Use extracted limit if available, otherwise use explicit parameter
+        recent_limit = extracted_params.get("limit", limit if limit else 10)
+        return run_recent_mode(zotero_client, limit=recent_limit)
 
     elif mode in ["show_items", "add", "remove"]:
         # Resolve collection key (either explicit or fuzzy match from name)
@@ -534,5 +636,5 @@ def smart_manage_collections(
     else:
         return {
             "success": False,
-            "error": f"Unknown mode: {mode}. Must be one of: list, create, show_items, add, remove"
+            "error": f"Unknown mode: {mode}. Must be one of: list, create, show_items, add, remove, recent"
         }
