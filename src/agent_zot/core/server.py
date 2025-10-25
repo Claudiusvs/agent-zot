@@ -4133,67 +4133,67 @@ def smart_export_tool(
 #         "title": "Get Recent Items"
 #     }
 # )
-def _deprecated_get_recent(
-    limit: int = 10,
-    *,
-    ctx: Context
-) -> str:
-    """
-    Get recently added items to your Zotero library.
-    
-    Args:
-        limit: Number of items to return
-        ctx: MCP context
-    
-    Returns:
-        Markdown-formatted list of recent items
-    """
-    try:
-        ctx.info(f"Fetching {limit} recent items")
-        zot = get_zotero_client()
-        
-        
-        # Ensure limit is a reasonable number
-        if limit <= 0:
-            limit = 10
-        elif limit > 100:
-            limit = 100
-        
-        # Get recent items
-        items = zot.items(limit=limit, sort="dateAdded", direction="desc")
-        if not items:
-            return "No items found in your Zotero library."
-        
-        # Format items as markdown
-        output = [f"# {limit} Most Recently Added Items", ""]
-        
-        for i, item in enumerate(items, 1):
-            data = item.get("data", {})
-            title = data.get("title", "Untitled")
-            item_type = data.get("itemType", "unknown")
-            date = data.get("date", "No date")
-            key = item.get("key", "")
-            date_added = data.get("dateAdded", "Unknown")
-            
-            # Format creators
-            creators = data.get("creators", [])
-            creators_str = format_creators(creators)
-            
-            # Build the formatted entry
-            output.append(f"## {i}. {title}")
-            output.append(f"**Type:** {item_type}")
-            output.append(f"**Item Key:** {key}")
-            output.append(f"**Date:** {date}")
-            output.append(f"**Added:** {date_added}")
-            output.append(f"**Authors:** {creators_str}")
-            
-            output.append("")  # Empty line between items
-        
-        return "\n".join(output)
-    
-    except Exception as e:
-        ctx.error(f"Error fetching recent items: {str(e)}")
-        return f"Error fetching recent items: {str(e)}"
+# def _deprecated_get_recent(
+#     limit: int = 10,
+#     *,
+#     ctx: Context
+# ) -> str:
+#     """
+#     Get recently added items to your Zotero library.
+#
+#     Args:
+#         limit: Number of items to return
+#         ctx: MCP context
+#
+#     Returns:
+#         Markdown-formatted list of recent items
+#     """
+#     try:
+#         ctx.info(f"Fetching {limit} recent items")
+#         zot = get_zotero_client()
+#
+#
+#         # Ensure limit is a reasonable number
+#         if limit <= 0:
+#             limit = 10
+#         elif limit > 100:
+#             limit = 100
+#
+#         # Get recent items
+#         items = zot.items(limit=limit, sort="dateAdded", direction="desc")
+#         if not items:
+#             return "No items found in your Zotero library."
+#
+#         # Format items as markdown
+#         output = [f"# {limit} Most Recently Added Items", ""]
+#
+#         for i, item in enumerate(items, 1):
+#             data = item.get("data", {})
+#             title = data.get("title", "Untitled")
+#             item_type = data.get("itemType", "unknown")
+#             date = data.get("date", "No date")
+#             key = item.get("key", "")
+#             date_added = data.get("dateAdded", "Unknown")
+#
+#             # Format creators
+#             creators = data.get("creators", [])
+#             creators_str = format_creators(creators)
+#
+#             # Build the formatted entry
+#             output.append(f"## {i}. {title}")
+#             output.append(f"**Type:** {item_type}")
+#             output.append(f"**Item Key:** {key}")
+#             output.append(f"**Date:** {date}")
+#             output.append(f"**Added:** {date_added}")
+#             output.append(f"**Authors:** {creators_str}")
+#
+#             output.append("")  # Empty line between items
+#
+#         return "\n".join(output)
+#
+#     except Exception as e:
+#         ctx.error(f"Error fetching recent items: {str(e)}")
+#         return f"Error fetching recent items: {str(e)}"
 
 
 # @mcp.tool(
