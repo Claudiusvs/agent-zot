@@ -2195,7 +2195,7 @@ Smart intent-driven graph exploration that automatically:
 Use for: Default choice for ALL exploration (graph AND content) - handles 99% of exploration needs intelligently""",
     annotations={
         "readOnlyHint": True,
-        "title": "Smart Explore Graph"
+        "title": "Smart Graph"
     }
 )
 def smart_explore_graph_tool(
