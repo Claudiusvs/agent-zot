@@ -576,7 +576,7 @@ def smart_unified_search(
             output.append("")
 
         output.append("---")
-        output.append(f"💡 **Tip**: Use `zot_ask_paper(item_key, question)` to read specific papers")
+        output.append(f"💡 **Tip**: Use `zot_summarize(item_key, query)` to read specific papers")
 
         return "\n".join(output)
 
