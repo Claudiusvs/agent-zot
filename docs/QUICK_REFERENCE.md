@@ -111,10 +111,11 @@ python populate_neo4j_from_qdrant.py
 
 ### 🆕 Primary Management Tools (Recommended)
 - **`zot_manage_collections(query, collection_key, collection_name, item_keys, parent_collection_key, limit, force_mode)`** - **Smart collections management (RECOMMENDED DEFAULT)**
-  - Five modes: List, Create, Show Items, Add, Remove
+  - Six modes: List, Create, Show Items, Add, Remove, Recent
   - Fuzzy collection name matching
   - Automatic intent detection from natural language
-  - Replaces 5 legacy tools
+  - Library maintenance utility (Recent Mode for "what did I just import")
+  - Replaces 6 legacy tools
 
 - **`zot_manage_tags(query, tags, item_keys, item_type, limit, force_mode)`** - **Smart tags management (RECOMMENDED DEFAULT)**
   - Four modes: List, Search, Add, Remove
@@ -167,6 +168,7 @@ python populate_neo4j_from_qdrant.py
 - ~~`zot_get_collection_items(collection_key, limit)`~~ - DEPRECATED: Use `zot_manage_collections` (Show Items Mode)
 - ~~`zot_add_to_collection(collection_key, item_keys)`~~ - DEPRECATED: Use `zot_manage_collections` (Add Mode)
 - ~~`zot_remove_from_collection(collection_key, item_keys)`~~ - DEPRECATED: Use `zot_manage_collections` (Remove Mode)
+- ~~`zot_get_recent(limit)`~~ - DEPRECATED: Use `zot_manage_collections` (Recent Mode)
 
 **Tags (use `zot_manage_tags` instead):**
 - ~~`zot_get_tags(limit)`~~ - DEPRECATED: Use `zot_manage_tags` (List Mode)

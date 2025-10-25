@@ -2,27 +2,27 @@
 
 **Last Updated**: October 25, 2025
 **Version**: Post-Management Consolidation
-**Architecture**: 7 Unified Intelligent Tools (79% reduction from 34 legacy tools)
+**Architecture**: 7 Unified Intelligent Tools (80% reduction from 35 legacy tools)
 
 ---
 
 ## 🎯 Overview
 
-Agent-Zot provides Claude with intelligent access to research libraries through **7 unified tools** that automatically detect intent, select optimal backends, and handle complex workflows. This represents a complete consolidation from 34 specialized tools to 7 intelligent orchestrators.
+Agent-Zot provides Claude with intelligent access to research libraries through **7 unified tools** that automatically detect intent, select optimal backends, and handle complex workflows. This represents a complete consolidation from 35 specialized tools to 7 intelligent orchestrators.
 
 ### Complete Tool Consolidation
 
-**Before**: 34 Legacy Tools
+**Before**: 35 Legacy Tools
 - Research Tools: 19 specialized tools
-- Management Tools: 15 specialized tools
+- Management Tools: 16 specialized tools
 
-**After**: 7 Unified Intelligent Tools (79% reduction)
+**After**: 7 Unified Intelligent Tools (80% reduction)
 - **Research Tools**: 3 tools (84% reduction)
   - `zot_search` - Finding papers (5 execution modes)
   - `zot_summarize` - Understanding papers (4 depth modes)
   - `zot_explore_graph` - Exploring connections (9 modes: 8 graph + 1 content)
-- **Management Tools**: 4 tools (73% reduction)
-  - `zot_manage_collections` - Collections management (5 modes)
+- **Management Tools**: 4 tools (75% reduction)
+  - `zot_manage_collections` - Collections management (6 modes)
   - `zot_manage_tags` - Tags management (4 modes)
   - `zot_manage_notes` - Notes/annotations management (4 modes)
   - `zot_export` - Export operations (3 modes)
@@ -118,26 +118,29 @@ Agent-Zot provides Claude with intelligent access to research libraries through 
 
 ### 4. `zot_manage_collections` - Collections Management
 
-**Purpose**: Unified collections management with fuzzy matching.
+**Purpose**: Unified collections and library browsing management with fuzzy matching.
 
-**Five Execution Modes**:
+**Six Execution Modes**:
 1. **List Mode** - List all collections
 2. **Create Mode** - Create new collection
 3. **Show Items Mode** - Show items in collection
 4. **Add Mode** - Add items to collection
 5. **Remove Mode** - Remove items from collection
+6. **Recent Mode** - Show recently added/modified items (library maintenance utility)
 
 **Key Features**:
 - Fuzzy collection name matching
 - Automatic intent detection
 - Natural language interface
+- Library maintenance (recent imports)
 
-**Replaces**: `zot_get_collections`, `zot_create_collection`, `zot_get_collection_items`, `zot_add_to_collection`, `zot_remove_from_collection`
+**Replaces**: `zot_get_collections`, `zot_create_collection`, `zot_get_collection_items`, `zot_add_to_collection`, `zot_remove_from_collection`, `zot_get_recent`
 
 **Example Queries**:
 - "list my collections" → List Mode
 - "create collection Machine Learning 2024" → Create Mode
 - "show items in collection ML" → Show Items Mode (fuzzy match)
+- "what did I just import" → Recent Mode (library maintenance)
 
 ---
 
@@ -339,9 +342,9 @@ User Query
 
 ### Quantitative Impact
 
-- **79% total reduction**: 34 → 7 tools
+- **80% total reduction**: 35 → 7 tools
 - **Research: 84% reduction**: 19 → 3 tools
-- **Management: 73% reduction**: 15 → 4 tools
+- **Management: 75% reduction**: 16 → 4 tools
 
 ### Qualitative Benefits
 
@@ -353,7 +356,7 @@ User Query
 - ✅ **Dual-backend architecture** (Neo4j + Qdrant)
 - ✅ **Consistent interface** (same query → consistent routing)
 - ✅ **Compound operations** (multi-step workflows in single request)
-- ✅ **Reduced cognitive load** (7 vs 34+ options)
+- ✅ **Reduced cognitive load** (7 vs 35+ options)
 - ✅ **Cost optimization** (uses cheapest/fastest mode that works)
 
 ---

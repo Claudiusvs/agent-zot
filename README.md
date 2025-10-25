@@ -125,13 +125,13 @@ Agent-Zot transforms your Zotero research library into an intelligent, searchabl
 - **Multi-Strategy Exploration**: Comprehensive mode runs multiple strategies and merges results
 
 ### Smart Unified Management Tools (Complete Consolidation)
-- **🆕 Complete Tool Consolidation**: 34 legacy tools → 7 unified intelligent tools (79% reduction)
+- **🆕 Complete Tool Consolidation**: 35 legacy tools → 7 unified intelligent tools (80% reduction)
   - **Research Tools**: 19 → 3 (84% reduction)
-  - **Management Tools**: 15 → 4 (73% reduction)
-- **🆕 `zot_manage_collections`**: Unified collections management (5 modes)
-  - Natural language interface: "list my collections", "create collection X", "show items in collection Y"
+  - **Management Tools**: 16 → 4 (75% reduction)
+- **🆕 `zot_manage_collections`**: Unified collections management (6 modes)
+  - Natural language interface: "list my collections", "create collection X", "show items in collection Y", "what did I just import"
   - Automatic intent detection and fuzzy collection name matching
-  - Replaces 5 legacy tools: zot_get_collections, zot_create_collection, zot_get_collection_items, zot_add_to_collection, zot_remove_from_collection
+  - Replaces 6 legacy tools: zot_get_collections, zot_create_collection, zot_get_collection_items, zot_add_to_collection, zot_remove_from_collection, zot_get_recent
 - **🆕 `zot_manage_tags`**: Unified tags management (4 modes)
   - Advanced operators support: || for OR, - for NOT
   - Natural language queries: "list all tags", "find papers tagged with X", "add tag Y to items"
