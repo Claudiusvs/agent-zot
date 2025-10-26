@@ -779,7 +779,9 @@ class QdrantClientWrapper:
             vectors_config = collection_info.config.params.vectors
             if isinstance(vectors_config, dict):
                 # Named vectors - get the dense vector size
-                vector_size = vectors_config.get("dense", {}).get("size", "unknown")
+                # In Qdrant 1.15.5+, dict values are VectorParams objects, not dicts
+                dense_config = vectors_config.get("dense")
+                vector_size = dense_config.size if dense_config and hasattr(dense_config, 'size') else "unknown"
             else:
                 # Single vector config
                 vector_size = vectors_config.size
