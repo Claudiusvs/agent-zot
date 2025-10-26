@@ -173,12 +173,13 @@ Agent-Zot transforms your Zotero research library into an intelligent, searchabl
 
 ```bash
 # Qdrant (vector database) - Required
+# IMPORTANT: Pin to v1.15.1 to match Python client compatibility
 docker volume create agent-zot-qdrant-data
 docker run -d -p 6333:6333 -p 6334:6334 \
   -v agent-zot-qdrant-data:/qdrant/storage \
   --name agent-zot-qdrant \
   --restart unless-stopped \
-  qdrant/qdrant
+  qdrant/qdrant:v1.15.1
 
 # Neo4j (knowledge graph) - Optional
 # Requires Neo4j 5.23.0+ with APOC plugin for relationship vector support

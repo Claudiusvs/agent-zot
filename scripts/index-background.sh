@@ -111,7 +111,7 @@ check_prereqs() {
         warning "Qdrant not responding at http://localhost:6333"
         echo "Start Qdrant with:"
         echo "  docker run -d -p 6333:6333 -v agent-zot-qdrant-data:/qdrant/storage \\"
-        echo "    --name agent-zot-qdrant --restart unless-stopped qdrant/qdrant"
+        echo "    --name agent-zot-qdrant --restart unless-stopped qdrant/qdrant:v1.15.1"
         echo ""
         read -p "Continue anyway? (y/N) " -n 1 -r
         echo
