@@ -252,3 +252,6 @@ This keeps documentation current and prevents CLAUDE.md bloat.
 ---
 
 **For Claude Code**: Trust the 7 unified tools' automatic mode selection. They're optimized for quality, speed, and cost. Use natural language queries - intent detection handles the rest. When you need to understand WHY something is done a certain way, check `decisions.md`. When something breaks, check `bugs.md`. When you need historical context, check `progress.md`.
+- update the progress.md file after every run, while adding bug reports to bugs.md, and use the decisions.md file to log every architectural decision you make. create these files in the projects root idrectory if they dont yet exist.
+- always warn about the context remaining and before starting a new task make sure the left over context is enough for the task or not. if not, ask the user to use 'compact'.
+- comit and push any untracked changes upon completion of major tasks and/or todos, etc. to a given project's github repository. prompt the user to connect the project to its github repository if it is not yet connected.

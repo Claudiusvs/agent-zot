@@ -356,3 +356,67 @@ When making new architectural decisions, add them using this template:
 - ⚠️ Drawbacks/limitations
 - ✅ Overall assessment
 ```
+
+## ADR-014: Smart Notes Methodology with Obsidian MCP (October 26, 2025)
+
+**Decision**: Adopt Sönke Ahrens' Smart Notes methodology using Obsidian MCP instead of generic zettelkasten MCP
+
+**Context**:
+- Previous knowledge curation used zettelkasten MCP with 5 generic note types
+- Lacked clear daily workflow
+- No proven methodology for academic research
+- Needed better integration with existing Obsidian vault
+
+**Rationale**:
+- **Proven system**: Luhmann's Zettelkasten (via Ahrens) has 30+ years validation
+- **Clear workflow**: Fleeting → Literature → Permanent with daily processing cycle
+- **Academic focus**: Specifically designed for research and academic writing
+- **Three note types** (vs 5):
+  - Fleeting: Temporary captures (1-2 days lifespan)
+  - Literature: Source documentation in `Literature Notes/`
+  - Permanent: Self-contained atoms in `Permanent Notes/`
+- **Bottom-up organization**: Topics emerge from links, not folders
+- **Atomic principle**: One note = one idea (can be combined in different contexts)
+- **Written for print**: Forces synthesis in own words, not copy-paste
+
+**Obsidian MCP Advantages**:
+- Native wiki-links `[[Note Title]]` embedded in prose
+- Backlinks navigation (`get_backlinks()`, `get_outgoing_links()`)
+- Semantic search if vault has embeddings
+- Tag-based retrieval
+- Integration with user's existing vault
+
+**Smart Notes Implementation**:
+- research-knowledge-curator implements daily workflow
+- research-orchestrator coordinates curation after literature discovery
+- Both enforce atomic notes principle
+- Both validate "write in own words" requirement
+
+**Result**:
+- Clearer methodology with established best practices
+- Better integration with Obsidian ecosystem
+- Natural wiki-link approach vs explicit link objects
+- Daily processing cycle prevents fleeting notes from becoming stale
+
+**Trade-offs**:
+- ✅ Proven academic methodology (vs generic approach)
+- ✅ Native Obsidian integration
+- ✅ Simpler note types (3 vs 5)
+- ✅ Bottom-up emergent topics
+- ⚠️ Requires Obsidian vault setup
+- ⚠️ Manual fleeting note processing (daily discipline)
+
+**References**:
+- Ahrens, S. (2017). How to Take Smart Notes
+- Luhmann, N. (1981). "Kommunikation mit Zettelkästen"
+- Singh et al. (2025). Agentic RAG survey - knowledge management patterns
+
+**Update (October 26, 2025)**: Added bidirectional linking
+- **Enhancement**: Added `zotero_key` field to Permanent Note frontmatter template
+- **Problem solved**: Previously could go Zotero → Obsidian, but NOT Obsidian → Zotero
+- **Implementation**: 3-line surgical fix across curator template and orchestrator workflow
+- **Result**: Seamless navigation in both directions (item_key preserved throughout workflow)
+- **Impact**: 6 months later, can click from Obsidian note directly back to original Zotero paper
+
+---
+
