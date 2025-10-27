@@ -1,6 +1,6 @@
 # Project Progress
 
-**Last Updated**: October 25, 2025
+**Last Updated**: October 27, 2025
 **Project Status**: ✅ Production-Ready (v2.0 - Post-Consolidation)
 **Health Grade**: A (95/100)
 
@@ -471,6 +471,57 @@ After comprehensive audit delivered 8 optimization recommendations, user provide
 - **Implementation time**: ~5 minutes
 - **Impact**: High (solves real user workflow gap)
 - **Overengineering**: Zero (surgical fix only)
+
+---
+
+## Orphaned Process Troubleshooting Documentation (October 27, 2025)
+
+### Goal
+Improve CLAUDE.md documentation for diagnosing and fixing orphaned process issues
+
+### Problem Identified
+- **User reported**: "Failed to call tool zot_search" error in Claude Desktop
+- **Diagnosis**: 4 orphaned `agent-zot serve` processes running, one consuming 649% CPU
+- **Root Cause**: Known macOS limitation (Unix socket accumulation) - documented in bugs.md Limitation #001
+- **Existing docs**: Had manual cleanup instructions but lacked symptoms and multi-process kill command
+
+### Solution Implemented
+Enhanced CLAUDE.md with practical troubleshooting information:
+
+1. **Orphaned Process Cleanup section** (lines 89-116):
+   - Added **Symptoms** checklist (high CPU, connection failures, specific error messages)
+   - Added multi-process kill command: `kill PID1 PID2 PID3 PID4`
+   - Added **After cleanup** steps (restart Claude Desktop or wait for auto-restart)
+
+2. **Troubleshooting section** (lines 230-237):
+   - New entry at top: **"Failed to call tool zot_search" errors**
+   - Quick diagnostic and fix steps
+   - Cross-reference to detailed Orphaned Process Cleanup section
+
+3. **Updated timestamp** to October 27, 2025
+
+### Immediate Fix Applied
+```bash
+ps aux | grep "agent-zot serve" | grep -v grep  # Found 4 processes
+kill 63429 54800 54301 67028  # Killed all orphaned processes
+```
+
+### Result
+✅ **User's issue resolved** - agent-zot tools now working
+✅ **Better documentation** - symptoms listed for faster diagnosis
+✅ **Practical commands** - multi-process kill example added
+✅ **No system changes needed** - purely documentation improvement
+
+### User Feedback
+User requested: "could you note or update this in the CLAUDE.md file please e.g. perhaps add that command or anything else missing from this"
+
+### Statistics
+- **Files modified**: 2 (CLAUDE.md, progress.md)
+- **Orphaned processes killed**: 4
+- **CPU usage recovered**: 649% from one process alone
+- **Documentation additions**: 2 sections enhanced
+- **User's Zotero app status**: Running correctly (not the issue)
+- **Impact**: High (enables self-service diagnosis for common macOS limitation)
 
 ---
 
