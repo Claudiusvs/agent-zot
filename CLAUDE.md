@@ -1,6 +1,6 @@
 # Agent-Zot Context for Claude
 
-**Last Updated**: October 25, 2025
+**Last Updated**: October 27, 2025
 **Status**: ✅ Production-Ready (v2.0 - Post-Consolidation)
 **Project Health**: A Grade (95/100)
 
@@ -90,13 +90,28 @@ agent-zot get-search-database-status
 
 **Issue**: Multiple `agent-zot serve` processes can accumulate (each ~1-2GB RAM).
 
+**Symptoms**:
+- High CPU usage (hundreds of % on one process)
+- "Failed to call tool zot_search" errors in Claude Desktop
+- MCP server shows "Connected" but doesn't respond to requests
+
 **Automatic**: `cleanup_orphaned_processes()` runs on server startup
 
 **Manual cleanup** (if needed):
 ```bash
+# Check for orphaned processes
 ps aux | grep "agent-zot serve" | grep -v grep
+
+# Kill single process
 kill <old_PID>
+
+# Kill multiple processes at once
+kill PID1 PID2 PID3 PID4
 ```
+
+**After cleanup**:
+- Restart Claude Desktop (or wait - MCP server auto-restarts on next use)
+- Fresh process will start automatically on next tool call
 
 **Limitation**: macOS keeps Unix sockets open, so auto-cleanup may miss some. See `bugs.md` Limitation #001
 
@@ -212,13 +227,22 @@ All architectural decisions documented in `decisions.md`. Key principles:
 
 ## 🔍 Troubleshooting
 
+### "Failed to call tool zot_search" errors
+**Cause**: Orphaned `agent-zot serve` processes consuming CPU (see Orphaned Process Cleanup section)
+**Solution**:
+```bash
+ps aux | grep "agent-zot serve" | grep -v grep
+kill PID1 PID2 PID3  # Kill all old processes
+```
+Restart Claude Desktop or wait for MCP server to auto-restart.
+
 ### "No results found" from graph queries
 **Cause**: Neo4j 91% populated (by design). Some specific relationships may not exist.
 **Solution**: Expected behavior. Try alternative queries or use Qdrant-based search.
 
 ### Memory usage high
 **Cause**: BGE-M3 model (~1-2GB) loaded in memory
-**Solution**: Normal. If multiple processes exist, kill orphaned ones (see above).
+**Solution**: Normal. If multiple processes exist, kill orphaned ones (see Orphaned Process Cleanup section).
 
 ### Database locked (rare)
 **Cause**: Zotero writing while agent-zot reading
