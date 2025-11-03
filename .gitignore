@@ -38,3 +38,11 @@ config.json
 .idea/
 .mcp.json.backup
 *.backup
+
+# Claude Code and Specify
+.claude/
+.specify/
+
+# Backup logs and info files
+backup.log
+backups/**/*.md
