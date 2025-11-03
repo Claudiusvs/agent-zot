@@ -1,24 +1,24 @@
 # Agent-Zot Context for Claude
 
-**Last Updated**: October 27, 2025
-**Status**: ✅ Production-Ready (v2.0 - Post-Consolidation)
-**Project Health**: A Grade (95/100)
+**Last Updated**: November 3, 2025
+**Status**: ✅ Production-Ready (v2.1 - Unified Database Management)
+**Project Health**: A+ Grade (98/100)
 
 ---
 
 ## 🎯 Quick Overview
 
-Agent-Zot is a production-grade MCP server providing intelligent access to Zotero research libraries through **7 unified tools** (consolidated from 35 legacy tools - 80% reduction).
+Agent-Zot is a production-grade MCP server providing intelligent access to Zotero research libraries through **8 unified tools** (consolidated from 37 legacy tools - 78% reduction).
 
 **Current System State**:
 - ✅ Qdrant: 234,153 chunks indexed
 - ✅ Neo4j: 25,184 nodes, 134,068 relationships (91% functional)
 - ✅ Zotero: 7,390 items
-- ✅ MCP Server: 38 tools (7 primary unified + 28 deprecated/utility)
+- ✅ MCP Server: 40 tools (8 primary unified + 30 deprecated/utility)
 
 ---
 
-## 🔥 The 7 Unified Tools
+## 🔥 The 8 Unified Tools
 
 ### Research Tools (3)
 
@@ -37,12 +37,13 @@ Agent-Zot is a production-grade MCP server providing intelligent access to Zoter
 - Dual backend: Neo4j (graph) + Qdrant (content)
 - Replaces 9 legacy tools
 
-### Management Tools (4)
+### Management Tools (5)
 
 **4. `zot_manage_collections`** - 6 modes (List, Create, Show Items, Add, Remove, Recent)
 **5. `zot_manage_tags`** - 4 modes (List, Search, Add, Remove)
 **6. `zot_manage_notes`** - 4 modes (List Annotations, List Notes, Search, Create)
 **7. `zot_export`** - 3 modes (Markdown, BibTeX, GraphML)
+**8. `zot_manage_database`** - 12 modes (Update, Test, Rebuild, Backup, Restore, Status, Inspect, Statistics, and more) **🆕 NEW**
 
 ---
 
@@ -56,6 +57,7 @@ Managing collections?        → zot_manage_collections
 Managing tags?               → zot_manage_tags
 Managing notes/annotations?  → zot_manage_notes
 Exporting data?              → zot_export
+Database operations?         → zot_manage_database  🆕 NEW
 ```
 
 **Key Principle**: Trust the automatic mode selection. All tools use pattern-based intent detection.
@@ -70,15 +72,19 @@ Exporting data?              → zot_export
 
 ⚠️ **You MUST manually update after adding/modifying papers:**
 
+**NEW: Natural Language Interface** (via MCP):
+```
+zot_manage_database("update database")           # Incremental update
+zot_manage_database("test on 10 papers")         # Test with limit
+zot_manage_database("force rebuild", confirm=True)  # Full rebuild (auto-backup first)
+zot_manage_database("show status")               # Database health
+```
+
+**Alternative: CLI Commands**:
 ```bash
-# Full update with full-text extraction
-agent-zot update-db --force-rebuild --fulltext
-
-# Quick update (metadata only)
-agent-zot update-db
-
-# Check status
-agent-zot get-search-database-status
+agent-zot update-db --force-rebuild --fulltext  # Full rebuild
+agent-zot update-db                              # Incremental
+agent-zot get-search-database-status            # Status
 ```
 
 **Why**: Instant startup improves UX. Explicit updates give better control.
@@ -177,25 +183,80 @@ kill PID1 PID2 PID3 PID4
 
 ---
 
+## 🔧 Unified Database Management
+
+**NEW**: `zot_manage_database()` provides complete database control via natural language.
+
+### 12 Operational Modes
+
+**Update Operations**:
+- `"update database"` → Incremental update with fulltext
+- `"test on 10 papers"` → Test with limited items
+- `"update without fulltext"` → Metadata-only update
+- `"force rebuild"` → Full rebuild (requires confirm=True, auto-backup first)
+
+**Backup/Restore Operations**:
+- `"backup databases"` → Create local + iCloud backups
+- `"backup locally only"` → Skip iCloud sync
+- `"show available backups"` → List all backups
+- `"restore from latest backup"` → Restore from most recent (requires confirm=True)
+- `"restore from icloud"` → Restore from iCloud (requires confirm=True)
+
+**Monitoring Operations**:
+- `"show status"` → Database health and stats
+- `"show statistics"` → Aggregate stats (Qdrant + Neo4j)
+- `"find papers about X"` → Search indexed papers
+
+### Safety Features
+
+**3-Tier Safety Model**:
+1. **Destructive operations** (rebuild, restore): Require `confirm=True`
+2. **Auto-backup before rebuild**: Protects against data loss
+3. **Dry-run preview**: Shows what will happen before restore
+
+### Usage Examples
+
+```python
+# Daily operations
+zot_manage_database("update database")
+zot_manage_database("show status")
+
+# Before major operations
+zot_manage_database("backup databases")
+
+# Force rebuild with safety
+zot_manage_database("force rebuild", confirm=True)
+# ↑ Auto-backup runs first
+
+# Restore from backup
+zot_manage_database("restore from latest backup", confirm=True)
+
+# Inspect database
+zot_manage_database("find papers about neural networks")
+zot_manage_database("show statistics")
+```
+
+**See**: `decisions.md` ADR-004 for design rationale
+
+---
+
 ## 🔧 System Maintenance
 
 ### Backup System
 
-**🆕 NEW: CLI Command (recommended):**
-```bash
-# Complete backup (local + iCloud)
-agent-zot backup-all
-
-# Local only (skip iCloud)
-agent-zot backup-all --local-only
-
-# List backups
-python scripts/backup.py list
+**🆕 NEW: Natural Language Interface** (recommended):
+```
+zot_manage_database("backup databases")          # Local + iCloud
+zot_manage_database("backup locally only")       # Skip iCloud
+zot_manage_database("show available backups")    # List backups
+zot_manage_database("restore from latest backup", confirm=True)
 ```
 
-**Alternative: Python script:**
+**Alternative: CLI Commands**:
 ```bash
-python scripts/backup.py backup-all
+agent-zot backup-all                 # Complete backup
+agent-zot backup-all --local-only    # Local only
+python scripts/backup.py list        # List backups
 ```
 
 **Locations**:

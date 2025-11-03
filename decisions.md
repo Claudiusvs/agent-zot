@@ -1,6 +1,6 @@
 # Architectural Decisions
 
-**Last Updated**: October 25, 2025
+**Last Updated**: November 3, 2025
 
 This document logs all major architectural decisions made in the Agent-Zot project, including rationale and trade-offs.
 
@@ -417,6 +417,73 @@ When making new architectural decisions, add them using this template:
 - **Implementation**: 3-line surgical fix across curator template and orchestrator workflow
 - **Result**: Seamless navigation in both directions (item_key preserved throughout workflow)
 - **Impact**: 6 months later, can click from Obsidian note directly back to original Zotero paper
+
+---
+
+## ADR-004: Unified Database Management Tool (November 2025)
+
+**Decision**: Consolidate database update, backup, restore, and monitoring into one unified `zot_manage_database()` tool
+
+**Context**:
+- Users needed to manage databases across multiple interfaces:
+  - CLI commands (`agent-zot update-db`, `agent-zot backup-all`)
+  - Legacy MCP tools (`zot_update_search_database`, `zot_get_search_database_status`)
+  - Shell scripts (`scripts/backup.py`)
+  - Docker commands for Neo4j inspection
+- No integrated backup/restore workflow via MCP
+- Database rebuild had no safety backup mechanism
+- Users requested "full control over the pipeline via the mcp server from within claude using natural language"
+
+**Rationale**:
+Following the successful pattern of 7 existing unified tools:
+1. **Natural language interface**: Pattern-based intent detection (no LLM overhead)
+2. **Safety-first design**: 3-tier safety model (confirmation, auto-backup, dry-run preview)
+3. **Complete functionality**: All database operations in one tool (12 modes)
+4. **User experience**: Consistent with other unified tools (search, summarize, explore)
+
+**Implementation**:
+- **12 operational modes**: update, test, rebuild, backup, restore, list_backups, status, inspect, statistics, retry, modified_since, cancel
+- **Safety features**:
+  - Rebuild/restore require `confirm=True`
+  - Auto-backup before force rebuild
+  - Dry-run preview before restore (shows backup details)
+- **Pattern-based intent detection**: Fast, transparent, no LLM needed
+- **Helper functions**: 6 functions (~500 lines) for backup, restore, inspect, statistics
+- **BackupManager enhancements**: 3 new restore methods (~285 lines)
+
+**Result**:
+- 8th unified tool added to agent-zot (7 → 8)
+- Tool consolidation: 37 → 8 (78% reduction)
+- All database operations accessible via natural language
+- Zero data loss risk (auto-backup, confirmation gates)
+- ~1,100 lines of new code (including comprehensive safety checks)
+
+**Trade-offs**:
+- ✅ Single entry point for all database operations
+- ✅ Safety backup before destructive operations
+- ✅ Natural language interface (no command syntax to remember)
+- ✅ Consistent with existing unified tool pattern
+- ⚠️ Phase 4 features deferred (retry_failed, modified_since, cancel) - structured placeholders provided
+- ⚠️ More complex implementation (12 modes, safety orchestration)
+
+**User Impact**:
+```python
+# Before: Multiple interfaces
+agent-zot update-db --force-rebuild --fulltext  # CLI
+zot_update_search_database(force_rebuild=True)  # MCP (deprecated)
+python scripts/backup.py backup-all              # Shell script
+
+# After: Unified natural language
+zot_manage_database("force rebuild", confirm=True)  # Auto-backup + rebuild
+zot_manage_database("backup databases")              # Local + iCloud
+zot_manage_database("restore from latest backup", confirm=True)  # Full restore
+```
+
+**References**:
+- User request: "full control over the pipeline via the mcp server from within claude using natural language"
+- ADR-001: Tool Consolidation pattern (natural language intent detection)
+- ADR-003: Manual database updates (rationale for explicit control)
+- `UNIFIED_DATABASE_TOOL_IMPLEMENTATION_PLAN.md`: Complete implementation spec
 
 ---
 

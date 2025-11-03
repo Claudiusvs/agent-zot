@@ -513,6 +513,308 @@ class BackupManager:
 
         return backups
 
+    def restore_qdrant_snapshot(
+        self,
+        snapshot_path: str,
+        collection_name: str = "zotero_library_qdrant"
+    ) -> Dict[str, Any]:
+        """
+        Restore Qdrant collection from a snapshot file.
+
+        Args:
+            snapshot_path: Path to local .snapshot file
+            collection_name: Name of collection to restore
+
+        Returns:
+            Dictionary with restore status
+        """
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        snapshot_path = Path(snapshot_path)
+
+        try:
+            logger.info(f"Restoring Qdrant collection '{collection_name}' from {snapshot_path.name}...")
+
+            if not snapshot_path.exists():
+                raise FileNotFoundError(f"Snapshot file not found: {snapshot_path}")
+
+            # Get Qdrant container name
+            # List running containers and find the one using port 6333
+            result = subprocess.run(
+                ["docker", "ps", "--format", "{{.Names}}"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            containers = result.stdout.strip().split('\n')
+            qdrant_container = None
+            for container in containers:
+                if 'qdrant' in container.lower():
+                    qdrant_container = container
+                    break
+
+            if not qdrant_container:
+                raise Exception("Qdrant container not found. Is it running?")
+
+            logger.info(f"Found Qdrant container: {qdrant_container}")
+
+            # Delete existing collection
+            logger.info(f"Deleting existing collection '{collection_name}'...")
+            try:
+                response = requests.delete(
+                    f"{self.qdrant_url}/collections/{collection_name}",
+                    timeout=60
+                )
+                # It's ok if collection doesn't exist
+                if response.status_code == 404:
+                    logger.info("Collection doesn't exist, will create from snapshot")
+                else:
+                    response.raise_for_status()
+                    logger.info("Existing collection deleted")
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"Error deleting collection (may not exist): {e}")
+
+            # Copy snapshot to container
+            # Qdrant expects snapshots in /qdrant/snapshots/<collection_name>/
+            container_snapshot_dir = f"/qdrant/snapshots/{collection_name}"
+            container_snapshot_path = f"{container_snapshot_dir}/{snapshot_path.name}"
+
+            logger.info(f"Copying snapshot to container...")
+            # First, create the directory in the container
+            subprocess.run(
+                ["docker", "exec", qdrant_container, "mkdir", "-p", container_snapshot_dir],
+                capture_output=True,
+                timeout=30
+            )
+
+            # Copy snapshot file to container
+            subprocess.run(
+                ["docker", "cp", str(snapshot_path), f"{qdrant_container}:{container_snapshot_path}"],
+                capture_output=True,
+                text=True,
+                timeout=300,
+                check=True
+            )
+
+            logger.info(f"Snapshot copied, restoring collection...")
+
+            # Restore via Qdrant API
+            # Use file:// protocol to reference local file in container
+            response = requests.put(
+                f"{self.qdrant_url}/collections/{collection_name}/snapshots/recover",
+                json={"location": f"file://{container_snapshot_path}"},
+                timeout=600  # 10 minute timeout for large collections
+            )
+            response.raise_for_status()
+
+            logger.info(f"✅ Qdrant collection '{collection_name}' restored successfully")
+
+            # Get collection info to confirm
+            response = requests.get(
+                f"{self.qdrant_url}/collections/{collection_name}",
+                timeout=30
+            )
+            collection_info = response.json()
+            points_count = collection_info["result"]["points_count"]
+
+            # Clean up snapshot from container
+            subprocess.run(
+                ["docker", "exec", qdrant_container, "rm", container_snapshot_path],
+                capture_output=True
+            )
+
+            return {
+                "status": "success",
+                "collection": collection_name,
+                "snapshot_file": snapshot_path.name,
+                "points_count": points_count,
+                "timestamp": timestamp
+            }
+
+        except Exception as e:
+            logger.error(f"Error restoring Qdrant snapshot: {e}")
+            return {
+                "status": "error",
+                "error": str(e),
+                "collection": collection_name,
+                "snapshot_file": str(snapshot_path),
+                "timestamp": timestamp
+            }
+
+    def restore_neo4j_dump(
+        self,
+        dump_path: str
+    ) -> Dict[str, Any]:
+        """
+        Restore Neo4j database from a dump file.
+
+        Args:
+            dump_path: Path to local .dump file
+
+        Returns:
+            Dictionary with restore status
+        """
+        import time
+
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        dump_path = Path(dump_path)
+
+        try:
+            logger.info(f"Restoring Neo4j database '{self.neo4j_database}' from {dump_path.name}...")
+            logger.warning(f"⚠️  Neo4j will be unavailable during restore (~60-90 seconds)")
+
+            if not dump_path.exists():
+                raise FileNotFoundError(f"Dump file not found: {dump_path}")
+
+            # Stop Neo4j container
+            logger.info("Stopping Neo4j container...")
+            subprocess.run(
+                ["docker", "stop", self.neo4j_container],
+                capture_output=True,
+                timeout=60,
+                check=True
+            )
+            time.sleep(3)
+
+            # Get Neo4j version from container
+            get_version = subprocess.run(
+                ["docker", "inspect", "--format={{.Config.Image}}", self.neo4j_container],
+                capture_output=True,
+                text=True
+            )
+            neo4j_image = get_version.stdout.strip() if get_version.returncode == 0 else "neo4j:latest"
+
+            # Copy dump to /tmp in container via docker cp
+            container_dump_path = f"/tmp/{dump_path.name}"
+            logger.info(f"Copying dump to container...")
+            subprocess.run(
+                ["docker", "cp", str(dump_path), f"{self.neo4j_container}:{container_dump_path}"],
+                capture_output=True,
+                text=True,
+                timeout=300,
+                check=True
+            )
+
+            # Load dump using temporary container
+            logger.info(f"Loading dump (this may take 1-2 minutes)...")
+            cmd_load = [
+                "docker", "run",
+                "--rm",
+                "--volumes-from", self.neo4j_container,
+                neo4j_image,
+                "neo4j-admin", "database", "load",
+                f"--from-path=/tmp",
+                f"--database={self.neo4j_database}",
+                "--overwrite-destination=true"
+            ]
+
+            result = subprocess.run(
+                cmd_load,
+                capture_output=True,
+                text=True,
+                timeout=600  # 10 minute timeout
+            )
+
+            if result.returncode != 0:
+                # Try to restart anyway
+                logger.error("Load failed, attempting to restart container...")
+                subprocess.run(["docker", "start", self.neo4j_container], capture_output=True)
+                time.sleep(10)
+                raise Exception(f"Neo4j load failed: {result.stderr}")
+
+            # Remove dump from container
+            subprocess.run(
+                ["docker", "exec", self.neo4j_container, "rm", container_dump_path],
+                capture_output=True
+            )
+
+            # Restart Neo4j container
+            logger.info("Restarting Neo4j container...")
+            subprocess.run(
+                ["docker", "start", self.neo4j_container],
+                capture_output=True,
+                timeout=60,
+                check=True
+            )
+
+            # Wait for Neo4j to come back online
+            logger.info("Waiting for Neo4j to come back online...")
+            time.sleep(15)
+
+            logger.info(f"✅ Neo4j database restored successfully")
+
+            # Get database statistics to confirm
+            stats = self._get_neo4j_stats()
+
+            return {
+                "status": "success",
+                "database": self.neo4j_database,
+                "dump_file": dump_path.name,
+                "timestamp": timestamp,
+                "stats": stats
+            }
+
+        except Exception as e:
+            logger.error(f"Error restoring Neo4j dump: {e}")
+            # Try to restart container if it's stopped
+            try:
+                subprocess.run(["docker", "start", self.neo4j_container], capture_output=True)
+                time.sleep(10)
+            except:
+                pass
+
+            return {
+                "status": "error",
+                "error": str(e),
+                "database": self.neo4j_database,
+                "dump_file": str(dump_path),
+                "timestamp": timestamp
+            }
+
+    def restore_all(
+        self,
+        qdrant_snapshot_path: str,
+        neo4j_dump_path: str,
+        qdrant_collection: str = "zotero_library_qdrant"
+    ) -> Dict[str, Any]:
+        """
+        Restore both Qdrant and Neo4j from backup files.
+
+        Args:
+            qdrant_snapshot_path: Path to Qdrant .snapshot file
+            neo4j_dump_path: Path to Neo4j .dump file
+            qdrant_collection: Name of Qdrant collection (default: zotero_library_qdrant)
+
+        Returns:
+            Dictionary with restore results for both databases
+        """
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        logger.info(f"Starting full database restore at {timestamp}")
+
+        results = {
+            "timestamp": timestamp,
+            "qdrant": None,
+            "neo4j": None
+        }
+
+        # Restore Qdrant first (faster, less disruptive)
+        logger.info("Restoring Qdrant...")
+        results["qdrant"] = self.restore_qdrant_snapshot(qdrant_snapshot_path, qdrant_collection)
+
+        if results["qdrant"]["status"] != "success":
+            logger.error("Qdrant restore failed, aborting Neo4j restore")
+            return results
+
+        # Restore Neo4j
+        logger.info("Restoring Neo4j...")
+        results["neo4j"] = self.restore_neo4j_dump(neo4j_dump_path)
+
+        if results["neo4j"]["status"] == "success":
+            logger.info("✅ Full database restore completed successfully")
+        else:
+            logger.error("⚠️  Neo4j restore failed, but Qdrant was restored successfully")
+
+        return results
+
 
 def create_backup_manager(config_path: Optional[str] = None) -> BackupManager:
     """
