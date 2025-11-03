@@ -1,12 +1,37 @@
 # Project Progress
 
-**Last Updated**: October 27, 2025
+**Last Updated**: November 2, 2025
 **Project Status**: ✅ Production-Ready (v2.0 - Post-Consolidation)
 **Health Grade**: A (95/100)
 
 ---
 
-## Current Sprint: CLAUDE.md Optimization (October 25, 2025)
+## Current Sprint: iCloud Off-Site Backup (November 2, 2025)
+
+### Goal
+Add off-site backup capability by syncing local backups to iCloud Drive for disaster recovery
+
+### Progress
+- ✅ Created `scripts/sync-to-icloud.sh` - Smart sync script with dry-run support
+- ✅ Implemented intelligent file detection (new/updated/already synced)
+- ✅ Added 30-day retention policy for iCloud backups
+- ✅ Successfully synced 8.4GB to iCloud Drive (5 Qdrant snapshots + 2 Neo4j dumps)
+- ✅ Created comprehensive documentation (`docs/ICLOUD_BACKUP.md`)
+- ✅ Tested restore procedures from iCloud backups
+
+### Result
+**Off-site backup system operational** - Local backups now automatically sync to iCloud Drive for disaster recovery
+
+### Benefits
+- 🔥 Protection against fire/theft
+- 💾 Hardware failure protection
+- 🌐 Access backups from any device
+- ☁️ Automatic iCloud sync (no manual upload)
+- 📊 30-day retention vs 5-backup local retention
+
+---
+
+## Previous Sprint: CLAUDE.md Optimization (October 25, 2025)
 
 ### Goal
 Reduce CLAUDE.md from 2,330 lines to ~400 lines by extracting historical context into memory files
