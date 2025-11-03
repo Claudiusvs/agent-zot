@@ -151,7 +151,8 @@ kill PID1 PID2 PID3 PID4
 - **progress.md** - Implementation timeline and milestones
 - **docs/development/TOOL_HIERARCHY.md** - Complete architecture
 - **docs/QUICK_REFERENCE.md** - Current configuration
-- **docs/BACKUP_AUTOMATION.md** - Backup/restore procedures
+- **docs/BACKUP_AUTOMATION.md** - Local backup procedures
+- **docs/ICLOUD_BACKUP.md** - iCloud off-site backup guide
 
 ---
 
@@ -179,17 +180,30 @@ kill PID1 PID2 PID3 PID4
 ## 🔧 System Maintenance
 
 ### Backup System
+
+**🆕 NEW: CLI Command (recommended):**
 ```bash
-# Backup everything
-python scripts/backup.py backup-all
+# Complete backup (local + iCloud)
+agent-zot backup-all
+
+# Local only (skip iCloud)
+agent-zot backup-all --local-only
 
 # List backups
 python scripts/backup.py list
-
-# Restore procedures in docs/BACKUP_AUTOMATION.md
 ```
 
+**Alternative: Python script:**
+```bash
+python scripts/backup.py backup-all
+```
+
+**Locations**:
+- Local: `backups/` (keep last 5)
+- iCloud: `~/Library/Mobile Documents/com~apple~CloudDocs/agent-zot-backups/` (keep 30 days)
+
 **Recommendation**: Weekly manual backups, especially before major operations.
+**See**: `docs/ICLOUD_BACKUP.md` for complete guide
 
 ### Database Status
 ```bash
@@ -260,7 +274,8 @@ Restart Claude Desktop or wait for MCP server to auto-restart.
 - **README.md** - User-facing documentation
 - **docs/development/TOOL_HIERARCHY.md** - Complete architecture
 - **docs/QUICK_REFERENCE.md** - Commands and configuration
-- **docs/BACKUP_AUTOMATION.md** - Backup/restore procedures
+- **docs/BACKUP_AUTOMATION.md** - Local backup procedures
+- **docs/ICLOUD_BACKUP.md** - iCloud off-site backup guide
 
 ---
 

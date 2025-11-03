@@ -339,7 +339,14 @@ Your Qdrant and Neo4j data is stored in **Docker volumes** which persist across 
 
 ### Quick Backup Commands
 
-**Backup everything now:**
+**🆕 NEW: One-command backup (local + iCloud):**
+```bash
+agent-zot backup-all                    # Complete backup (recommended)
+agent-zot backup-all --local-only       # Skip iCloud sync
+agent-zot backup-all --keep-last 10     # Custom retention
+```
+
+**Alternative: Python script (legacy):**
 ```bash
 cd /Users/claudiusv.schroder/toolboxes/agent-zot
 .venv/bin/python scripts/backup.py backup-all
@@ -350,12 +357,6 @@ cd /Users/claudiusv.schroder/toolboxes/agent-zot
 .venv/bin/python scripts/backup.py list
 ```
 
-**Backup only Qdrant or Neo4j:**
-```bash
-.venv/bin/python scripts/backup.py backup-qdrant  # Vector database
-.venv/bin/python scripts/backup.py backup-neo4j   # Knowledge graph
-```
-
 ### What Gets Backed Up
 
 | Component | Size | Downtime | Contains |
@@ -364,16 +365,20 @@ cd /Users/claudiusv.schroder/toolboxes/agent-zot
 | **Neo4j Dump** | ~88 MB | ~30 sec | 25K nodes, 134K relationships |
 
 **Backup locations:**
-- Qdrant: `backups/qdrant/*.snapshot`
-- Neo4j: `backups/neo4j/*.dump`
+- **Local**: `backups/qdrant/*.snapshot` and `backups/neo4j/*.dump`
+- **iCloud** (off-site): `~/Library/Mobile Documents/com~apple~CloudDocs/agent-zot-backups/`
+
+**Retention policy:**
+- Local: Keep last 5 backups
+- iCloud: Keep last 30 days
 
 ### Automated Backups (Optional)
 
 Enable daily backups at 2 AM:
 ```bash
 crontab -e
-# Add this line:
-0 2 * * * /Users/claudiusv.schroder/toolboxes/agent-zot/scripts/cron-backup.sh >> /tmp/agent-zot-backup.log 2>&1
+# Add this line for automated backup + iCloud sync:
+0 2 * * * /Users/claudiusv.schroder/toolboxes/agent-zot/scripts/backup-all.sh >> /tmp/agent-zot-backup.log 2>&1
 ```
 
 ### How Backups Work
@@ -433,7 +438,8 @@ docker start agent-zot-neo4j
 
 - **[Quick Start Guide](docs/guides/quick-start.md)** - Get up and running fast
 - **[Configuration Reference](docs/guides/configuration.md)** - All settings explained
-- **[Backup & Recovery Guide](docs/BACKUP_AUTOMATION.md)** - Protect your data
+- **[Backup & Recovery Guide](docs/BACKUP_AUTOMATION.md)** - Local backup system
+- **[iCloud Off-Site Backup](docs/ICLOUD_BACKUP.md)** - Cloud disaster recovery (NEW!)
 - **[FAQ](docs/guides/faq.md)** - Common questions answered
 
 ### For Developers
