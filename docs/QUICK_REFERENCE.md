@@ -51,6 +51,55 @@ docker ps | grep agent-zot
 
 ---
 
+## CLI Commands
+
+### Backup & Restore
+```bash
+# Complete backup (local + iCloud)
+agent-zot backup-all
+
+# Local only (skip iCloud)
+agent-zot backup-all --local-only
+
+# Custom retention
+agent-zot backup-all --keep-last 10
+
+# List backups
+python scripts/backup.py list
+```
+
+### Database Management
+```bash
+# Update semantic search database
+agent-zot update-db
+
+# Force rebuild with full-text extraction
+agent-zot update-db --force-rebuild --fulltext
+
+# Check database status
+agent-zot db-status
+
+# Inspect indexed documents
+agent-zot db-inspect --stats
+```
+
+### Other Commands
+```bash
+# Show version
+agent-zot version
+
+# Setup configuration
+agent-zot setup
+
+# Show setup info
+agent-zot setup-info
+
+# Update agent-zot
+agent-zot update
+```
+
+---
+
 ## Common Operations
 
 ### Check Qdrant Collection Status
