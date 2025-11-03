@@ -176,6 +176,15 @@ def main():
     inspect_parser.add_argument("--stats", action="store_true", help="Show aggregate stats (formerly db-stats)")
     inspect_parser.add_argument("--config-path", help="Path to semantic search configuration file")
 
+    # Backup command
+    backup_parser = subparsers.add_parser("backup-all", help="Backup Qdrant and Neo4j databases (local + iCloud)")
+    backup_parser.add_argument("--local-only", action="store_true",
+                              help="Skip iCloud sync (local backups only)")
+    backup_parser.add_argument("--keep-last", type=int, default=5,
+                              help="Number of backups to keep (default: 5)")
+    backup_parser.add_argument("--no-cleanup", action="store_true",
+                              help="Don't remove old backups")
+
     # Update command
     update_parser = subparsers.add_parser("update", help="Update agent-zot to the latest version")
     update_parser.add_argument("--check-only", action="store_true",
@@ -504,7 +513,83 @@ def main():
         except Exception as e:
             print(f"Error inspecting database: {e}")
             sys.exit(1)
-    
+
+    elif args.command == "backup-all":
+        # Import backup utilities
+        from agent_zot.utils.backup import create_backup_manager
+
+        try:
+            print("=" * 50)
+            print("Agent-Zot Complete Backup")
+            print("=" * 50)
+            print()
+
+            # Step 1: Create local backups
+            print("[1/2] Creating local backups...")
+            print()
+
+            manager = create_backup_manager()
+            results = manager.backup_all(
+                cleanup_old=not args.no_cleanup,
+                keep_last=args.keep_last
+            )
+
+            # Display results
+            print("=== Backup Results ===")
+            print()
+
+            # Qdrant
+            for qresult in results["qdrant"]:
+                if qresult["status"] == "success":
+                    print(f"✅ Qdrant ({qresult['collection']})")
+                    if qresult.get("downloaded"):
+                        print(f"   Snapshot: {qresult['snapshot_name']}")
+                        print(f"   Local: {qresult['local_path']}")
+                        print(f"   Size: {qresult['size_mb']:.1f} MB")
+                else:
+                    print(f"❌ Qdrant ({qresult['collection']}): {qresult.get('error')}")
+
+            print()
+
+            # Neo4j
+            nresult = results["neo4j"]
+            if nresult["status"] == "success":
+                print(f"✅ Neo4j ({nresult['database']})")
+                print(f"   Dump: {Path(nresult['local_path']).name}")
+                print(f"   Size: {nresult['size_mb']:.1f} MB")
+                if nresult.get("stats"):
+                    print(f"   Nodes: {nresult['stats']['nodes']:,}")
+                    print(f"   Relationships: {nresult['stats']['relationships']:,}")
+            else:
+                print(f"❌ Neo4j ({nresult['database']}): {nresult.get('error')}")
+
+            print()
+
+            # Step 2: Sync to iCloud
+            if not args.local_only:
+                print("[2/2] Syncing to iCloud Drive...")
+                print()
+
+                # Run iCloud sync script
+                script_path = Path(__file__).parent.parent.parent.parent / "scripts" / "sync-to-icloud.sh"
+                if script_path.exists():
+                    result = subprocess.run([str(script_path)], capture_output=False)
+                    if result.returncode != 0:
+                        print("⚠ iCloud sync failed (local backups still created)")
+                else:
+                    print("⚠ iCloud sync script not found (local backups still created)")
+            else:
+                print("[2/2] Skipping iCloud sync (--local-only)")
+
+            print()
+            print("=" * 50)
+            print("✓ Complete Backup Finished")
+            print("=" * 50)
+
+        except Exception as e:
+            print(f"❌ Backup error: {e}")
+            sys.exit(1)
+
     elif args.command == "update":
         from agent_zot.utils.updater import update_zotero_mcp
         
