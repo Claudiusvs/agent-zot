@@ -322,13 +322,14 @@ class ZoteroSemanticSearch:
         else:
             return self._get_items_from_api(limit)
     
-    def _get_item_metadata_list(self, limit: Optional[int] = None) -> List[Any]:
+    def _get_item_metadata_list(self, limit: Optional[int] = None, item_keys: Optional[List[str]] = None) -> List[Any]:
         """
         Get lightweight metadata list of items from local database.
         Fast operation - returns NamedTuple objects without fulltext extraction.
 
         Args:
             limit: Optional limit on number of items
+            item_keys: Optional list of item keys to filter by (for incremental updates)
 
         Returns:
             List of NamedTuple items (without fulltext)
@@ -347,8 +348,11 @@ class ZoteroSemanticSearch:
 
             with suppress_stdout(), LocalZoteroReader(pdf_max_pages=pdf_max_pages) as reader:
                 # Fetch metadata only (fast)
-                sys.stderr.write("Scanning local Zotero database for items...\n")
-                local_items = reader.get_items_with_text(limit=limit, include_fulltext=False)
+                if item_keys:
+                    sys.stderr.write(f"Scanning local Zotero database for {len(item_keys)} specific items...\n")
+                else:
+                    sys.stderr.write("Scanning local Zotero database for items...\n")
+                local_items = reader.get_items_with_text(limit=limit, item_keys=item_keys, include_fulltext=False)
                 candidate_count = len(local_items)
                 sys.stderr.write(f"Found {candidate_count} candidate items.\n")
 
@@ -855,6 +859,7 @@ class ZoteroSemanticSearch:
     def update_database(self,
                        force_full_rebuild: Optional[bool] = None,
                        limit: Optional[int] = None,
+                       item_keys: Optional[List[str]] = None,
                        extract_fulltext: Optional[bool] = None) -> Dict[str, Any]:
         """
         Update the semantic search database with Zotero items.
@@ -862,6 +867,7 @@ class ZoteroSemanticSearch:
         Args:
             force_full_rebuild: Whether to rebuild the entire database (default: read from config)
             limit: Limit number of items to process (for testing)
+            item_keys: Optional list of item keys to process (for incremental updates from daemon)
             extract_fulltext: Whether to extract fulltext content from local database (default: read from config)
 
         Returns:
@@ -902,9 +908,13 @@ class ZoteroSemanticSearch:
             # Get lightweight metadata list first (fast), then extract/process in streaming batches
             if extract_fulltext and is_local_mode():
                 # Get metadata-only list (fast - no fulltext extraction yet)
-                metadata_items = self._get_item_metadata_list(limit=limit)
+                # If item_keys provided, filter to only those specific items (incremental update from daemon)
+                metadata_items = self._get_item_metadata_list(limit=limit, item_keys=item_keys)
                 stats["total_items"] = len(metadata_items)
-                logger.info(f"Found {stats['total_items']} items to process in streaming batches")
+                if item_keys:
+                    logger.info(f"Found {stats['total_items']} items to process (filtered by {len(item_keys)} item keys) in streaming batches")
+                else:
+                    logger.info(f"Found {stats['total_items']} items to process in streaming batches")
 
                 # Smart scaling: adjust workers and batch size based on total job size
                 max_workers, batch_size = self._calculate_optimal_scaling(stats["total_items"])
@@ -1266,20 +1276,15 @@ class ZoteroSemanticSearch:
                 title = item_data.get("title", "Untitled")
                 abstract = item_data.get("abstractNote", "")
 
-                # Extract Docling chunks (same as used in Qdrant)
-                fulltext_data = item_data.get("fulltext", "")
-                docling_chunks = []
+                # Extract Docling chunks from item data
+                # Chunks are stored directly in item_data["chunks"], not nested in fulltext
+                docling_chunks = item_data.get("chunks", [])
 
-                logger.info(f"[NEO4J DEBUG] Item {paper_key}: fulltext_data type = {type(fulltext_data)}")
-
-                if isinstance(fulltext_data, dict):
-                    # Docling format: {"text": "...", "chunks": [...]}
-                    docling_chunks = fulltext_data.get("chunks", [])
-                    logger.info(f"[NEO4J DEBUG] Item {paper_key}: Found {len(docling_chunks)} Docling chunks")
+                logger.info(f"[NEO4J DEBUG] Item {paper_key}: Found {len(docling_chunks)} chunks")
 
                 # Skip if no chunks (fall back to paper-level only)
                 if not docling_chunks:
-                    logger.info(f"[NEO4J DEBUG] No Docling chunks for {paper_key}, skipping chunk-level extraction")
+                    logger.info(f"[NEO4J DEBUG] No chunks for {paper_key}, skipping chunk-level extraction")
                     continue
 
                 # Extract authors

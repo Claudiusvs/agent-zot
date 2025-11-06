@@ -137,18 +137,16 @@ class UpdateOrchestrator:
 
         def _sync_update():
             # Use the existing pipeline with item filtering
-            # We'll modify the pipeline to accept item_keys parameter
-            # For now, use the existing method as-is
-            # (The pipeline's metadata loader will be modified to filter by keys)
+            # ✅ IMPLEMENTED: semantic.py now accepts item_keys parameter (ADR-016)
             return self.search.update_database(
                 force_full_rebuild=False,  # Always incremental
                 limit=None,  # No limit (process all provided keys)
+                item_keys=item_keys,  # ✅ Pass filtered item keys for true incremental update
                 extract_fulltext=extract_fulltext
             )
 
-        # TODO: Modify semantic.py to accept item_keys parameter
-        # For now, this will process all new items (which is safe due to
-        # cache checks and deduplication layers)
+        # ✅ COMPLETE: True incremental processing now enabled
+        # Only the specified item_keys will be loaded and processed
         stats = await loop.run_in_executor(None, _sync_update)
         return stats
 
