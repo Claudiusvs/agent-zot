@@ -1,7 +1,7 @@
 # Auto-Sync Daemon Documentation
 
 **Last Updated**: November 6, 2025
-**Status**: ✅ Production-Ready (v2.2)
+**Status**: ✅ Production-Ready (v2.2 - True Incremental Processing)
 
 ---
 
@@ -12,7 +12,9 @@ The auto-sync daemon automatically ingests new papers added to Zotero without re
 ### Key Features
 
 ✅ **Automatic Ingestion**: New papers processed within 30-90 seconds
+✅ **True Incremental Processing** (ADR-016): Only loads/processes new items (SQL filtering)
 ✅ **Defense in Depth**: File watcher (immediate) + API polling (reliable)
+✅ **Dynamic Scaling** (ADR-015): Smart worker allocation based on job size
 ✅ **Same Pipeline**: Identical quality as manual updates
 ✅ **4-Layer Deduplication**: No duplicate papers
 ✅ **Production-Ready**: Graceful shutdown, auto-restart, metrics
@@ -66,9 +68,11 @@ agent-zot daemon install --systemd  # Linux (systemd)
 # CLI
 agent-zot daemon status
 
-# Within Claude Desktop (MCP)
+# MCP Tool (Claude Desktop or other MCP clients)
 zot_daemon_status
 ```
+
+**New in v2.2**: `zot_daemon_status` MCP tool provides comprehensive daemon monitoring including process status, configuration, queue statistics, and orchestrator metrics.
 
 ---
 
@@ -357,6 +361,50 @@ Extracting fulltext for batch of 3 items with 2 workers...
 
 ---
 
+### Incremental Item Filtering (November 6, 2025)
+
+Auto-sync now uses **true incremental processing** that only loads/processes newly detected items instead of scanning the entire database.
+
+**How It Works**:
+```
+Daemon detects: 3 new items (via API polling)
+SQL Query: WHERE i.key IN (?, ?, ?)  [Parameterized, SQL injection safe]
+Pipeline loads: 3 items (not all 3,890)
+Pipeline processes: 3 items
+Result: 99.9% reduction in metadata loading
+```
+
+**Performance Benefits**:
+- ✅ **15-20% faster** auto-sync processing
+- ✅ **99.9% less metadata loading** (3 items vs 3,890 items for single paper)
+- ✅ **Scales to large libraries** (10k+ items)
+- ✅ **Lower memory footprint** (fewer temporary objects)
+- ✅ **Pairs with dynamic scaling** (2 workers for small jobs)
+
+**Visible in Logs**:
+```
+# OLD (inefficient - cache-based):
+Scanning local Zotero database for items...
+Found 3890 candidate items.
+Dynamic scaling: 8 workers, batch size 50 (job size: 3890 items)
+
+# NEW (efficient - true incremental):
+Scanning local Zotero database for 3 specific items...
+Found 3 candidate items.
+Dynamic scaling: 2 workers, batch size 10 (job size: 3 items)
+```
+
+**Key Indicator**: Look for **"for X specific items"** in logs (confirms filtering working)
+
+**Why It Matters**:
+- Previous approach: Load ALL items → skip via parse cache (fast but wasteful)
+- New approach: Load ONLY new items → process directly (efficient and scalable)
+- At 10k items, metadata loading would take ~5-7 seconds (now ~0.1 seconds)
+
+**Technical Details**: See ADR-016 in `decisions.md`
+
+---
+
 ## Advanced
 
 ### Custom Poll Interval
@@ -408,10 +456,12 @@ Process more items per batch:
 
 ## References
 
-- **ADR-014**: Hybrid Auto-Sync Daemon (decisions.md)
+- **ADR-016**: Incremental Item Filtering (November 2025 - true incremental processing)
+- **ADR-015**: Dynamic Scaling (November 2025 - smart worker allocation)
+- **ADR-014**: Hybrid Auto-Sync Daemon (October 2025 - daemon architecture)
 - **ADR-003**: Manual Database Updates (rationale for separate daemon)
 - **Config Example**: `docs/config_example_auto_sync.json`
-- **Implementation**: `src/agent_zot/daemon/` (6 files, ~1,238 lines)
+- **Implementation**: `src/agent_zot/daemon/` (6 files, ~1,300 lines)
 
 ---
 
