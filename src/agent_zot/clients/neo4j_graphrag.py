@@ -705,12 +705,8 @@ class Neo4jGraphRAGClient:
 
                             # Create extraction template
                             extraction_template = ERExtractionTemplate(template=RESEARCH_EXTRACTION_PROMPT)
-                            lexical_config = LexicalGraphConfig({
-                                "id": "__Entity__",
-                                "label": "__Entity__",
-                                "text": "text",
-                                "embedding": "embedding"
-                            })
+                            # Use default LexicalGraphConfig (Pydantic v2 compatible)
+                            lexical_config = LexicalGraphConfig()
 
                             # Create pipeline for this chunk
                             chunk_pipeline_kwargs = {
