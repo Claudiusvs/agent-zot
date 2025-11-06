@@ -3,12 +3,14 @@ Command-line interface for Zotero MCP server.
 """
 
 import argparse
+import asyncio
 import json
 import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Optional
 
 from agent_zot.core.server import mcp
 
@@ -107,6 +109,124 @@ def setup_zotero_environment():
     apply_environment_variables(fallback_env_vars)
 
 
+def _create_launchd_plist(config_path: Optional[str] = None):
+    """Create macOS launchd plist for auto-start."""
+    # Get executable path - try multiple methods
+    executable_path = shutil.which("agent-zot")
+
+    # If not in PATH, try to find it relative to this script
+    if not executable_path:
+        # We're in the venv, so find the venv bin directory
+        current_script = Path(__file__).resolve()
+        venv_bin = current_script.parent.parent.parent.parent / ".venv" / "bin" / "agent-zot"
+        if venv_bin.exists():
+            executable_path = str(venv_bin)
+
+    if not executable_path:
+        print("❌ Error: agent-zot executable not found in PATH")
+        print("Install agent-zot first: pip install -e .")
+        sys.exit(1)
+
+    # Construct plist content
+    plist_content = f'''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.agent-zot.autosync</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{executable_path}</string>
+        <string>daemon</string>
+        <string>start</string>'''
+
+    if config_path:
+        plist_content += f'''
+        <string>--config</string>
+        <string>{config_path}</string>'''
+
+    plist_content += '''
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/agent-zot-daemon.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/agent-zot-daemon.error.log</string>
+</dict>
+</plist>
+'''
+
+    # Write to LaunchAgents directory
+    plist_path = Path.home() / "Library" / "LaunchAgents" / "com.agent-zot.autosync.plist"
+    plist_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(plist_path, 'w') as f:
+        f.write(plist_content)
+
+    print(f"✓ Created plist: {plist_path}")
+    print("\nTo enable auto-start on login:")
+    print(f"  launchctl load {plist_path}")
+    print("\nTo start now:")
+    print(f"  launchctl start com.agent-zot.autosync")
+    print("\nTo stop:")
+    print(f"  launchctl stop com.agent-zot.autosync")
+    print("\nTo disable auto-start:")
+    print(f"  launchctl unload {plist_path}")
+
+
+def _create_systemd_service(config_path: Optional[str] = None):
+    """Create Linux systemd service file for auto-start."""
+    # Get executable path
+    executable_path = shutil.which("agent-zot")
+    if not executable_path:
+        print("❌ Error: agent-zot executable not found in PATH")
+        print("Install agent-zot first: pip install -e .")
+        sys.exit(1)
+
+    # Construct service content
+    service_content = f'''[Unit]
+Description=Agent-Zot Auto-Sync Daemon
+After=network.target
+
+[Service]
+Type=simple
+ExecStart={executable_path} daemon start'''
+
+    if config_path:
+        service_content += f' --config {config_path}'
+
+    service_content += f'''
+Restart=on-failure
+RestartSec=10
+User={os.getenv("USER", "user")}
+
+[Install]
+WantedBy=default.target
+'''
+
+    # Write to user systemd directory
+    service_path = Path.home() / ".config" / "systemd" / "user" / "agent-zot-autosync.service"
+    service_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(service_path, 'w') as f:
+        f.write(service_content)
+
+    print(f"✓ Created service: {service_path}")
+    print("\nTo enable auto-start on login:")
+    print(f"  systemctl --user enable agent-zot-autosync")
+    print("\nTo start now:")
+    print(f"  systemctl --user start agent-zot-autosync")
+    print("\nTo check status:")
+    print(f"  systemctl --user status agent-zot-autosync")
+    print("\nTo stop:")
+    print(f"  systemctl --user stop agent-zot-autosync")
+    print("\nTo disable auto-start:")
+    print(f"  systemctl --user disable agent-zot-autosync")
+
+
 def main():
     """Main entry point for the CLI."""
     parser = argparse.ArgumentParser(
@@ -199,7 +319,25 @@ def main():
     
     # Setup info command
     setup_info_parser = subparsers.add_parser("setup-info", help="Show installation path and configuration info for MCP clients")
-    
+
+    # Daemon commands
+    daemon_parser = subparsers.add_parser("daemon", help="Manage auto-sync daemon (start/stop/status/install)")
+    daemon_parser.add_argument(
+        "daemon_command",
+        choices=["start", "stop", "status", "install"],
+        help="Daemon operation: start (run daemon), stop (stop daemon), status (check status), install (setup auto-start)"
+    )
+    daemon_parser.add_argument(
+        "--config",
+        dest="daemon_config_path",
+        help="Path to config file (default: ~/.config/agent-zot/config.json)"
+    )
+    daemon_parser.add_argument(
+        "--systemd",
+        action="store_true",
+        help="Use systemd instead of launchd (for 'install' command)"
+    )
+
     args = parser.parse_args()
     
     # If no command is provided, default to 'serve'
@@ -637,6 +775,87 @@ def main():
             print(f"❌ Update error: {e}")
             sys.exit(1)
     
+    elif args.command == "daemon":
+        import asyncio
+        from agent_zot.daemon.manager import DaemonManager, run_daemon
+
+        # Setup environment
+        setup_zotero_environment()
+
+        daemon_cmd = args.daemon_command
+        config_path = args.daemon_config_path
+
+        if daemon_cmd == "start":
+            print("🚀 Starting agent-zot daemon...")
+            print("Press Ctrl+C to stop")
+            print()
+            try:
+                asyncio.run(run_daemon(config_path=config_path))
+            except KeyboardInterrupt:
+                print("\n✓ Daemon stopped")
+            except Exception as e:
+                print(f"❌ Error: {e}")
+                sys.exit(1)
+
+        elif daemon_cmd == "stop":
+            print("Stopping daemon...")
+            # Find and kill daemon process
+            result = subprocess.run(
+                ["ps", "aux"],
+                capture_output=True,
+                text=True
+            )
+            for line in result.stdout.splitlines():
+                if "agent-zot daemon start" in line and "grep" not in line:
+                    pid = int(line.split()[1])
+                    print(f"Found daemon process (PID: {pid})")
+                    subprocess.run(["kill", str(pid)])
+                    print("✓ Daemon stopped")
+                    return
+            print("No running daemon found")
+
+        elif daemon_cmd == "status":
+            # Check if daemon is running
+            result = subprocess.run(
+                ["ps", "aux"],
+                capture_output=True,
+                text=True
+            )
+            daemon_running = False
+            for line in result.stdout.splitlines():
+                if "agent-zot daemon start" in line and "grep" not in line:
+                    pid = int(line.split()[1])
+                    print(f"✓ Daemon running (PID: {pid})")
+                    daemon_running = True
+                    break
+
+            if not daemon_running:
+                print("✗ Daemon not running")
+
+            # Show config status
+            config_file = config_path or str(Path.home() / ".config" / "agent-zot" / "config.json")
+            if Path(config_file).exists():
+                print(f"\nConfig: {config_file}")
+                try:
+                    with open(config_file) as f:
+                        config = json.load(f)
+                    auto_sync = config.get("auto_sync", {})
+                    print(f"  Enabled: {auto_sync.get('enabled', False)}")
+                    print(f"  Mode: {auto_sync.get('mode', 'not set')}")
+                except Exception as e:
+                    print(f"  Error reading config: {e}")
+            else:
+                print(f"\n⚠️  Config not found: {config_file}")
+
+        elif daemon_cmd == "install":
+            # Create launchd/systemd files
+            if args.systemd:
+                print("Creating systemd service file...")
+                _create_systemd_service(config_path)
+            else:
+                print("Creating launchd plist...")
+                _create_launchd_plist(config_path)
+
     elif args.command == "serve":
         # Get transport with a default value if not specified
         transport = getattr(args, "transport", "stdio")
@@ -645,11 +864,11 @@ def main():
         if transport == "stdio":
             mcp.run(transport="stdio")
         elif transport == "streamable-http":
-            host = getattr(args, "host", "localhost") 
+            host = getattr(args, "host", "localhost")
             port = getattr(args, "port", 8000)
             mcp.run(transport="streamable-http", host=host, port=port)
         elif transport == "sse":
-            host = getattr(args, "host", "localhost") 
+            host = getattr(args, "host", "localhost")
             port = getattr(args, "port", 8000)
             import warnings
             warnings.warn("The SSE transport is deprecated and may be removed in a future version. New applications should use Streamable HTTP transport instead.", UserWarning)

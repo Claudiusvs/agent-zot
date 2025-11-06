@@ -199,24 +199,61 @@ matched_text = result.get("matched_text", result.get("content", ""))
 
 ---
 
+### Bug #014: Pydantic v2 Compatibility Error (November 4, 2025)
+
+**Issue**: "BaseModel.__init__() takes 1 positional argument but 2 were given" error in Neo4j entity extraction
+
+**Root Cause**: Incorrectly passing a dict as positional argument to `LexicalGraphConfig()` in `src/agent_zot/clients/neo4j_graphrag.py:708-713`:
+```python
+# ❌ WRONG - Pydantic v2 doesn't accept dicts as positional args
+lexical_config = LexicalGraphConfig({
+    "id": "__Entity__",
+    "label": "__Entity__",
+    "text": "text",
+    "embedding": "embedding"
+})
+```
+
+**Impact**: **COSMETIC ONLY** - Papers were successfully written to Neo4j before this error occurred. The error happened during result validation/reporting phase.
+
+**Fix**: Use default `LexicalGraphConfig()` with no arguments (line 709):
+```python
+# ✅ CORRECT - Use defaults
+lexical_config = LexicalGraphConfig()
+```
+
+**Status**: ✅ Fixed - Proper Pydantic v2 syntax
+
+**Related**: Neo4j sync of 151 papers completed successfully despite this error appearing in logs
+
+---
+
 ## ⚠️ Known Limitations
 
 ### Limitation #001: Orphaned Process Cleanup on macOS
 
 **Issue**: macOS keeps Unix sockets open after MCP disconnect, so `lsof` can't always distinguish orphaned processes
 
-**Impact**: Automatic cleanup may miss some orphaned `agent-zot serve` processes
+**Impact**: ~~Orphaned `agent-zot serve` processes accumulate~~ **→ MITIGATED (Nov 6, 2025)**
 
-**Workaround**:
+**Solution Implemented**:
+- Auto-sync daemon now runs cleanup on startup (`manager.py:125-180`)
+- Detects and kills orphaned `agent-zot serve` processes
+- Logged cleanup actions for transparency
+- Tested successfully (killed 3 orphaned processes on first run)
+
+**Manual Cleanup** (if needed):
 ```bash
-# Manually identify and kill orphaned processes
+# View orphaned processes
 ps aux | grep "agent-zot serve" | grep -v grep
+
+# Kill manually
 kill <old_PID>
 ```
 
-**Status**: ⚠️ Known limitation - Manual cleanup occasionally needed
+**Status**: ✅ **Mitigated** - Automatic cleanup on daemon startup
 
-**Future**: Consider PID file tracking or heartbeat mechanism
+**Technical Details**: Uses `ps aux` to find processes, kills with `SIGTERM`, logs actions to `/tmp/agent-zot-daemon.error.log`
 
 ---
 

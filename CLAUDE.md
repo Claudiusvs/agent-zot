@@ -340,6 +340,38 @@ Restart Claude Desktop or wait for MCP server to auto-restart.
 
 ---
 
+## 🚀 Auto-Sync Daemon Status
+
+**Current Status**: 🟢 **ACTIVE AND PERSISTENT** (November 6, 2025)
+
+- ✅ All code written (~2,600 lines across 8 files)
+- ✅ Documentation complete (ADR-014, AUTO_SYNC_DAEMON.md)
+- ✅ CLI commands ready (`agent-zot daemon start/stop/status/install`)
+- ✅ MCP tool available (`zot_daemon_status`)
+- ✅ Configuration enabled (`auto_sync.enabled: true`)
+- ✅ **launchd service installed** - Auto-starts on login, survives crashes
+- ✅ Daemon running (PID 57810, detached from terminal)
+- ✅ File watcher active (monitoring zotero.sqlite with 30s debounce)
+- ⏳ **Pending**: User testing with actual paper addition
+
+**Persistence Guarantees:**
+- ✅ Survives terminal closure
+- ✅ Survives laptop sleep/wake
+- ✅ Auto-starts on laptop boot (after login)
+- ✅ Auto-restarts if crashes (KeepAlive enabled)
+
+**Optional Future Enhancements**:
+1. Real-time daemon statistics via MCP (queue depth, items/sec processing rate)
+2. Web UI dashboard for monitoring (optional, low priority)
+3. Email/webhook notifications on ingestion errors (optional)
+4. Multi-library support (watch multiple Zotero databases)
+5. Smart scheduling (e.g., only run during specific hours to save battery)
+6. Ingestion metrics export (Prometheus/Grafana integration)
+
+**See**: `docs/AUTO_SYNC_DAEMON.md` for complete setup guide
+
+---
+
 ## 🔄 Memory System Integration
 
 After every session, update these files:
