@@ -66,6 +66,15 @@ Database operations?         → zot_manage_database  🆕 NEW
 
 ## ⚠️ Critical Operational Info
 
+### Auto-Sync with Dynamic Scaling
+
+**Automatic ingestion** via polling daemon (60-second intervals) with smart resource scaling:
+- **1-5 papers**: 2 workers, batch size 10 (typical auto-sync)
+- **6-20 papers**: 4 workers, batch size 20
+- **21+ papers**: 8 workers, batch size 50
+
+**Manual updates** also available for immediate control.
+
 ### Manual Database Updates Required
 
 **Auto-update DISABLED** for instant server startup (~100ms instead of 3-5 seconds).

@@ -487,3 +487,235 @@ zot_manage_database("restore from latest backup", confirm=True)  # Full restore
 
 ---
 
+## ADR-014: Hybrid Auto-Sync Daemon (November 2025)
+
+**Decision**: Implement event-driven ingestion with hybrid file watcher + API polling architecture
+
+**Context**:
+- ADR-003 disabled auto-update for instant server startup (~100ms)
+- Required manual `agent-zot update-db` after adding papers to Zotero
+- User request: "trigger ingestion/processing pipeline each time a new paper is added to Zotero"
+- Goal: Automatic ingestion without startup delay penalty
+
+**Rationale**:
+1. **Defense in depth**: Two independent triggers ensure no papers missed
+   - File watcher: Immediate response (detects sqlite changes within seconds)
+   - API polling: Reliable fallback (queries Zotero API every 5 minutes)
+2. **Deduplication**: Queue prevents double-processing from both triggers
+3. **Same pipeline**: Uses existing update_database() - identical quality
+4. **No external dependencies**: Pure Python (watchdog + asyncio), no Zotero plugin required
+5. **Graceful degradation**: Either trigger can fail independently without breaking system
+
+**Implementation**:
+
+### Architecture
+```
+┌─────────────────────────────┐
+│  Zotero Library (Source)    │
+└──────────┬──────────────────┘
+           │
+    ┌──────┼──────┐
+    │             │
+┌───▼────┐   ┌───▼────┐
+│ File   │   │  API   │
+│Watcher │   │ Poller │
+│(30s)   │   │ (5min) │
+└───┬────┘   └───┬────┘
+    │             │
+    └──────┬──────┘
+      ┌────▼────┐
+      │  Queue  │  Dedup
+      │ (60s)   │  Window
+      └────┬────┘
+      ┌────▼────────┐
+      │Orchestrator │
+      │(Existing    │
+      │ Pipeline)   │
+      └─────────────┘
+```
+
+### Components (6 files, ~1,238 lines)
+1. **UpdateQueue** (`daemon/queue.py`, 193 lines)
+   - Deduplication window: 60 seconds
+   - Tracks source (file_watcher/api_polling/manual)
+   - Metrics: enqueued, deduped, processed
+
+2. **FileWatcher** (`daemon/watcher.py`, 214 lines)
+   - Monitors `zotero.sqlite` via watchdog library
+   - Debouncing: 30 seconds (batch rapid changes)
+   - Triggers on any DB modification
+
+3. **APIPoller** (`daemon/poller.py`, 213 lines)
+   - Uses Zotero API `since` parameter for incremental updates
+   - Exponential backoff on rate limits (1 min → 60 min cap)
+   - Polls every 5 minutes by default
+
+4. **UpdateOrchestrator** (`daemon/orchestrator.py`, 147 lines)
+   - Calls existing `update_database()` pipeline
+   - Same quality as manual updates (PDF extraction, chunking, Neo4j)
+   - Async wrapper around synchronous pipeline
+
+5. **DaemonManager** (`daemon/manager.py`, 271 lines)
+   - Coordinates all components
+   - Signal handlers for graceful shutdown (SIGINT/SIGTERM)
+   - Process loop consumes queue and executes pipeline
+
+6. **CLI Integration** (`core/cli.py`, ~150 lines added)
+   - `agent-zot daemon start/stop/status`
+   - `agent-zot daemon install` (creates launchd/systemd files)
+   - Process management via ps/kill
+
+### MCP Tool (`zot_daemon_status`, ~100 lines)
+- Check daemon running state
+- Show configuration (mode, intervals)
+- Display queue statistics
+- Usage instructions
+
+### Configuration Schema
+```json
+{
+  "auto_sync": {
+    "enabled": true,
+    "mode": "hybrid",  // "hybrid", "watcher", or "polling"
+    "polling": {
+      "interval_seconds": 300,
+      "use_since_param": true
+    },
+    "watcher": {
+      "enabled": true,
+      "debounce_seconds": 30,
+      "watch_path": "/path/to/zotero.sqlite"
+    },
+    "queue": {
+      "dedup_window_seconds": 60,
+      "max_batch_size": 50
+    }
+  }
+}
+```
+
+**Deduplication Layers** (4 independent mechanisms):
+1. **Queue Deduplication**: 60s window, prevents double-enqueue
+2. **Parse Cache**: Skips PDF extraction if cached (~/.cache/agent-zot/parsed_docs.db)
+3. **Qdrant Upsert**: Uses item_key as deterministic ID, updates instead of duplicates
+4. **Neo4j MERGE**: Relationships use MERGE, not CREATE
+
+**Process Management**:
+- **macOS**: launchd plist (~/Library/LaunchAgents/com.agent-zot.autosync.plist)
+- **Linux**: systemd user service (~/.config/systemd/user/agent-zot-autosync.service)
+- Auto-start on login, KeepAlive for crash recovery
+
+**Result**:
+- Event-driven ingestion: New papers processed automatically within ~30-90 seconds
+- No startup delay impact: Daemon is separate process from MCP server
+- Same quality: Exact same pipeline as manual updates
+- Production-ready: Metrics, logging, graceful shutdown, auto-restart
+
+**Trade-offs**:
+- ✅ Automatic ingestion without startup penalty
+- ✅ Defense in depth (two independent triggers)
+- ✅ No Zotero plugin required
+- ✅ Graceful degradation (one trigger can fail)
+- ⚠️ Extra background process (~100-200MB RAM)
+- ⚠️ File watcher triggers on ANY DB change (not just new papers)
+- ⚠️ Slight delay (30-90s) vs instant manual trigger
+
+**User Impact**:
+```bash
+# Setup (one-time)
+agent-zot daemon install       # macOS launchd
+agent-zot daemon install --systemd  # Linux systemd
+
+# Manual control
+agent-zot daemon start         # Run now
+agent-zot daemon stop          # Stop daemon
+agent-zot daemon status        # Check status
+
+# MCP monitoring
+zot_daemon_status             # Within Claude/MCP client
+```
+
+**Alternatives Rejected**:
+1. **Zotero Plugin** (Webhook trigger)
+   - ❌ External dependency (JavaScript plugin)
+   - ❌ Maintenance burden (Zotero API changes)
+   - ❌ Distribution complexity (user must install plugin)
+   - ✅ Would be most immediate (milliseconds)
+
+2. **Polling Only** (No file watcher)
+   - ❌ 5-minute delay minimum
+   - ❌ API rate limits (100 requests/hour free tier)
+   - ✅ Simpler implementation
+   - ✅ More reliable (no filesystem dependencies)
+
+3. **File Watcher Only** (No polling)
+   - ❌ Single point of failure
+   - ❌ Misses changes if watcher crashes
+   - ✅ Immediate response
+   - ✅ No API rate limits
+
+**References**:
+- ADR-003: Disabled auto-update (rationale for separate daemon)
+- User request: "trigger ingestion each time a new paper is added"
+- Implementation: `src/agent_zot/daemon/` (6 files, ~1,238 lines)
+
+---
+
+## ADR-015: Dynamic Scaling for Auto-Sync Pipeline (November 2025)
+
+**Decision**: Implement smart scaling that adjusts worker count and batch size based on job size
+
+**Context**:
+- Original pipeline designed for bulk manual updates (8 workers, batch size 50)
+- Auto-sync typically processes 1-10 papers per sync
+- Spawning 8 workers + loading 8 parse caches for 1-2 papers is resource-inefficient
+- But need to handle edge cases (bulk imports via auto-sync)
+
+**Scaling Strategy**:
+```
+Small jobs (1-5 papers):   2 workers, batch size 10 (minimal overhead)
+Medium jobs (6-20 papers): 4 workers, batch size 20 (balanced)
+Large jobs (21+ papers):   8 workers, batch size 50 (max throughput)
+```
+
+**Rationale**:
+- Auto-sync is now primary mode (not manual updates)
+- Most syncs are 1-10 papers (typical workflow)
+- Reduces resource overhead by 75% for typical case (2 vs 8 workers)
+- Still handles bulk imports efficiently (auto-scales to 8 workers)
+- Single implementation works for both manual and auto updates
+
+**Implementation**:
+- New method: `_calculate_optimal_scaling(total_items: int) -> tuple[int, int]`
+- Applied to:
+  1. `_extract_batch_fulltext()` - parallel PDF extraction
+  2. `update_database()` - streaming batch processing (local mode)
+  3. `update_database()` - standard batch processing (API mode)
+- Logging shows scaling decisions for transparency
+
+**Results**:
+- Typical auto-sync (1-3 papers): 2 workers, batch 10
+- Medium auto-sync (10 papers): 4 workers, batch 20
+- Manual update (100 papers): 8 workers, batch 50
+- **75% reduction in worker overhead** for common case
+- No loss of throughput for bulk operations
+
+**Trade-offs**:
+- ✅ Optimized for primary use case (auto-sync)
+- ✅ Reduced memory footprint (2 workers vs 8)
+- ✅ Faster startup for small jobs (fewer processes to spawn)
+- ✅ Same code handles all scenarios (no branching)
+- ⚠️ Slight complexity added (scaling logic)
+
+**User Impact**:
+- Auto-sync more responsive and lightweight
+- No manual configuration needed (automatic)
+- Transparent logging shows scaling decisions
+
+**References**:
+- ADR-014: Hybrid Auto-Sync Daemon (context for optimization)
+- User question: "does it make sense to have all the currently configured parallelization?"
+- Implementation: `src/agent_zot/search/semantic.py:411-434`
+
+---
+
