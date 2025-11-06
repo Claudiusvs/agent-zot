@@ -408,10 +408,35 @@ class ZoteroSemanticSearch:
             logger.error(f"Error reading from local database: {e}")
             raise
 
+    def _calculate_optimal_scaling(self, total_items: int) -> tuple[int, int]:
+        """
+        Calculate optimal worker count and batch size based on job size.
+
+        Smart scaling strategy:
+        - Small jobs (1-5 papers): 2 workers, batch size 10 (minimal overhead)
+        - Medium jobs (6-20 papers): 4 workers, batch size 20 (balanced)
+        - Large jobs (21+ papers): 8 workers, batch size 50 (max throughput)
+
+        Args:
+            total_items: Total number of items to process
+
+        Returns:
+            tuple of (max_workers, batch_size)
+        """
+        if total_items <= 5:
+            # Small job: minimal overhead, fast startup
+            return (2, 10)
+        elif total_items <= 20:
+            # Medium job: balanced parallelization
+            return (4, 20)
+        else:
+            # Large job: maximum throughput
+            return (8, 50)
+
     def _extract_batch_fulltext(self, items: List[Any]) -> List[Dict[str, Any]]:
         """
         Extract fulltext for a batch of items and convert to API-compatible format.
-        Uses parallel extraction with 8 workers (optimized for M1 Pro).
+        Uses dynamic worker scaling based on batch size (2-8 workers).
 
         Args:
             items: List of NamedTuple items (metadata only)
@@ -422,10 +447,10 @@ class ZoteroSemanticSearch:
         if not items:
             return []
 
-        logger.info(f"Extracting fulltext for batch of {len(items)} items...")
+        # Smart scaling: adjust workers based on batch size
+        max_workers, _ = self._calculate_optimal_scaling(len(items))
+        logger.info(f"Extracting fulltext for batch of {len(items)} items with {max_workers} workers...")
 
-        # Parallel fulltext extraction
-        max_workers = 8
         extraction_data = {}  # item_key -> {"fulltext": ..., "chunks": ..., "source": ..., "metadata": ...}
 
         def extract_item_fulltext(it):
@@ -881,14 +906,18 @@ class ZoteroSemanticSearch:
                 stats["total_items"] = len(metadata_items)
                 logger.info(f"Found {stats['total_items']} items to process in streaming batches")
 
+                # Smart scaling: adjust workers and batch size based on total job size
+                max_workers, batch_size = self._calculate_optimal_scaling(stats["total_items"])
+                logger.info(f"Dynamic scaling: {max_workers} workers, batch size {batch_size} (job size: {stats['total_items']} items)")
+
                 try:
                     sys.stderr.write(f"Total items to index: {stats['total_items']}\n")
-                    sys.stderr.write("Using STREAMING BATCH mode: extract → embed → Qdrant → Neo4j per batch\n")
+                    sys.stderr.write(f"Using STREAMING BATCH mode with dynamic scaling: {max_workers} workers, batch size {batch_size}\n")
+                    sys.stderr.write("Pipeline: extract → embed → Qdrant → Neo4j per batch\n")
                 except Exception:
                     pass
 
                 # Process in streaming batches through ENTIRE pipeline
-                batch_size = 50
                 next_milestone = 10 if stats["total_items"] >= 10 else stats["total_items"]
                 seen_items = 0
 
@@ -931,13 +960,17 @@ class ZoteroSemanticSearch:
                 stats["total_items"] = len(all_items)
                 logger.info(f"Found {stats['total_items']} items to process")
 
+                # Smart scaling: adjust batch size based on total job size
+                _, batch_size = self._calculate_optimal_scaling(stats["total_items"])
+                logger.info(f"Dynamic scaling: batch size {batch_size} (job size: {stats['total_items']} items)")
+
                 try:
                     sys.stderr.write(f"Total items to index: {stats['total_items']}\n")
+                    sys.stderr.write(f"Using batch size {batch_size} (dynamic scaling)\n")
                 except Exception:
                     pass
 
                 # Process items in batches
-                batch_size = 50
                 next_milestone = 10 if stats["total_items"] >= 10 else stats["total_items"]
                 seen_items = 0
 

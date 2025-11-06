@@ -331,6 +331,30 @@ agent-zot daemon start
 
 **Example**: Add 3 papers → File watcher triggers in 30s → All 3 processed in ~54s
 
+### Dynamic Scaling (Nov 6, 2025)
+
+Auto-sync now uses **smart scaling** that adjusts resources based on job size:
+
+**Scaling Strategy**:
+- **1-5 papers** (typical auto-sync): 2 workers, batch size 10
+- **6-20 papers** (medium batch): 4 workers, batch size 20
+- **21+ papers** (bulk import): 8 workers, batch size 50
+
+**Benefits**:
+- ✅ **75% reduction** in worker overhead for typical syncs (2 vs 8 workers)
+- ✅ Faster startup for small jobs (fewer processes to spawn)
+- ✅ Lower memory footprint during auto-sync
+- ✅ Still efficient for bulk imports (auto-scales to 8 workers)
+- ✅ Automatic (no configuration needed)
+
+**Visible in Logs**:
+```
+Dynamic scaling: 2 workers, batch size 10 (job size: 3 items)
+Extracting fulltext for batch of 3 items with 2 workers...
+```
+
+**Technical Details**: See ADR-015 in `decisions.md`
+
 ---
 
 ## Advanced
