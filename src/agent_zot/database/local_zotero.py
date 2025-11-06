@@ -591,21 +591,23 @@ except Exception as e:
         )
         return cursor.fetchone()[0]
     
-    def get_items_with_text(self, limit: Optional[int] = None, include_fulltext: bool = False) -> List[ZoteroItem]:
+    def get_items_with_text(self, limit: Optional[int] = None, item_keys: Optional[List[str]] = None, include_fulltext: bool = False) -> List[ZoteroItem]:
         """
         Get all items with their text content for semantic search.
-        
+
         Args:
             limit: Optional limit on number of items to return.
-            
+            item_keys: Optional list of item keys to filter by (for incremental updates).
+            include_fulltext: Whether to extract fulltext content.
+
         Returns:
             List of ZoteroItem objects with text content.
         """
         conn = self._get_connection()
-        
+
         # Query to get items with their text content (simplified for now)
         query = """
-        SELECT 
+        SELECT
             i.itemID,
             i.key,
             i.itemTypeID,
@@ -618,25 +620,25 @@ except Exception as e:
             doi_val.value as doi,
             GROUP_CONCAT(n.note, ' ') as notes,
             GROUP_CONCAT(
-                CASE 
-                    WHEN c.firstName IS NOT NULL AND c.lastName IS NOT NULL 
+                CASE
+                    WHEN c.firstName IS NOT NULL AND c.lastName IS NOT NULL
                     THEN c.lastName || ', ' || c.firstName
-                    WHEN c.lastName IS NOT NULL 
+                    WHEN c.lastName IS NOT NULL
                     THEN c.lastName
                     ELSE NULL
                 END, '; '
             ) as creators
         FROM items i
         JOIN itemTypes it ON i.itemTypeID = it.itemTypeID
-        
+
         -- Get title
         LEFT JOIN itemData title_data ON i.itemID = title_data.itemID AND title_data.fieldID = 1
         LEFT JOIN itemDataValues title_val ON title_data.valueID = title_val.valueID
-        
-        -- Get abstract  
+
+        -- Get abstract
         LEFT JOIN itemData abstract_data ON i.itemID = abstract_data.itemID AND abstract_data.fieldID = 2
         LEFT JOIN itemDataValues abstract_val ON abstract_data.valueID = abstract_val.valueID
-        
+
         -- Get extra field
         LEFT JOIN itemData extra_data ON i.itemID = extra_data.itemID AND extra_data.fieldID = 16
         LEFT JOIN itemDataValues extra_val ON extra_data.valueID = extra_val.valueID
@@ -645,10 +647,10 @@ except Exception as e:
         LEFT JOIN fields doi_f ON doi_f.fieldName = 'DOI'
         LEFT JOIN itemData doi_data ON i.itemID = doi_data.itemID AND doi_data.fieldID = doi_f.fieldID
         LEFT JOIN itemDataValues doi_val ON doi_data.valueID = doi_val.valueID
-        
+
         -- Get notes
         LEFT JOIN itemNotes n ON i.itemID = n.parentItemID OR i.itemID = n.itemID
-        
+
         -- Get creators
         LEFT JOIN itemCreators ic ON i.itemID = ic.itemID
         LEFT JOIN creators c ON ic.creatorID = c.creatorID
@@ -656,17 +658,26 @@ except Exception as e:
         -- Filter out attachments and notes (Fix #4 - CRITICAL BUG FIX)
         -- Previous code was ONLY selecting attachments (backwards logic)
         WHERE it.typeName NOT IN ('attachment', 'note')
+        """
 
+        # Add item_keys filter if provided (for incremental updates)
+        query_params = []
+        if item_keys and len(item_keys) > 0:
+            placeholders = ','.join('?' * len(item_keys))
+            query += f" AND i.key IN ({placeholders})"
+            query_params.extend(item_keys)
+
+        query += """
         GROUP BY i.itemID, i.key, i.itemTypeID, it.typeName, i.dateAdded, i.dateModified,
                  title_val.value, abstract_val.value, extra_val.value
-        
+
         ORDER BY i.dateModified DESC
         """
-        
+
         if limit:
             query += f" LIMIT {limit}"
-        
-        cursor = conn.execute(query)
+
+        cursor = conn.execute(query, query_params)
         items = []
         
         for row in cursor:
