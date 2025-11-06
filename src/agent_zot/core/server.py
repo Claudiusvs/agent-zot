@@ -4386,6 +4386,124 @@ def smart_export_tool(
         return f"Error: {str(e)}"
 
 
+# ========== DAEMON STATUS TOOL ==========
+@mcp.tool(
+    name="zot_daemon_status",
+    description="""🔧 Get status of agent-zot auto-sync daemon.
+
+**Returns comprehensive daemon status including:**
+- Running state (active/stopped)
+- Configuration mode (hybrid/watcher/polling)
+- Queue statistics (pending items, processed count)
+- File watcher status (if enabled)
+- API poller status (if enabled)
+- Last update time
+- Orchestrator statistics
+
+**Use for:** Monitoring auto-sync daemon, debugging ingestion pipeline, checking system health""",
+    annotations={"readOnlyHint": True, "title": "Daemon Status"}
+)
+def get_daemon_status(*, ctx: Context) -> str:
+    """Get status of auto-sync daemon."""
+    try:
+        import json
+        import subprocess
+        from pathlib import Path
+
+        output = ["# Agent-Zot Daemon Status", ""]
+
+        # Check if daemon is running
+        result = subprocess.run(
+            ["ps", "aux"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+
+        daemon_running = False
+        daemon_pid = None
+        for line in result.stdout.splitlines():
+            if "agent-zot daemon start" in line and "grep" not in line:
+                daemon_pid = int(line.split()[1])
+                daemon_running = True
+                break
+
+        output.append(f"**Daemon Status**: {'🟢 Running' if daemon_running else '🔴 Stopped'}")
+        if daemon_pid:
+            output.append(f"**PID**: {daemon_pid}")
+        output.append("")
+
+        # Load configuration
+        config_path = Path.home() / ".config" / "agent-zot" / "config.json"
+        if config_path.exists():
+            output.append(f"**Config**: {config_path}")
+            try:
+                with open(config_path) as f:
+                    config = json.load(f)
+
+                auto_sync = config.get("auto_sync", {})
+                output.append(f"**Enabled**: {auto_sync.get('enabled', False)}")
+                output.append(f"**Mode**: {auto_sync.get('mode', 'not set')}")
+                output.append("")
+
+                # File watcher config
+                watcher = auto_sync.get("watcher", {})
+                if watcher.get("enabled"):
+                    output.append("## File Watcher")
+                    output.append(f"- **Enabled**: Yes")
+                    output.append(f"- **Watch Path**: {watcher.get('watch_path', 'not set')}")
+                    output.append(f"- **Debounce**: {watcher.get('debounce_seconds', 30)}s")
+                    output.append("")
+
+                # API poller config
+                polling = auto_sync.get("polling", {})
+                if auto_sync.get("mode") in ["hybrid", "polling"]:
+                    output.append("## API Poller")
+                    output.append(f"- **Interval**: {polling.get('interval_seconds', 300)}s")
+                    output.append(f"- **Use Since Param**: {polling.get('use_since_param', True)}")
+                    output.append("")
+
+                # Queue config
+                queue = auto_sync.get("queue", {})
+                output.append("## Queue")
+                output.append(f"- **Dedup Window**: {queue.get('dedup_window_seconds', 60)}s")
+                output.append(f"- **Max Batch Size**: {queue.get('max_batch_size', 50)}")
+                output.append("")
+
+            except Exception as e:
+                output.append(f"**Error reading config**: {e}")
+                output.append("")
+        else:
+            output.append(f"**⚠️ Config not found**: {config_path}")
+            output.append("")
+
+        # Usage instructions
+        if not daemon_running:
+            output.append("## Start Daemon")
+            output.append("```bash")
+            output.append("agent-zot daemon start")
+            output.append("```")
+            output.append("")
+            output.append("## Setup Auto-Start")
+            output.append("```bash")
+            output.append("agent-zot daemon install  # macOS (launchd)")
+            output.append("agent-zot daemon install --systemd  # Linux")
+            output.append("```")
+        else:
+            output.append("## Stop Daemon")
+            output.append("```bash")
+            output.append("agent-zot daemon stop")
+            output.append("```")
+
+        return "\n".join(output)
+
+    except subprocess.TimeoutExpired:
+        return "Error: Timeout checking daemon status"
+    except Exception as e:
+        ctx.error(f"Error getting daemon status: {str(e)}")
+        return f"Error getting daemon status: {str(e)}"
+
+
 # ========== DISABLED: Legacy Collection Tools (Replaced by zot_manage_collections) ==========
 # The following 5 tools have been consolidated into zot_manage_collections:
 # - zot_get_collections → zot_manage_collections (List Mode)
