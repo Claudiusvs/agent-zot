@@ -70,7 +70,43 @@ Implement Phase 1-2 of Graphiti integration as defined in OpenSpec proposal `add
     - Limit to 10-20 papers for prototype testing
 
 ### Current Status
-**🧪 Phase 1-3 Complete** - Client and ingestion pipeline ready, pending MCP tool (Phase 4)
+**⚠️ BLOCKED** - Graphiti ingestion architecture incompatible with daemon context (Phase 3 incomplete)
+
+### November 7 Update: Testing & Architecture Blocker Discovered
+
+#### Model Selection Decision
+- ✅ Switched from GPT-4o-mini to Claude Haiku 4.5 for entity extraction
+  - Rationale: Quality over cost (73.3% SWE-bench score vs 60-70% accuracy for GPT-4o-mini)
+  - Cost impact: 4x higher ($100 full library vs $25), acceptable for 2.5k library
+  - Configuration updated in both `agent-zot` and Graphiti MCP server
+
+#### Testing Attempt & Critical Blocker
+- ❌ **Memory exhaustion** during 9-paper test
+  - System ran out of RAM → Zotero crashed → 9 connection errors
+  - Reduced to 2-paper test with 1 worker thread
+
+- ❌ **Architecture incompatibility discovered**
+  - **Root cause**: Graphiti ingestion designed to run within MCP server context
+  - **Problem**: Orchestrator runs as standalone daemon without access to `mcp__graphiti__` tools
+  - **Error**: `[Errno 61] Connection refused` when trying to call Graphiti client
+  - **Impact**: Phase 3 ingestion pipeline cannot execute in daemon context
+
+#### Technical Details of Blocker
+- `GraphitiClient` requires `mcp_tool_caller` to invoke `mcp__graphiti__add_memory`
+- MCP tools only available within MCP server process (Claude Code/Desktop)
+- Daemon orchestrator runs as separate process → no MCP context
+- Cannot make direct Graphiti MCP calls from daemon
+
+#### Resolution Options
+1. **Disable Graphiti in daemon** (✅ Implemented) - Keep code for future, disable in config
+2. **Use Graphiti Python SDK directly** - Bypass MCP, call SDK (requires refactoring)
+3. **HTTP API wrapper** - Create endpoint for MCP tools (complex, overkill)
+4. **Trigger manually via MCP** - Use `mcp__graphiti__add_memory` directly from Claude
+
+#### Current Approach
+- Disabled Graphiti in orchestrator config (`enabled: false`)
+- Code remains in place for future use when daemon runs in MCP context
+- Manual ingestion possible via direct MCP tool calls: `mcp__graphiti__add_memory()`
 
 ### Architecture Overview
 ```

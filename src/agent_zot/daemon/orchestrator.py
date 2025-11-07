@@ -331,12 +331,12 @@ class UpdateOrchestrator:
         """
         try:
             # Access Qdrant client from semantic search instance
-            qdrant_client = self.search.qdrant
+            qdrant_client = self.search.qdrant_client
 
             # Search for chunks matching this item key
             # Qdrant stores item_key in metadata
             results = qdrant_client.client.scroll(
-                collection_name=self.search.collection_name,
+                collection_name=qdrant_client.collection_name,
                 scroll_filter={
                     "must": [
                         {
