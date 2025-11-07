@@ -829,3 +829,191 @@ Expected log changes:
 
 ---
 
+## ADR-017: Dual-Schema Neo4j Architecture for Hybrid Discovery (November 2025)
+
+**Decision**: Implement two independent graph schemas in the same Neo4j database - Agent-Zot GraphRAG (structured) and Graphiti (autonomous entity extraction)
+
+**Context**:
+- Agent-Zot uses structured Neo4j schema for academic relationships (Papers, Authors, Concepts, Methods, etc.)
+- Schema is hand-crafted for academic precision (AUTHORED_BY, CITES, PUBLISHED_IN, DISCUSSES_CONCEPT)
+- BUT limited by what we explicitly extract during ingestion
+- Wanted autonomous entity discovery from research content without breaking existing graph structure
+- Graphiti SDK provides LLM-driven entity extraction with temporal awareness
+
+**Decision**:
+Use dual-schema approach with namespace isolation via node labels and group_id parameter
+
+**Two Coexisting Schemas**:
+
+### Agent-Zot GraphRAG Schema (Structured)
+- **Nodes**: `:Paper`, `:Person`, `:Institution`, `:Concept`, `:Method`, `:Dataset`, `:Theory`, `:Journal`, `:Field`
+- **Relationships**: `AUTHORED_BY`, `CITES`, `PUBLISHED_IN`, `DISCUSSES_CONCEPT`, `USES_METHOD`, `TESTS_DATASET`, `BUILDS_ON_THEORY`, `IN_FIELD`
+- **Properties**: Deterministic (item_key, name, abstract, year, etc.)
+- **Cypher Example**:
+  ```cypher
+  (:Paper {item_key: "ABC123", title: "..."})
+  -[:AUTHORED_BY]->
+  (:Person {name: "Smith, J."})
+  ```
+
+### Graphiti Schema (Autonomous)
+- **Nodes**: `:Episode`, `:EntityNode`
+- **Relationships**: `:EntityEdge`
+- **Namespace Isolation**: `group_id = "agent-zot-discovery"`
+- **Properties**:
+  - EntityNode: name, summary, labels (dynamic entity types)
+  - EntityEdge: fact, valid_at, invalid_at, created_at, expired_at
+  - Episode: name, content, source, valid_at, created_at, metadata (including item_key)
+- **LLM-Driven**: Entities and relationships extracted autonomously from paper text chunks
+- **Cypher Example**:
+  ```cypher
+  (:Episode {name: "Paper ABC123 - Chunk 5", group_id: "agent-zot-discovery"})
+  -[:MENTIONS]->
+  (:EntityNode {name: "neural attention mechanisms", group_id: "agent-zot-discovery"})
+  -[:EntityEdge {fact: "improves performance on translation tasks"}]->
+  (:EntityNode {name: "machine translation", group_id: "agent-zot-discovery"})
+  ```
+
+**Data Flow**:
+
+```
+Zotero Library
+     ↓
+Agent-Zot Ingestion Pipeline
+     ↓
+┌────┴─────┐
+│  Qdrant  │ → 234,153 chunks (BGE-M3 embeddings)
+└────┬─────┘
+     ↓
+Auto-Sync Daemon reads chunks
+     ↓
+┌─────────────────────────────┐
+│   Neo4j (Single Database)   │
+│  ┌───────────┬───────────┐  │
+│  │ Agent-Zot │  Graphiti │  │
+│  │  Schema   │   Schema  │  │
+│  │(Structured)│(Discovery)│  │
+│  └─────┬─────┴─────┬─────┘  │
+│        │           │        │
+│   Both reference same paper │
+│   via item_key metadata     │
+└─────────────────────────────┘
+```
+
+**Ingestion Process**:
+1. **Structured ingestion** (existing): Extract metadata → Create `:Paper`, `:Person`, `:Concept` nodes
+2. **Autonomous ingestion** (new):
+   - Daemon reads chunks from Qdrant
+   - Passes chunks to Graphiti SDK
+   - LLM extracts entities and relationships from text
+   - Graphiti writes `:Episode`, `:EntityNode`, `:EntityEdge` to Neo4j
+   - Episode metadata includes item_key for cross-schema linking
+
+**Access Patterns**:
+- **Write**:
+  - Agent-Zot: Direct Cypher via neo4j driver (structured ingestion)
+  - Graphiti: Graphiti SDK (autonomous entity extraction via LLM)
+- **Read**:
+  - MCP tools (Claude Code) for queries
+  - `zot_explore_graph` uses Agent-Zot schema (citation networks, author collaborations)
+  - Future: Graphiti SDK search API for entity-centric discovery
+- **Query Isolation**:
+  - Agent-Zot queries: Match on node labels (`:Paper`, `:Person`, etc.)
+  - Graphiti queries: Filter by `group_id = "agent-zot-discovery"`
+
+**Cross-Schema Linking**:
+- Both schemas reference same papers via `item_key` property
+- Episode metadata: `{item_key: "ABC123", chunk_index: 5}`
+- Paper node: `{item_key: "ABC123", title: "..."}`
+- Enables queries like: "Find all entities extracted from Paper ABC123"
+  ```cypher
+  MATCH (e:Episode {group_id: "agent-zot-discovery"})-[:MENTIONS]->(entity:EntityNode)
+  WHERE e.metadata CONTAINS 'ABC123'
+  RETURN entity
+  ```
+
+**Why Dual-Schema Instead of Unified**:
+1. **Preserve academic structure**: Existing Neo4j graph queries depend on precise schema
+2. **Enable autonomous discovery**: LLM extracts unexpected entities without breaking structure
+3. **Namespace isolation**: No node label collisions (`:Paper` vs `:EntityNode`)
+4. **Independent scaling**: Graphiti ingestion can proceed without affecting existing graph
+5. **Best of both worlds**: Precision (Agent-Zot) + Discovery (Graphiti)
+
+**Configuration**:
+```json
+{
+  "graphiti": {
+    "enabled": true,
+    "neo4j": {
+      "uri": "bolt://localhost:7687",
+      "user": "neo4j",
+      "password": "demodemo",
+      "database": "neo4j"  // SAME database as Agent-Zot
+    },
+    "group_id": "agent-zot-discovery",
+    "embedding_model": "openai:text-embedding-3-small"
+  }
+}
+```
+
+**Result**:
+- **25,184 total nodes** in Neo4j (both schemas combined)
+- **134,068 relationships**
+- Estimated split:
+  - Agent-Zot: ~7,390 Paper nodes + ~15k entity nodes (~22k total)
+  - Graphiti: ~3,184 EntityNode/Episode nodes
+- Both schemas coexist without conflicts
+- Single Neo4j instance, dual indexing strategies
+
+**Consequences**:
+
+**Pros**:
+- ✅ Best of both worlds: Academic precision + autonomous discovery
+- ✅ Single database, reduced infrastructure complexity
+- ✅ Cross-schema queries possible via item_key metadata
+- ✅ Namespace isolation prevents node/relationship collisions
+- ✅ Independent scaling (Graphiti ingestion doesn't break existing queries)
+- ✅ Preserves existing `zot_explore_graph` functionality
+- ✅ Future-proof: Can add more schemas if needed (e.g., user annotations)
+
+**Cons**:
+- ⚠️ Increased storage: Dual representation of paper relationships
+- ⚠️ More complex query patterns: Must choose correct schema for query intent
+- ⚠️ Maintenance burden: Two schemas to document and evolve
+- ⚠️ Learning curve: Users must understand when to use which schema
+- ⚠️ Potential redundancy: Same relationships may exist in both schemas
+
+**Alternatives Considered**:
+
+1. **Unified Schema** (Single entity model for everything)
+   - ❌ Breaks existing Neo4j queries (all hardcoded to `:Paper`, `:Person`, etc.)
+   - ❌ Loss of academic precision (Graphiti's dynamic labels less structured)
+   - ❌ Difficult migration path for existing graph data
+   - ✅ Simpler architecture (one schema)
+
+2. **Separate Neo4j Databases** (Two databases, two graph stores)
+   - ❌ Doubled infrastructure complexity (two Docker containers)
+   - ❌ Cross-database queries impossible (no shared item_key linking)
+   - ❌ Doubled memory footprint (~2GB vs ~1GB)
+   - ✅ Complete namespace isolation (zero collision risk)
+
+3. **Graphiti-Only Schema** (Replace Agent-Zot with Graphiti)
+   - ❌ Loss of academic precision (LLM extraction less reliable than structured parsing)
+   - ❌ Major refactor of existing code (all MCP tools depend on current schema)
+   - ❌ Risk of introducing bugs in production system
+   - ✅ Simpler single-schema architecture
+
+**Future Work**:
+- Implement cross-schema queries in `zot_explore_graph`
+- Add Graphiti search API for entity-centric discovery
+- Performance testing: Query latency with dual-schema vs single-schema
+- Evaluate redundancy: Measure overlap between Agent-Zot and Graphiti relationships
+
+**References**:
+- ADR-014: Hybrid Auto-Sync Daemon (ingestion context)
+- Graphiti SDK documentation: https://github.com/getzep/graphiti
+- Neo4j namespace isolation patterns: Node labels + property filtering
+- User request: "Document the dual-schema Neo4j architecture"
+
+---
+
