@@ -112,13 +112,17 @@ async def ingest_to_graphiti(
 
     # Initialize client if not provided
     if client is None:
+        # Get Neo4j config (defaults from agent-zot config or fallback)
+        neo4j_config = config.get("neo4j_graphrag", {})
         client = GraphitiClient(
+            neo4j_uri=neo4j_config.get("neo4j_uri", "bolt://localhost:7687"),
+            neo4j_user=neo4j_config.get("neo4j_user", "neo4j"),
+            neo4j_password=neo4j_config.get("neo4j_password", "demodemo"),
             group_id=graphiti_config.get("group_id", "agent-zot-discovery"),
-            mcp_timeout_seconds=graphiti_config.get("mcp_timeout_seconds", 10),
         )
 
-    # Check availability
-    if not client.is_available():
+    # Check availability (now async)
+    if not await client.is_available():
         logger.warning(
             f"Graphiti unavailable for {paper_key}, "
             f"skipping entity extraction"
@@ -153,7 +157,7 @@ async def ingest_to_graphiti(
 
     for i, batch in enumerate(batches):
         try:
-            result = client.add_paper_chunk(
+            result = await client.add_paper_chunk(
                 chunk_text=batch.combined_text,
                 paper_key=paper_key,
                 metadata=batch.metadata,
