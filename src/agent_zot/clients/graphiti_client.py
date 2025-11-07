@@ -140,11 +140,19 @@ class GraphitiClient:
         """
         Add a paper chunk to Graphiti for entity extraction.
 
+        The Zotero item_key is stored in two ways for cross-schema linking:
+        1. Embedded in episode name: "Paper {paper_key} - Part X/Y"
+        2. Included in source_description for searchability
+
+        This enables queries like:
+        - "What entities were extracted from paper ABC123?"
+        - "Show me all episodes for Zotero key ABC123"
+
         Args:
             chunk_text: Text content of the chunk
-            paper_key: Zotero item key
+            paper_key: Zotero item key (stored in episode name for linking)
             metadata: Optional metadata (authors, title, etc.)
-            episode_name: Optional custom episode name
+            episode_name: Optional custom episode name (should include paper_key)
 
         Returns:
             Result dictionary with status
@@ -159,12 +167,12 @@ class GraphitiClient:
         start_time = time.time()
 
         try:
-            # Generate episode name if not provided
+            # Generate episode name if not provided (must include paper_key)
             if not episode_name:
                 episode_name = f"Paper {paper_key}"
 
-            # Format metadata as source description
-            source_description = "Zotero paper chunk"
+            # Format metadata as source description (include item_key for searchability)
+            source_description = f"Zotero paper chunk [item_key={paper_key}]"
             if metadata:
                 title = metadata.get("title", "")
                 authors = metadata.get("authors", "")
@@ -174,6 +182,8 @@ class GraphitiClient:
                     source_description += f" by {authors}"
 
             # Call MCP tool to add memory
+            # Note: Graphiti SDK doesn't support custom metadata dict,
+            # so we embed item_key in episode name and source_description
             result = self._call_mcp_tool(
                 "mcp__graphiti__add_memory",
                 name=episode_name,
@@ -186,9 +196,10 @@ class GraphitiClient:
             elapsed = time.time() - start_time
 
             logger.info(
-                f"Added paper chunk to Graphiti",
+                f"Added paper chunk to Graphiti with item_key in metadata",
                 extra={
                     "paper_key": paper_key,
+                    "episode_name": episode_name,
                     "chunk_length": len(chunk_text),
                     "elapsed_seconds": elapsed,
                     "group_id": self.group_id,
@@ -198,6 +209,7 @@ class GraphitiClient:
             return {
                 "success": True,
                 "paper_key": paper_key,
+                "episode_name": episode_name,
                 "elapsed_seconds": elapsed,
                 "result": result,
             }
@@ -334,6 +346,10 @@ class GraphitiClient:
         """
         Retrieve all entities associated with a specific paper.
 
+        Uses the embedded item_key in episode names to find entities extracted
+        from a specific Zotero paper. Episode names follow the pattern:
+        "Paper {paper_key} - Part X/Y"
+
         Args:
             paper_key: Zotero item key
 
@@ -343,15 +359,24 @@ class GraphitiClient:
         Raises:
             GraphitiUnavailableError: If Graphiti is not available
             GraphitiClientError: If retrieval fails
+
+        Example:
+            >>> client = GraphitiClient()
+            >>> entities = client.get_paper_entities("ABC123")
+            >>> # Returns entities from episodes named "Paper ABC123 - Part 1/3", etc.
         """
         if not self.is_available():
             raise GraphitiUnavailableError("Graphiti MCP server is not available")
 
         try:
-            # Search for entities mentioning the paper key
-            # This is a heuristic approach since Graphiti doesn't have direct
-            # paper-to-entity linking (we track via episode names)
+            # Search for entities using the embedded item_key pattern
+            # Episode names contain "Paper {paper_key}" for cross-schema linking
             query = f"Paper {paper_key}"
+
+            logger.info(
+                f"Searching for entities from paper using embedded item_key",
+                extra={"paper_key": paper_key, "query": query},
+            )
 
             return self.search_entities(query=query, max_nodes=50)
 
