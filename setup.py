@@ -11,5 +11,8 @@ setup(
             'zotero-mcp=agent_zot.core.cli:main',  # Keep backward compatibility
         ],
     },
+    install_requires=[
+        'graphiti-core>=0.3.0',  # For direct SDK integration in daemon context
+    ],
     python_requires='>=3.10',
 )
