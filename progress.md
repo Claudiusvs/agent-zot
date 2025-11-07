@@ -1,12 +1,83 @@
 # Project Progress
 
-**Last Updated**: November 6, 2025
-**Project Status**: ✅ Production-Ready (v2.2 - Auto-Sync Daemon Live)
+**Last Updated**: November 7, 2025
+**Project Status**: 🧪 Experimental Phase - Graphiti Integration (v2.3)
 **Health Grade**: A+ (98/100)
 
 ---
 
-## Current Sprint: Auto-Sync Daemon Activation (November 6, 2025)
+## Current Sprint: Graphiti Hybrid Discovery Integration (November 7, 2025)
+
+### Goal
+Implement Phase 1-2 of Graphiti integration as defined in OpenSpec proposal `add-graphiti-hybrid-discovery`
+
+### Progress
+- ✅ **Phase 1: Infrastructure Setup (3/3 tasks)**
+  - Task 1.1: Added Graphiti configuration to `~/.config/agent-zot/config.json`
+    - Feature flag: `enabled: false` (opt-in)
+    - Group ID: `agent-zot-discovery` (isolated namespace)
+    - LLM provider: `openai` with `gpt-4o-mini` (cost-efficient)
+    - Filter tag: `_graphiti_experiment` (selective Phase 1 ingestion)
+    - Cost controls: `cost_threshold_usd: 1.0`
+  - Task 1.2: Verified Graphiti MCP server connectivity
+    - Tested `mcp__graphiti__search_memory_nodes` (successful)
+    - Created test episode (successfully queued)
+    - Confirmed group_id isolation working
+  - Task 1.3: Created comprehensive documentation (`docs/GRAPHITI_INTEGRATION.md`)
+    - Architecture diagram (hybrid Neo4j + Graphiti)
+    - Configuration options with detailed table
+    - Cost estimates ($0.01-0.02 per paper)
+    - Usage instructions for Phase 1 prototype
+    - Query examples and troubleshooting guide
+
+- ✅ **Phase 2: Graphiti Client Integration (2/2 tasks)**
+  - Task 2.1: Created `src/agent_zot/clients/graphiti_client.py`
+    - `GraphitiClient` class with MCP tool wrappers
+    - Methods implemented:
+      - `add_paper_chunk()` - Ingest chunks to Graphiti
+      - `search_entities()` - Query for autonomous entities
+      - `search_relationships()` - Query for relationship facts
+      - `get_paper_entities()` - Retrieve entities by paper key
+      - `is_available()` - Check Graphiti server health
+    - Error handling: Graceful degradation if Graphiti unavailable
+    - Structured logging: Time, entity counts, cost tracking
+    - Dependency injection: Testable via `mcp_tool_caller` parameter
+  - Task 2.2: Created comprehensive unit tests (`tests/unit/test_graphiti_client.py`)
+    - 16 test cases covering all methods
+    - Mock-based testing (no external dependencies)
+    - Error scenarios (unavailable server, failed ingestion)
+    - Structured logging verification
+    - Dataclass validation (EntityNode, RelationshipFact)
+
+### Current Status
+**🧪 Phase 1-2 Complete** - Client infrastructure ready, pending ingestion pipeline (Phase 3)
+
+### Architecture Overview
+```
+┌─────────────────────────────────────────────────────────────┐
+│                   Hybrid Discovery Architecture              │
+├──────────────────────┬──────────────────────────────────────┤
+│   Neo4j (Explicit)   │   Graphiti (Autonomous)              │
+│                      │                                      │
+│ • Structured schema  │ • Schema-free extraction             │
+│ • Academic precision │ • Cross-disciplinary discovery       │
+│ • Cypher + GDS       │ • Natural language queries           │
+│ • Fast, predictable  │ • Temporal context tracking          │
+└──────────────────────┴──────────────────────────────────────┘
+             Linked via Zotero Item Keys
+```
+
+### Next Steps
+- ⏳ Phase 3: Graphiti Ingestion Pipeline (Tasks 3.1-3.3)
+- ⏳ Phase 4: Discovery Query Tool (`zot_discover`)
+- ⏳ Phase 5: Cross-Validation Tooling
+- ⏳ Phase 6: Testing & Validation (10-20 papers)
+- ⏳ Phase 7: Documentation updates
+- ⏳ Phase 8: Evaluation & Decision (proceed/refine/abandon)
+
+---
+
+## Previous Sprint: Auto-Sync Daemon Activation (November 6, 2025)
 
 ### Goal
 Activate the auto-sync daemon (implemented in previous sprint) and verify event-driven paper ingestion
