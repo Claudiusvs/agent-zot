@@ -1,12 +1,65 @@
 # Project Progress
 
-**Last Updated**: November 7, 2025
-**Project Status**: 🧪 Experimental Phase - Graphiti Integration (v2.3)
-**Health Grade**: A+ (98/100)
+**Last Updated**: November 8, 2025
+**Project Status**: 🧪 Experimental Phase - Graphiti SDK Integration (v2.3)
+**Health Grade**: A+ (99/100)
 
 ---
 
-## Current Sprint: Graphiti Hybrid Discovery Integration (November 7, 2025)
+## Current Sprint: Graphiti SDK Migration (November 7-8, 2025)
+
+### Architecture Correction (Critical Turning Point)
+**November 7, 11:00 PM** - User challenged initial conclusion that Graphiti couldn't work in daemon context. Research using Context7 revealed correct architecture:
+- ❌ **Wrong assumption**: Daemon can't access MCP tools
+- ✅ **Correct architecture**: Daemon uses `graphiti_core` SDK directly
+- **Dual-path design**: SDK for writes (daemon ingestion), MCP for reads (Claude Code queries)
+- **Shared database**: Both paths use same Neo4j instance, isolated by `group_id`
+
+### Completed Work (November 7-8)
+
+**Phase 3: Parallel Implementation (3 git worktrees)**
+- ✅ SDK Refactor (graphiti-sdk-refactor branch)
+  - Migrated GraphitiClient from MCP tool calls to SDK usage
+  - Added Neo4j connection parameters (uri, user, password)
+  - Implemented lazy initialization with `_ensure_initialized()`
+  - Converted all methods to async (is_available, add_paper_chunk, etc.)
+  - 147 lines changed (+115/-32)
+- ✅ Metadata Linking (graphiti-metadata branch)
+  - Triple-redundancy item_key embedding strategy
+  - Episode name pattern: `"Paper {paper_key} - Part X/Y"`
+  - Source description tag: `[item_key={paper_key}]`
+  - Batch metadata augmentation in graphiti_ingestion.py
+  - Created comprehensive documentation (GRAPHITI_METADATA_LINKING.md, 316 lines)
+  - 9 passing unit tests for metadata patterns
+  - 637 lines added
+- ✅ Documentation (graphiti-docs branch)
+  - Created ADR-017: Dual-Schema Neo4j Architecture
+  - 188-line architectural decision record
+  - Schema comparison (Agent-Zot vs Graphiti)
+  - Data flow diagrams and access patterns
+  - Trade-offs analysis and alternatives considered
+
+**Phase 4: Merge & Integration**
+- ✅ Merged all 3 branches into main (November 8, 12:30 AM)
+  - Resolved merge conflicts in graphiti_client.py
+  - Combined SDK implementation with metadata enhancements
+  - Updated graphiti_ingestion.py to use new async API
+- ✅ Configured Anthropic Claude Haiku 4.5 for entity extraction
+  - Installed `graphiti-core[anthropic]` dependency
+  - Created AnthropicClient with model `claude-haiku-4-5-20241007`
+  - Disabled PostHog analytics telemetry
+  - Added comprehensive error logging
+
+**Infrastructure Ready**
+- ✅ All code merged to main branch (11 commits ahead of origin)
+- ✅ GraphitiClient fully migrated to SDK
+- ✅ Configuration updated (Graphiti enabled, Anthropic configured)
+- ✅ Test script created with environment setup
+- ⏳ **Pending**: End-to-end testing with real papers (connection error to resolve)
+
+---
+
+## Previous Sprint: Graphiti Hybrid Discovery Integration (November 7, 2025)
 
 ### Goal
 Implement Phase 1-2 of Graphiti integration as defined in OpenSpec proposal `add-graphiti-hybrid-discovery`
