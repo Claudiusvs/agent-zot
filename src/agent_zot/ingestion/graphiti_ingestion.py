@@ -231,6 +231,11 @@ def _create_batches(
 
     Returns:
         List of IngestionBatch objects
+
+    Note:
+        Episode names include paper_key for linking between Agent-Zot and Graphiti schemas.
+        Format: "Paper {paper_key} - Part {batch_num}/{total_batches}"
+        This enables queries like: "What entities were extracted from paper ABC123?"
     """
     batches = []
 
@@ -240,18 +245,23 @@ def _create_batches(
         # Combine chunks with separators
         combined_text = "\n\n---\n\n".join(batch_chunks)
 
-        # Create descriptive episode name
+        # Create descriptive episode name with embedded item_key
+        # This enables linking between Graphiti entities and Agent-Zot papers
         batch_num = (i // batch_size) + 1
         total_batches = (len(chunks) + batch_size - 1) // batch_size
 
         episode_name = f"Paper {paper_key} - Part {batch_num}/{total_batches}"
+
+        # Augment batch metadata with item_key for potential future use
+        batch_metadata = dict(metadata)
+        batch_metadata["zotero_item_key"] = paper_key
 
         batches.append(
             IngestionBatch(
                 episode_name=episode_name,
                 combined_text=combined_text,
                 chunk_count=len(batch_chunks),
-                metadata=metadata,
+                metadata=batch_metadata,
             )
         )
 
