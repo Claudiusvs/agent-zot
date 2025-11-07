@@ -6,9 +6,20 @@ This script bypasses the tag filter and directly ingests specified papers
 to Graphiti for quality evaluation.
 """
 import asyncio
+import os
 import sys
 import time
 from pathlib import Path
+
+# Set env for local Zotero
+os.environ["ZOTERO_LOCAL"] = "true"
+
+# Set Anthropic API key for Graphiti SDK
+# (Read from config file - user provided key in previous session)
+os.environ["ANTHROPIC_API_KEY"] = "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"
+
+# Disable PostHog analytics (graphiti-core dependency)
+os.environ["POSTHOG_DISABLED"] = "1"
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))

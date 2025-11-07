@@ -107,10 +107,23 @@ class GraphitiClient:
             return
 
         try:
+            # Import Anthropic client for LLM operations
+            from graphiti_core.llm_client.anthropic_client import AnthropicClient, LLMConfig
+
+            # Create Anthropic LLM client
+            # API key should be in environment (ANTHROPIC_API_KEY)
+            llm_client = AnthropicClient(
+                config=LLMConfig(
+                    model="claude-haiku-4-5-20241007",  # Full model ID
+                    cache=False  # Disable prompt caching for simplicity
+                )
+            )
+
             self.graphiti = Graphiti(
                 uri=self.neo4j_uri,
                 user=self.neo4j_user,
                 password=self.neo4j_password,
+                llm_client=llm_client,
             )
 
             # Build indices and constraints (idempotent operation)
@@ -124,7 +137,7 @@ class GraphitiClient:
                 },
             )
         except Exception as e:
-            logger.error(f"Failed to initialize Graphiti SDK: {e}")
+            logger.error(f"Failed to initialize Graphiti SDK: {e}", exc_info=True)
             self.graphiti = None
             raise GraphitiUnavailableError(f"Failed to initialize Graphiti: {e}") from e
 

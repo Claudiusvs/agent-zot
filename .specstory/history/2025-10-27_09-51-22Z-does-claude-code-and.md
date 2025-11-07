@@ -363,20 +363,6 @@ Given that you already have 9 MCP servers running in Claude Code, you probably *
 
 _**User**_
 
-User provided an image (image/png).
-
-
-_**User**_
-
-[Image #1]: here is the message i just got
-
-_**User**_
-
-User provided an image (image/png).
-
-
-_**User**_
-
 [Image #1]: here is the message i just got
 
 _**User**_
@@ -396,7 +382,21 @@ _**User**_
 
 User provided an image (image/png).
 
+
+_**User**_
+
 [Image #1]: here is the message i just got
+
+_**User**_
+
+User provided an image (image/png).
+
+[Image #1]: here is the message i just got
+
+_**User**_
+
+User provided an image (image/png).
+
 
 _**User**_
 
@@ -768,11 +768,6 @@ _**User**_
 _**User**_
 
 /exit
- ⎿  Goodbye!
-
-_**User**_
-
-/exit
 _**User**_
 
 /exit
@@ -783,6 +778,11 @@ _**User**_
 /exit
  ⎿  Goodbye!
 
+ ⎿  Goodbye!
+
+_**User**_
+
+/exit
 _**User**_
 
 /exit
@@ -6114,9 +6114,8 @@ _**User**_
 
  ⎿  Goodbye!
 
-_**User**_
+ ⎿  Goodbye!
 
-/exit
  ⎿  Goodbye!
 
 _**User**_
@@ -6127,8 +6126,9 @@ _**User**_
 _**User**_
 
 /exit
- ⎿  Goodbye!
+_**User**_
 
+/exit
 _**User**_
 
 /exit
@@ -6185,6 +6185,8 @@ What would you like me to help you with today?
 _**User**_
 
 /mcp
+ ⎿  MCP server 'vibe-check' has been disabled.
+
 _**User**_
 
 /mcp
@@ -6193,13 +6195,11 @@ _**User**_
 /mcp
  ⎿  MCP server 'vibe-check' has been disabled.
 
+ ⎿  MCP server 'vibe-check' has been disabled.
+
 _**User**_
 
 /mcp
- ⎿  MCP server 'vibe-check' has been disabled.
-
- ⎿  MCP server 'vibe-check' has been disabled.
-
  ⎿  MCP server 'vibe-check' has been disabled.
 
 ---
