@@ -49,8 +49,28 @@ Implement Phase 1-2 of Graphiti integration as defined in OpenSpec proposal `add
     - Structured logging verification
     - Dataclass validation (EntityNode, RelationshipFact)
 
+- ✅ **Phase 3: Graphiti Ingestion Pipeline (3/3 tasks)**
+  - Task 3.1: Created `src/agent_zot/ingestion/graphiti_ingestion.py`
+    - `ingest_to_graphiti()` async function with batch optimization
+    - Chunk batching: 15 chunks per episode (10-20 configurable)
+    - Cost estimation: ~$0.01-0.02 per paper (GPT-4o-mini)
+    - Selective filtering: `_graphiti_experiment` tag check
+    - `should_ingest_to_graphiti()` helper for filtering logic
+    - Graceful degradation: Returns success=True even when disabled/unavailable
+    - Track metrics: time, chunks, episodes, cost estimates
+  - Task 3.2: Integrated into `src/agent_zot/daemon/orchestrator.py`
+    - Added `_run_graphiti_ingestion()` async method
+    - Runs after main pipeline (Qdrant + Neo4j)
+    - Non-blocking: Errors logged but don't fail main ingestion
+    - Added `_get_chunks_for_item()` to retrieve chunks from Qdrant
+    - Updated metrics tracking (graphiti_items_processed, etc.)
+  - Task 3.3: Selective ingestion logic (built into 3.1)
+    - Tag-based filtering via `filter_tag` config
+    - Phase 1: Only papers with `_graphiti_experiment` tag
+    - Limit to 10-20 papers for prototype testing
+
 ### Current Status
-**🧪 Phase 1-2 Complete** - Client infrastructure ready, pending ingestion pipeline (Phase 3)
+**🧪 Phase 1-3 Complete** - Client and ingestion pipeline ready, pending MCP tool (Phase 4)
 
 ### Architecture Overview
 ```
@@ -68,8 +88,7 @@ Implement Phase 1-2 of Graphiti integration as defined in OpenSpec proposal `add
 ```
 
 ### Next Steps
-- ⏳ Phase 3: Graphiti Ingestion Pipeline (Tasks 3.1-3.3)
-- ⏳ Phase 4: Discovery Query Tool (`zot_discover`)
+- ⏳ Phase 4: Discovery Query Tool (`zot_discover` MCP tool)
 - ⏳ Phase 5: Cross-Validation Tooling
 - ⏳ Phase 6: Testing & Validation (10-20 papers)
 - ⏳ Phase 7: Documentation updates
