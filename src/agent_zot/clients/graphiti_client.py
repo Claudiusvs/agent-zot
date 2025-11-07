@@ -1,20 +1,31 @@
 """
-Graphiti client wrapper for MCP server.
+Graphiti client wrapper using graphiti_core SDK.
 
-Provides a Python interface to the Graphiti MCP tools for autonomous
+Provides a Python interface to the Graphiti SDK for autonomous
 entity extraction and knowledge graph discovery.
 
 This client is used internally by the agent-zot ingestion pipeline
-and search tools. It interacts with the Graphiti MCP server through
-the mcp__ prefixed tools that are exposed to Claude.
+and search tools. It uses the graphiti_core SDK directly instead of
+MCP tool calls, allowing it to work in daemon contexts.
 """
 
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+# Import graphiti_core SDK
+try:
+    from graphiti_core import Graphiti
+    from graphiti_core.nodes import EpisodeType
+    GRAPHITI_AVAILABLE = True
+except ImportError:
+    GRAPHITI_AVAILABLE = False
+    logger.warning(
+        "graphiti-core not installed. Install with: pip install graphiti-core"
+    )
 
 
 @dataclass
@@ -49,88 +60,115 @@ class GraphitiUnavailableError(GraphitiClientError):
 
 class GraphitiClient:
     """
-    Client for interacting with Graphiti MCP server.
+    Client for interacting with Graphiti using graphiti_core SDK.
 
-    Wraps MCP tool calls with error handling, logging, and graceful degradation.
+    Wraps SDK calls with error handling, logging, and graceful degradation.
 
-    Note: This client uses a callable interface for MCP tool invocation to allow
-    dependency injection for testing and to avoid circular imports with server.py.
+    This client connects directly to Neo4j using the graphiti_core SDK,
+    allowing it to work in daemon contexts without MCP dependencies.
     """
 
     def __init__(
         self,
+        neo4j_uri: str = "bolt://localhost:7687",
+        neo4j_user: str = "neo4j",
+        neo4j_password: str = "demodemo",
         group_id: str = "agent-zot-discovery",
-        mcp_timeout_seconds: int = 10,
-        mcp_tool_caller: Optional[Callable] = None,
     ):
         """
-        Initialize Graphiti client.
+        Initialize Graphiti client with direct SDK connection.
 
         Args:
+            neo4j_uri: Neo4j connection URI (bolt://host:port)
+            neo4j_user: Neo4j username
+            neo4j_password: Neo4j password
             group_id: Graphiti group ID for namespace isolation
-            mcp_timeout_seconds: Timeout for MCP calls
-            mcp_tool_caller: Optional callable for MCP tool invocation (tool_name, **kwargs)
-                            If None, will attempt to import from agent_zot.mcp_integration
         """
+        if not GRAPHITI_AVAILABLE:
+            raise GraphitiUnavailableError(
+                "graphiti-core not installed. Install with: pip install graphiti-core"
+            )
+
+        self.neo4j_uri = neo4j_uri
+        self.neo4j_user = neo4j_user
+        self.neo4j_password = neo4j_password
         self.group_id = group_id
-        self.timeout = mcp_timeout_seconds
-        self._mcp_tool_caller = mcp_tool_caller
         self._available: Optional[bool] = None
+        self.graphiti: Optional[Graphiti] = None
 
-    def _call_mcp_tool(self, tool_name: str, **kwargs) -> Any:
+    async def _ensure_initialized(self):
         """
-        Internal method to call MCP tools.
+        Lazy initialization of Graphiti SDK client.
 
-        Args:
-            tool_name: Name of the MCP tool (without mcp__ prefix)
-            **kwargs: Tool parameters
-
-        Returns:
-            Tool result
-
-        Raises:
-            Exception: If tool call fails
+        Creates the Graphiti instance and builds indices/constraints on first use.
+        This allows the client to be created in sync context but used in async.
         """
-        if self._mcp_tool_caller:
-            return self._mcp_tool_caller(tool_name, **kwargs)
+        if self.graphiti is not None:
+            return
 
-        # Default: try to import mcp integration module
         try:
-            from agent_zot.mcp_integration import call_mcp_tool
-            return call_mcp_tool(tool_name, **kwargs)
-        except ImportError:
-            # Fallback: return mock result for testing
-            logger.warning(f"MCP tool caller not configured, returning mock result for {tool_name}")
-            return {"status": "mock"}
+            self.graphiti = Graphiti(
+                uri=self.neo4j_uri,
+                user=self.neo4j_user,
+                password=self.neo4j_password,
+            )
 
-    def is_available(self) -> bool:
+            # Build indices and constraints (idempotent operation)
+            await self.graphiti.build_indices_and_constraints()
+
+            logger.info(
+                f"Graphiti SDK initialized successfully",
+                extra={
+                    "neo4j_uri": self.neo4j_uri,
+                    "group_id": self.group_id,
+                },
+            )
+        except Exception as e:
+            logger.error(f"Failed to initialize Graphiti SDK: {e}")
+            self.graphiti = None
+            raise GraphitiUnavailableError(f"Failed to initialize Graphiti: {e}") from e
+
+    async def close(self):
         """
-        Check if Graphiti MCP server is available.
+        Close the Graphiti SDK connection.
+
+        Should be called when the client is no longer needed to clean up resources.
+        """
+        if self.graphiti is not None:
+            try:
+                await self.graphiti.close()
+                logger.info("Graphiti SDK connection closed")
+            except Exception as e:
+                logger.warning(f"Error closing Graphiti SDK: {e}")
+            finally:
+                self.graphiti = None
+
+    async def is_available(self) -> bool:
+        """
+        Check if Graphiti SDK is available and Neo4j is accessible.
 
         Returns:
-            True if server is responding, False otherwise.
+            True if SDK is initialized and connected, False otherwise.
         """
+        if not GRAPHITI_AVAILABLE:
+            return False
+
         if self._available is not None:
             return self._available
 
         try:
-            # Test connectivity with a simple search
-            result = self._call_mcp_tool(
-                "mcp__graphiti__search_memory_nodes",
-                query="test",
-                group_ids=[self.group_id],
-                max_nodes=1,
-            )
+            # Attempt to initialize the SDK
+            await self._ensure_initialized()
             self._available = True
-            logger.info("Graphiti MCP server is available")
+            logger.info("Graphiti SDK is available and connected")
             return True
 
         except Exception as e:
             self._available = False
-            logger.warning(f"Graphiti MCP server unavailable: {e}")
+            logger.warning(f"Graphiti SDK unavailable: {e}")
             return False
 
-    def add_paper_chunk(
+    async def add_paper_chunk(
         self,
         chunk_text: str,
         paper_key: str,
@@ -138,7 +176,7 @@ class GraphitiClient:
         episode_name: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Add a paper chunk to Graphiti for entity extraction.
+        Add a paper chunk to Graphiti for entity extraction using SDK.
 
         Args:
             chunk_text: Text content of the chunk
@@ -153,12 +191,15 @@ class GraphitiClient:
             GraphitiUnavailableError: If Graphiti is not available
             GraphitiClientError: If ingestion fails
         """
-        if not self.is_available():
-            raise GraphitiUnavailableError("Graphiti MCP server is not available")
+        if not await self.is_available():
+            raise GraphitiUnavailableError("Graphiti SDK is not available")
 
         start_time = time.time()
 
         try:
+            # Ensure SDK is initialized
+            await self._ensure_initialized()
+
             # Generate episode name if not provided
             if not episode_name:
                 episode_name = f"Paper {paper_key}"
@@ -173,14 +214,17 @@ class GraphitiClient:
                 if authors:
                     source_description += f" by {authors}"
 
-            # Call MCP tool to add memory
-            result = self._call_mcp_tool(
-                "mcp__graphiti__add_memory",
+            # Import datetime for reference_time
+            from datetime import datetime, timezone
+
+            # Call SDK to add episode
+            result = await self.graphiti.add_episode(
                 name=episode_name,
                 episode_body=chunk_text,
                 group_id=self.group_id,
-                source="text",
+                source=EpisodeType.text,
                 source_description=source_description,
+                reference_time=datetime.now(timezone.utc),
             )
 
             elapsed = time.time() - start_time
@@ -192,6 +236,9 @@ class GraphitiClient:
                     "chunk_length": len(chunk_text),
                     "elapsed_seconds": elapsed,
                     "group_id": self.group_id,
+                    "episode_uuid": result.episode.uuid if result and result.episode else None,
+                    "entities_extracted": len(result.nodes) if result and result.nodes else 0,
+                    "relationships_extracted": len(result.edges) if result and result.edges else 0,
                 },
             )
 
@@ -199,7 +246,9 @@ class GraphitiClient:
                 "success": True,
                 "paper_key": paper_key,
                 "elapsed_seconds": elapsed,
-                "result": result,
+                "episode_uuid": result.episode.uuid if result and result.episode else None,
+                "entities_count": len(result.nodes) if result and result.nodes else 0,
+                "relationships_count": len(result.edges) if result and result.edges else 0,
             }
 
         except Exception as e:
@@ -209,7 +258,7 @@ class GraphitiClient:
             )
             raise GraphitiClientError(f"Failed to add paper chunk: {e}") from e
 
-    def search_entities(
+    async def search_entities(
         self,
         query: str,
         max_nodes: int = 10,
@@ -217,7 +266,7 @@ class GraphitiClient:
         entity_type: Optional[str] = None,
     ) -> List[EntityNode]:
         """
-        Search for entities in Graphiti.
+        Search for entities in Graphiti using SDK.
 
         Args:
             query: Natural language search query
@@ -232,29 +281,30 @@ class GraphitiClient:
             GraphitiUnavailableError: If Graphiti is not available
             GraphitiClientError: If search fails
         """
-        if not self.is_available():
-            raise GraphitiUnavailableError("Graphiti MCP server is not available")
+        if not await self.is_available():
+            raise GraphitiUnavailableError("Graphiti SDK is not available")
 
         try:
-            result = self._call_mcp_tool(
-                "mcp__graphiti__search_memory_nodes",
+            await self._ensure_initialized()
+
+            # Use SDK search method
+            result = await self.graphiti.search(
                 query=query,
                 group_ids=[self.group_id],
-                max_nodes=max_nodes,
+                num_results=max_nodes,
                 center_node_uuid=center_node_uuid,
-                entity=entity_type or "",
             )
 
             # Parse result into EntityNode objects
             nodes = []
-            if isinstance(result, dict) and "nodes" in result:
-                for node_data in result["nodes"]:
+            if result and hasattr(result, 'nodes'):
+                for node in result.nodes:
                     nodes.append(
                         EntityNode(
-                            name=node_data.get("name", ""),
-                            uuid=node_data.get("uuid", ""),
-                            summary=node_data.get("summary"),
-                            entity_type=node_data.get("entity_type"),
+                            name=node.name if hasattr(node, 'name') else "",
+                            uuid=node.uuid if hasattr(node, 'uuid') else "",
+                            summary=node.summary if hasattr(node, 'summary') else None,
+                            entity_type=None,  # SDK doesn't provide entity_type in search
                         )
                     )
 
@@ -273,14 +323,14 @@ class GraphitiClient:
             logger.error(f"Failed to search entities in Graphiti: {e}")
             raise GraphitiClientError(f"Failed to search entities: {e}") from e
 
-    def search_relationships(
+    async def search_relationships(
         self,
         query: str,
         max_facts: int = 10,
         center_node_uuid: Optional[str] = None,
     ) -> List[RelationshipFact]:
         """
-        Search for relationship facts in Graphiti.
+        Search for relationship facts in Graphiti using SDK.
 
         Args:
             query: Natural language search query
@@ -294,28 +344,30 @@ class GraphitiClient:
             GraphitiUnavailableError: If Graphiti is not available
             GraphitiClientError: If search fails
         """
-        if not self.is_available():
-            raise GraphitiUnavailableError("Graphiti MCP server is not available")
+        if not await self.is_available():
+            raise GraphitiUnavailableError("Graphiti SDK is not available")
 
         try:
-            result = self._call_mcp_tool(
-                "mcp__graphiti__search_memory_facts",
+            await self._ensure_initialized()
+
+            # Use SDK search method - returns edges in result
+            result = await self.graphiti.search(
                 query=query,
                 group_ids=[self.group_id],
-                max_facts=max_facts,
+                num_results=max_facts,
                 center_node_uuid=center_node_uuid,
             )
 
-            # Parse result into RelationshipFact objects
+            # Parse edges into RelationshipFact objects
             facts = []
-            if isinstance(result, dict) and "facts" in result:
-                for fact_data in result["facts"]:
+            if result and hasattr(result, 'edges'):
+                for edge in result.edges:
                     facts.append(
                         RelationshipFact(
-                            uuid=fact_data.get("uuid", ""),
-                            fact=fact_data.get("fact", ""),
-                            valid_at=fact_data.get("valid_at"),
-                            invalid_at=fact_data.get("invalid_at"),
+                            uuid=edge.uuid if hasattr(edge, 'uuid') else "",
+                            fact=edge.fact if hasattr(edge, 'fact') else "",
+                            valid_at=str(edge.valid_at) if hasattr(edge, 'valid_at') and edge.valid_at else None,
+                            invalid_at=str(edge.invalid_at) if hasattr(edge, 'invalid_at') and edge.invalid_at else None,
                         )
                     )
 
@@ -330,9 +382,9 @@ class GraphitiClient:
             logger.error(f"Failed to search relationships in Graphiti: {e}")
             raise GraphitiClientError(f"Failed to search relationships: {e}") from e
 
-    def get_paper_entities(self, paper_key: str) -> List[EntityNode]:
+    async def get_paper_entities(self, paper_key: str) -> List[EntityNode]:
         """
-        Retrieve all entities associated with a specific paper.
+        Retrieve all entities associated with a specific paper using SDK.
 
         Args:
             paper_key: Zotero item key
@@ -344,8 +396,8 @@ class GraphitiClient:
             GraphitiUnavailableError: If Graphiti is not available
             GraphitiClientError: If retrieval fails
         """
-        if not self.is_available():
-            raise GraphitiUnavailableError("Graphiti MCP server is not available")
+        if not await self.is_available():
+            raise GraphitiUnavailableError("Graphiti SDK is not available")
 
         try:
             # Search for entities mentioning the paper key
@@ -353,7 +405,7 @@ class GraphitiClient:
             # paper-to-entity linking (we track via episode names)
             query = f"Paper {paper_key}"
 
-            return self.search_entities(query=query, max_nodes=50)
+            return await self.search_entities(query=query, max_nodes=50)
 
         except Exception as e:
             logger.error(
@@ -364,7 +416,7 @@ class GraphitiClient:
                 f"Failed to get entities for paper {paper_key}: {e}"
             ) from e
 
-    def get_status(self) -> Dict[str, Any]:
+    async def get_status(self) -> Dict[str, Any]:
         """
         Get Graphiti client status.
 
@@ -372,7 +424,8 @@ class GraphitiClient:
             Status dictionary with availability and configuration
         """
         return {
-            "available": self.is_available(),
+            "available": await self.is_available(),
             "group_id": self.group_id,
-            "timeout_seconds": self.timeout,
+            "neo4j_uri": self.neo4j_uri,
+            "sdk_initialized": self.graphiti is not None,
         }
