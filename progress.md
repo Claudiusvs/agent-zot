@@ -1,8 +1,9 @@
 # Project Progress
 
 **Last Updated**: November 8, 2025
-**Project Status**: 🧪 Experimental Phase - Graphiti SDK Integration (v2.3)
+**Project Status**: 🧪 Experimental Phase - Graphiti SDK Migration Complete, Testing Blocked
 **Health Grade**: A+ (99/100)
+**Current Blocker**: Connection refused error during Anthropic SDK operations
 
 ---
 
@@ -122,44 +123,75 @@ Implement Phase 1-2 of Graphiti integration as defined in OpenSpec proposal `add
     - Phase 1: Only papers with `_graphiti_experiment` tag
     - Limit to 10-20 papers for prototype testing
 
-### Current Status
-**⚠️ BLOCKED** - Graphiti ingestion architecture incompatible with daemon context (Phase 3 incomplete)
+### Current Status (November 8, 2025)
+**⚠️ BLOCKED** - Connection refused error during Graphiti SDK operations (Phase 1-3 complete, testing pending)
 
-### November 7 Update: Testing & Architecture Blocker Discovered
+### November 7-8 Update: SDK Migration Complete, Testing Blocked
 
-#### Model Selection Decision
-- ✅ Switched from GPT-4o-mini to Claude Haiku 4.5 for entity extraction
-  - Rationale: Quality over cost (73.3% SWE-bench score vs 60-70% accuracy for GPT-4o-mini)
+#### Phase 1: Model Selection & Architecture Correction
+- ✅ **Switched from GPT-4o-mini to Claude Haiku 4.5** for entity extraction
+  - Rationale: Quality over cost (73.3% SWE-bench score vs 60-70% accuracy)
   - Cost impact: 4x higher ($100 full library vs $25), acceptable for 2.5k library
   - Configuration updated in both `agent-zot` and Graphiti MCP server
 
-#### Testing Attempt & Critical Blocker
+#### Phase 2: Initial Testing & Architecture Blocker Discovery
 - ❌ **Memory exhaustion** during 9-paper test
   - System ran out of RAM → Zotero crashed → 9 connection errors
   - Reduced to 2-paper test with 1 worker thread
 
-- ❌ **Architecture incompatibility discovered**
-  - **Root cause**: Graphiti ingestion designed to run within MCP server context
-  - **Problem**: Orchestrator runs as standalone daemon without access to `mcp__graphiti__` tools
-  - **Error**: `[Errno 61] Connection refused` when trying to call Graphiti client
-  - **Impact**: Phase 3 ingestion pipeline cannot execute in daemon context
+- ❌ **Initial architecture blocker**: MCP tools unavailable in daemon context
+  - **Root cause**: GraphitiClient designed to use MCP tool calls
+  - **Error**: `[Errno 61] Connection refused` when trying to call Graphiti MCP
+  - **Impact**: Phase 3 ingestion pipeline couldn't execute in daemon
 
-#### Technical Details of Blocker
-- `GraphitiClient` requires `mcp_tool_caller` to invoke `mcp__graphiti__add_memory`
-- MCP tools only available within MCP server process (Claude Code/Desktop)
-- Daemon orchestrator runs as separate process → no MCP context
-- Cannot make direct Graphiti MCP calls from daemon
+#### Phase 3: Architecture Correction (Critical User Challenge)
+**User challenged initial conclusion**: "are you absolutely sure? please double check, using context7"
 
-#### Resolution Options
-1. **Disable Graphiti in daemon** (✅ Implemented) - Keep code for future, disable in config
-2. **Use Graphiti Python SDK directly** - Bypass MCP, call SDK (requires refactoring)
-3. **HTTP API wrapper** - Create endpoint for MCP tools (complex, overkill)
-4. **Trigger manually via MCP** - Use `mcp__graphiti__add_memory` directly from Claude
+- ✅ **Research revealed correct architecture** via Context7
+  - Graphiti has native Python SDK (`graphiti_core`)
+  - SDK doesn't require MCP server process
+  - **Correct pattern**: SDK for writes (daemon), MCP for reads (queries)
+
+#### Phase 4: Complete SDK Migration (Parallel Worktrees)
+- ✅ **Migrated GraphitiClient** from MCP to `graphiti_core` SDK
+  - Removed MCP dependencies, added Neo4j connection parameters
+  - Implemented lazy initialization with `_ensure_initialized()`
+  - Converted all methods to async
+  - 147 lines changed (+115/-32)
+
+- ✅ **Implemented metadata linking** (triple-redundancy)
+  - Episode names: `"Paper {paper_key} - Part X/Y"`
+  - Source descriptions: `[item_key={paper_key}]`
+  - Batch metadata augmentation
+  - 637 lines added, 9 passing unit tests
+
+- ✅ **Created comprehensive documentation**
+  - ADR-017: Dual-Schema Neo4j Architecture (188 lines)
+  - GRAPHITI_METADATA_LINKING.md (316 lines)
+  - Updated CLAUDE.md with SDK patterns
+
+- ✅ **Merged all 3 parallel worktrees** to main
+  - Resolved conflicts, integrated changes
+  - Configured AnthropicClient with Haiku 4.5
+  - Installed `graphiti-core[anthropic]` dependency
+
+#### Phase 5: Current Blocker (New Connection Error)
+- ⏳ **Connection refused error persists** (different root cause)
+  - **Error**: `httpx.ConnectError: [Errno 61] Connection refused`
+  - **Context**: During Graphiti SDK initialization or LLM operations
+  - **Status**: Not MCP-related; likely Anthropic API connectivity issue
+  - **Next**: Debug Anthropic SDK configuration and base URL settings
+
+#### Resolution Status
+1. ~~**Disable Graphiti in daemon**~~ - ❌ Abandoned (incorrect approach)
+2. **Use Graphiti Python SDK directly** - ✅ **IMPLEMENTED** (correct approach)
+3. ~~**HTTP API wrapper**~~ - Not needed
+4. ~~**Trigger manually via MCP**~~ - Not needed
 
 #### Current Approach
-- Disabled Graphiti in orchestrator config (`enabled: false`)
-- Code remains in place for future use when daemon runs in MCP context
-- Manual ingestion possible via direct MCP tool calls: `mcp__graphiti__add_memory()`
+- ✅ SDK migration complete and merged to main
+- ⏳ Debugging connection error for Anthropic API calls
+- 📦 All infrastructure ready for testing once connection resolved
 
 ### Architecture Overview
 ```
