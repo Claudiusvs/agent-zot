@@ -1,13 +1,78 @@
 # Project Progress
 
-**Last Updated**: November 8, 2025
-**Project Status**: 🧪 Experimental Phase - Graphiti SDK Migration Complete, Testing Blocked
+**Last Updated**: November 9, 2025
+**Project Status**: ✅ Production-Ready (Graphiti Bulk Ingestion Experiment Archived)
 **Health Grade**: A+ (99/100)
-**Current Blocker**: Connection refused error during Anthropic SDK operations
+**Current Focus**: Maintaining and enhancing existing production capabilities
 
 ---
 
-## Current Sprint: Graphiti SDK Migration (November 7-8, 2025)
+## Experiment Conclusion: Graphiti Bulk Ingestion - Archived (November 9, 2025)
+
+### Decision
+**Discontinued Graphiti SDK bulk ingestion experiment** due to fundamental tool-use case mismatch. All experimental code archived to `experiments/graphiti-bulk-ingestion/`.
+
+### Why Discontinued
+After comprehensive web research (official documentation, GitHub issues, community examples), discovered that Graphiti SDK is designed for:
+- ✅ **Real-time incremental ingestion** (chatbots, voice apps, CRM sync)
+- ❌ **NOT for bulk loading 2,685 static research papers**
+
+From Graphiti official documentation:
+> "Traditional RAG approaches rely on batch processing and static data summarization. **Graphiti provides Real-Time Incremental Updates**: immediate integration of new data episodes without batch recomputation."
+
+### Technical Blockers Encountered
+1. **Hardcoded OpenAI Dependency**: SDK hardcodes `OpenAIRerankerClient()` in graphiti.py:218, preventing fully local model usage
+2. **Rate Limiting by Design**: Default `SEMAPHORE_LIMIT=10` prioritizes avoiding rate limits, not throughput
+3. **Stability Issues**: Community-reported problems with `add_episode_bulk()` (GitHub issues #223, #879, #882, #760, #544)
+4. **API Cost Requirements**: Requires commercial API access (OpenAI or Anthropic) for entity extraction
+
+### What Agent-Zot Already Has (Superior)
+- ✅ Qdrant: 234,153 chunks, BGE-M3 embeddings, semantic search
+- ✅ Neo4j: 25,184 nodes, 134,068 relationships, graph queries
+- ✅ Zotero: 7,390 items, metadata management
+- ✅ 8 unified tools providing comprehensive research capabilities
+- ✅ Production-ready with excellent performance
+
+**Conclusion**: Marginal benefit from autonomous entity extraction did not justify complexity, cost, and stability risks.
+
+### Archive Contents
+```
+experiments/graphiti-bulk-ingestion/
+├── README.md                    (comprehensive archival documentation)
+├── GRAPHITI_DEDUPLICATION.md    (original technical docs)
+├── src/
+│   ├── graphiti_client.py       (SDK wrapper)
+│   ├── graphiti_ingestion.py    (ingestion pipeline)
+│   └── graphiti_cache.py        (episode deduplication)
+├── scripts/
+│   ├── bulk_ingest_graphiti.py  (bulk ingestion script)
+│   └── purge_graphiti_episodes.py (cleanup utility)
+└── tests/
+    └── (test scripts)
+```
+
+### Important Distinction
+**This is NOT PAI's Graphiti MCP Server**: PAI has a separate, **working** Graphiti MCP server for personal memory (group_id: "pai-claudius-main") which remains **untouched and in production**. This archive is ONLY agent-zot's attempt to bulk-ingest research papers.
+
+### Key Lessons Learned
+1. **Research tool design philosophy FIRST**: Could have saved days by checking use cases upfront
+2. **Don't assume tool capabilities**: "Temporal knowledge graph" ≠ "good for historical bulk loading"
+3. **Check for hardcoded dependencies**: Always review source code for unexpected constraints
+4. **Question incremental value**: Does new tool justify complexity?
+5. **Trust existing stack**: Agent-zot already excellent - avoid over-engineering
+
+### Timeline
+- **October 2025**: Initial Graphiti integration attempt
+- **November 2-8, 2025**: Multiple LLM configuration attempts (Ollama, GPT-4o-mini, GPT-5-mini, Claude Haiku 4.5)
+- **November 9, 2025**: Research revealed tool-use case mismatch → **Experiment Archived**
+
+### See Also
+- ADR-018 in `decisions.md` (comprehensive architectural decision record)
+- `experiments/graphiti-bulk-ingestion/README.md` (detailed archival documentation)
+
+---
+
+## Current Sprint: Graphiti SDK Migration (November 7-8, 2025) - ARCHIVED
 
 ### Architecture Correction (Critical Turning Point)
 **November 7, 11:00 PM** - User challenged initial conclusion that Graphiti couldn't work in daemon context. Research using Context7 revealed correct architecture:

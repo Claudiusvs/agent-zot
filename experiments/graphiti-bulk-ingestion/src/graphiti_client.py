@@ -20,6 +20,10 @@ logger = logging.getLogger(__name__)
 try:
     from graphiti_core import Graphiti
     from graphiti_core.nodes import EpisodeType
+    from graphiti_core.llm_client.openai_client import OpenAIClient
+    from openai.types.chat import ChatCompletionMessageParam
+    from pydantic import BaseModel
+    from typing import Any
     GRAPHITI_AVAILABLE = True
 except ImportError:
     GRAPHITI_AVAILABLE = False
@@ -102,28 +106,80 @@ class GraphitiClient:
 
         Creates the Graphiti instance and builds indices/constraints on first use.
         This allows the client to be created in sync context but used in async.
+
+        Requirements:
+        - Anthropic API key in ANTHROPIC_API_KEY environment variable
+        - OpenAI API key in OPENAI_API_KEY environment variable (for embeddings)
+        - sentence-transformers library (auto-installed with graphiti-core)
+
+        Configuration:
+        - LLM: Claude Haiku 4.5 via Anthropic (entity extraction with native structured outputs)
+        - Embedder: text-embedding-3-large via OpenAI (3072 dimensions)
+        - Reranker: BGE-Reranker-v2-m3 via sentence_transformers (local HuggingFace)
+        - Cost: ~$0.006 per paper (Claude Haiku 4.5 + embeddings)
+        - Better rate limits than OpenAI, designed for high-throughput workloads
         """
         if self.graphiti is not None:
             return
 
         try:
             # Import Anthropic client for LLM operations
-            from graphiti_core.llm_client.anthropic_client import AnthropicClient, LLMConfig
+            import os
+            from graphiti_core.llm_client.config import LLMConfig
+            from graphiti_core.llm_client.anthropic_client import AnthropicClient
+            from graphiti_core.embedder.openai import OpenAIEmbedder, OpenAIEmbedderConfig
+            from graphiti_core.cross_encoder.bge_reranker_client import BGERerankerClient
 
-            # Create Anthropic LLM client
-            # API key should be in environment (ANTHROPIC_API_KEY)
+            # Get Anthropic API key from environment
+            anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY")
+            if not anthropic_api_key:
+                raise ValueError(
+                    "ANTHROPIC_API_KEY environment variable not set. "
+                    "Export your API key: export ANTHROPIC_API_KEY='sk-ant-...'"
+                )
+
+            # Get OpenAI API key for embeddings
+            openai_api_key = os.environ.get("OPENAI_API_KEY")
+            if not openai_api_key:
+                raise ValueError(
+                    "OPENAI_API_KEY environment variable not set (needed for embeddings). "
+                    "Export your API key: export OPENAI_API_KEY='sk-...'"
+                )
+
+            # Create Anthropic LLM client for entity extraction using Claude Haiku 4.5
+            # Claude Haiku 4.5 is Anthropic's fastest, most efficient model (Oct 2025 release)
+            # Matches Sonnet 4 performance on coding at 1/3 cost and 2x speed
+            # Pricing: $1/$5 per 1M tokens (input/output)
+            # No reasoning parameter issues - native Anthropic structured outputs
             llm_client = AnthropicClient(
                 config=LLMConfig(
-                    model="claude-haiku-4-5-20241007",  # Full model ID
-                    cache=False  # Disable prompt caching for simplicity
+                    model="claude-haiku-4-5",  # Claude Haiku 4.5 (Oct 2025 release)
+                    api_key=anthropic_api_key
+                ),
+            )
+
+            # Create OpenAI embedder using text-embedding-3-large
+            # OpenAI's latest and most capable embedding model (3072 dimensions)
+            embedder = OpenAIEmbedder(
+                config=OpenAIEmbedderConfig(
+                    embedding_model="text-embedding-3-large",  # Latest OpenAI embedding
+                    embedding_dim=3072,  # text-embedding-3-large dimension
+                    api_key=openai_api_key
                 )
             )
+
+            # Create BGE reranker using local sentence_transformers model
+            # Uses BAAI/bge-reranker-v2-m3 via HuggingFace (downloads automatically)
+            # Completely local and free - no API calls required
+            cross_encoder = BGERerankerClient()
 
             self.graphiti = Graphiti(
                 uri=self.neo4j_uri,
                 user=self.neo4j_user,
                 password=self.neo4j_password,
                 llm_client=llm_client,
+                embedder=embedder,
+                cross_encoder=cross_encoder,
             )
 
             # Build indices and constraints (idempotent operation)
@@ -134,9 +190,22 @@ class GraphitiClient:
                 extra={
                     "neo4j_uri": self.neo4j_uri,
                     "group_id": self.group_id,
+                    "llm": "anthropic/claude-haiku-4-5",
+                    "embedder": "openai/text-embedding-3-large",
+                    "reranker": "local/bge-reranker-v2-m3",
+                    "embedding_dim": 3072,
+                    "endpoints": "https://api.anthropic.com (LLM) + https://api.openai.com/v1 (embeddings)",
                 },
             )
         except Exception as e:
+            error_msg = str(e)
+            if "api" in error_msg.lower() and "key" in error_msg.lower():
+                logger.error(
+                    "Graphiti SDK requires both Anthropic and OpenAI API keys. "
+                    "Set environment variables:\n"
+                    "  export ANTHROPIC_API_KEY='sk-ant-...'\n"
+                    "  export OPENAI_API_KEY='sk-...'"
+                )
             logger.error(f"Failed to initialize Graphiti SDK: {e}", exc_info=True)
             self.graphiti = None
             raise GraphitiUnavailableError(f"Failed to initialize Graphiti: {e}") from e
