@@ -42,6 +42,10 @@ config.json
 # Claude Code and Specify
 .claude/
 .specify/
+.specstory/
+
+# Test files (experimental, not for production)
+test_*.py
 
 # Backup logs and info files
 backup.log
