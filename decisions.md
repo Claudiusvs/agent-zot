@@ -336,6 +336,113 @@ agent-zot update-db --force-rebuild --fulltext
 
 ---
 
+## ADR-018: Graphiti Bulk Ingestion Experiment - Discontinued (November 2025)
+
+**Decision**: Discontinue Graphiti SDK bulk ingestion experiment and archive experimental code
+
+**Context**:
+- October-November 2025: Attempted to integrate Graphiti SDK (v0.22.0) for autonomous entity extraction
+- Goal: Bulk ingest agent-zot's 2,685 research papers using LLM-powered entity extraction
+- Multiple LLM configuration attempts (Ollama, GPT-4o-mini, GPT-5-mini, Claude Haiku 4.5)
+- Encountered hardcoded OpenAI dependency and stability issues
+
+**Research Findings**:
+After comprehensive web research (official docs, GitHub issues, community examples), discovered fundamental tool-use case mismatch:
+
+**Graphiti's Intended Use Cases** (from official documentation):
+- ✅ **Real-time incremental ingestion**: "Graphiti provides Real-Time Incremental Updates: immediate integration of new data episodes without batch recomputation"
+- ✅ AI assistants learning from conversations over time
+- ✅ Agents with evolving state
+- ✅ Voice applications with real-time context
+- ✅ CRM sync (incremental customer data updates)
+
+**NOT Designed For**:
+- ❌ Bulk loading 2,685 static research papers
+- ❌ Batch ETL of large historical datasets
+- ❌ One-time bulk processing of existing corpora
+
+**Technical Issues Encountered**:
+1. **Hardcoded OpenAI Dependency**: SDK hardcodes `OpenAIRerankerClient()` in graphiti.py:218, preventing fully local model usage
+2. **Rate Limiting by Design**: `SEMAPHORE_LIMIT=10` default prioritizes avoiding rate limits, not throughput
+3. **Stability Issues**: Community-reported problems with `add_episode_bulk()` (GitHub issues #223, #879, #882, #760, #544)
+4. **API Cost Requirements**: Requires commercial API access (OpenAI or Anthropic) for entity extraction
+
+**What Agent-Zot Already Has**:
+- ✅ Qdrant: 234,153 chunks, BGE-M3 embeddings, semantic search
+- ✅ Neo4j: 25,184 nodes, 134,068 relationships, graph queries
+- ✅ Zotero: 7,390 items, metadata management
+- ✅ 8 unified tools (zot_search, zot_summarize, zot_explore_graph, etc.)
+- ✅ Production-ready stack with excellent performance
+
+**Decision Rationale**:
+- **Tool-use case mismatch**: Graphiti designed for incremental real-time updates, NOT bulk static dataset loading
+- **Marginal benefit**: Autonomous entity extraction didn't justify complexity, cost, and stability risks
+- **Existing stack excellence**: Agent-zot already provides comprehensive research capabilities
+- **Design philosophy mismatch**: Research documentation upfront would have prevented days of implementation effort
+
+**Implementation**: Archive experimental code to `experiments/graphiti-bulk-ingestion/` to keep main codebase clean
+
+**Archive Contents**:
+```
+experiments/graphiti-bulk-ingestion/
+├── README.md                    (comprehensive documentation)
+├── GRAPHITI_DEDUPLICATION.md    (original technical docs)
+├── src/
+│   ├── graphiti_client.py       (SDK wrapper)
+│   ├── graphiti_ingestion.py    (ingestion pipeline)
+│   └── graphiti_cache.py        (episode deduplication)
+├── scripts/
+│   ├── bulk_ingest_graphiti.py  (bulk ingestion script)
+│   └── purge_graphiti_episodes.py (cleanup utility)
+└── tests/
+    └── (test scripts)
+```
+
+**Important Note - What This Is NOT**:
+- **NOT PAI's Graphiti MCP Server**: PAI has a separate, working Graphiti MCP server for personal memory (group_id: "pai-claudius-main") using MCP tools like `mcp__graphiti__search_memory_nodes`. **That system is untouched and remains in production.**
+- This archive is ONLY agent-zot's attempt to bulk-ingest research papers (separate Graphiti instance, experimental, never reached production)
+
+**Key Lessons Learned**:
+1. **Research tool design philosophy FIRST**: Could have saved days by checking use cases upfront
+2. **Don't assume tool capabilities**: "Temporal knowledge graph" ≠ "good for historical bulk loading"
+3. **Check for hardcoded dependencies**: Always review source code for unexpected constraints
+4. **Question incremental value**: Does new tool justify complexity?
+5. **Trust existing stack**: Agent-zot already excellent - avoid over-engineering
+
+**Timeline**:
+- **October 2025**: Initial Graphiti integration attempt
+- **November 2-8, 2025**: Multiple LLM configuration attempts (Ollama, GPT-4o-mini, GPT-5-mini, Claude Haiku 4.5)
+- **November 9, 2025**: Research revealed tool-use case mismatch → Experiment archived
+
+**Alternatives if Resurrecting**:
+1. **Hybrid Approach**: Use Graphiti only for NEW papers (incremental ingestion aligns with design)
+2. **Custom Integration**: Skip SDK, build custom Neo4j temporal graph with direct Cypher queries
+3. **Different Tool**: Explore alternatives better suited for bulk static dataset loading
+4. **Keep Current Stack** (RECOMMENDED): Agent-zot already excellent - enhance what exists
+
+**Result**:
+- Experimental code archived to `experiments/graphiti-bulk-ingestion/`
+- Main agent-zot codebase remains clean
+- PAI's Graphiti MCP Server untouched (separate system)
+- Agent-zot core stack (Qdrant + Neo4j + Zotero) untouched
+- Focus returns to enhancing existing production capabilities
+
+**Trade-offs**:
+- ✅ Clear decision based on research
+- ✅ Preserved experimental code for future reference
+- ✅ Protected production systems (agent-zot stack, PAI's Graphiti MCP)
+- ✅ Avoided weeks of fighting tool-use case mismatch
+- ⚠️ Lost autonomous entity extraction capability (not critical given existing graph)
+- ⚠️ Time investment (2-3 days) on experiment (but valuable learning)
+
+**References**:
+- Graphiti SDK: https://github.com/getzep/graphiti
+- Official documentation: "Real-Time Incremental Updates" design philosophy
+- Archive README: `experiments/graphiti-bulk-ingestion/README.md`
+- GitHub Issues: #223, #879, #882, #760, #544 (bulk processing stability issues)
+
+---
+
 ## Future Decisions to Document Here
 
 When making new architectural decisions, add them using this template:
