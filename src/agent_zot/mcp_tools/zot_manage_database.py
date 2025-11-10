@@ -646,9 +646,6 @@ def zot_manage_database(
     Returns:
         Results of the database operation
     """
-    # Import here to avoid circular imports
-    from agent_zot.core.server import update_search_database, get_search_database_status
-
     try:
         # ===== INTENT DETECTION =====
         query_lower = query.lower()
@@ -767,35 +764,74 @@ zot_manage_database("show available backups")
         # Other modes will be implemented in subsequent phases
 
         if mode == "status":
-            # Reuse existing status tool
-            return get_search_database_status(ctx=ctx)
+            # Get database status directly
+            from agent_zot.search.semantic import create_semantic_search
 
-        elif mode == "update":
-            # Reuse existing update tool
-            return update_search_database(
-                force_rebuild=False,
-                extract_fulltext=True,
-                limit=None,
-                ctx=ctx
+            ctx.info("Getting semantic search database status...")
+            config_path = Path.home() / ".config" / "agent-zot" / "config.json"
+            search = create_semantic_search(str(config_path))
+            status = search.get_database_status()
+
+            # Format results
+            output = ["# Semantic Search Database Status", ""]
+            collection_info = status.get("collection_info", {})
+            output.append("## Collection Information")
+            output.append(f"**Name:** {collection_info.get('name', 'Unknown')}")
+            output.append(f"**Document Count:** {collection_info.get('count', 0)}")
+            output.append(f"**Embedding Model:** {collection_info.get('embedding_model', 'Unknown')}")
+            output.append(f"**Database Path:** {collection_info.get('persist_directory', 'Unknown')}")
+
+            if collection_info.get('error'):
+                output.append(f"**Error:** {collection_info['error']}")
+
+            output.append("")
+            update_config = status.get("update_config", {})
+            output.append("## Update Configuration")
+            output.append(f"**Auto Update:** {update_config.get('auto_update', False)}")
+            output.append(f"**Frequency:** {update_config.get('update_frequency', 'manual')}")
+            output.append(f"**Last Update:** {update_config.get('last_update', 'Never')}")
+            output.append(f"**Should Update Now:** {status.get('should_update', False)}")
+
+            if update_config.get('update_days'):
+                output.append(f"**Update Interval:** Every {update_config['update_days']} days")
+
+            return "\n".join(output)
+
+        elif mode in ["update", "test", "metadata_only"]:
+            # Direct database update implementation
+            from agent_zot.indexer.unified import UnifiedIndexer
+
+            # Determine parameters based on mode
+            force_rebuild = False
+            extract_fulltext = mode != "metadata_only"
+            update_limit = limit if mode == "test" else None
+
+            ctx.info(f"Running database update: rebuild={force_rebuild}, fulltext={extract_fulltext}, limit={update_limit}")
+
+            # Create indexer instance
+            config_path = Path.home() / ".config" / "agent-zot" / "config.json"
+            indexer = UnifiedIndexer(config_path=str(config_path))
+
+            # Run update
+            result = indexer.update_database(
+                force_rebuild=force_rebuild,
+                extract_fulltext=extract_fulltext,
+                limit=update_limit
             )
 
-        elif mode == "test":
-            # Test mode with limit
-            return update_search_database(
-                force_rebuild=False,
-                extract_fulltext=True,
-                limit=limit,
-                ctx=ctx
-            )
+            # Format result
+            if result.get("success"):
+                stats = result.get("statistics", {})
+                return f"""✅ Database update completed successfully
 
-        elif mode == "metadata_only":
-            # Metadata-only update
-            return update_search_database(
-                force_rebuild=False,
-                extract_fulltext=False,
-                limit=None,
-                ctx=ctx
-            )
+**Papers Processed:** {stats.get('papers_indexed', 0)}
+**Chunks Created:** {stats.get('chunks_created', 0)}
+**Neo4j Entities:** {stats.get('neo4j_entities', 0)}
+**Neo4j Relationships:** {stats.get('neo4j_relationships', 0)}
+**Duration:** {stats.get('duration_seconds', 0):.1f}s
+"""
+            else:
+                return f"❌ Database update failed: {result.get('error', 'Unknown error')}"
 
         elif mode == "rebuild":
             # Auto-backup before destructive rebuild

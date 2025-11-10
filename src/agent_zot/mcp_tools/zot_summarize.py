@@ -91,7 +91,7 @@ def smart_summarize_paper(
     try:
         from agent_zot.search.semantic import create_semantic_search
         from agent_zot.search.unified_summarize import smart_summarize
-        from agent_zot.core.utils import (
+        from agent_zot.clients.zotero import (
             get_zotero_client,
             format_item_metadata,
             get_attachment_details,
