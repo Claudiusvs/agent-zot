@@ -26,68 +26,68 @@
 > **Worktree Pattern:** `extract-{tool-name}`
 
 ### 3.1 Extract zot_search
-- [ ] 3.1.1 Read current zot_search implementation in server.py
-- [ ] 3.1.2 Create `mcp_tools/zot_search.py` with module docstring
-- [ ] 3.1.3 Add required imports (typing, unified_smart_search)
-- [ ] 3.1.4 Copy zot_search function implementation
-- [ ] 3.1.5 Add function docstring with usage examples
-- [ ] 3.1.6 Test: `python -c "from agent_zot.mcp_tools.zot_search import zot_search"`
+- [x] 3.1.1 Read current zot_search implementation in server.py
+- [x] 3.1.2 Create `mcp_tools/zot_search.py` with module docstring
+- [x] 3.1.3 Add required imports (typing, unified_smart_search)
+- [x] 3.1.4 Copy zot_search function implementation
+- [x] 3.1.5 Add function docstring with usage examples
+- [x] 3.1.6 Test: `python -c "from agent_zot.mcp_tools.zot_search import zot_search"`
 
 ### 3.2 Extract zot_summarize
-- [ ] 3.2.1 Read current zot_summarize implementation in server.py
-- [ ] 3.2.2 Create `mcp_tools/zot_summarize.py` with module docstring
-- [ ] 3.2.3 Add required imports
-- [ ] 3.2.4 Copy zot_summarize function implementation
-- [ ] 3.2.5 Add function docstring with usage examples
-- [ ] 3.2.6 Test: `python -c "from agent_zot.mcp_tools.zot_summarize import zot_summarize"`
+- [x] 3.2.1 Read current zot_summarize implementation in server.py
+- [x] 3.2.2 Create `mcp_tools/zot_summarize.py` with module docstring
+- [x] 3.2.3 Add required imports
+- [x] 3.2.4 Copy zot_summarize function implementation
+- [x] 3.2.5 Add function docstring with usage examples
+- [x] 3.2.6 Test: `python -c "from agent_zot.mcp_tools.zot_summarize import zot_summarize"`
 
 ### 3.3 Extract zot_explore_graph
-- [ ] 3.3.1 Read current zot_explore_graph implementation in server.py
-- [ ] 3.3.2 Create `mcp_tools/zot_explore_graph.py` with module docstring
-- [ ] 3.3.3 Add required imports
-- [ ] 3.3.4 Copy zot_explore_graph function implementation
-- [ ] 3.3.5 Add function docstring with usage examples
-- [ ] 3.3.6 Test: `python -c "from agent_zot.mcp_tools.zot_explore_graph import zot_explore_graph"`
+- [x] 3.3.1 Read current zot_explore_graph implementation in server.py
+- [x] 3.3.2 Create `mcp_tools/zot_explore_graph.py` with module docstring
+- [x] 3.3.3 Add required imports
+- [x] 3.3.4 Copy zot_explore_graph function implementation
+- [x] 3.3.5 Add function docstring with usage examples
+- [x] 3.3.6 Test: `python -c "from agent_zot.mcp_tools.zot_explore_graph import zot_explore_graph"`
 
 ### 3.4 Extract zot_manage_collections
-- [ ] 3.4.1 Read current zot_manage_collections implementation in server.py
-- [ ] 3.4.2 Create `mcp_tools/zot_manage_collections.py` with module docstring
-- [ ] 3.4.3 Add required imports
-- [ ] 3.4.4 Copy zot_manage_collections function implementation
-- [ ] 3.4.5 Add function docstring with usage examples
-- [ ] 3.4.6 Test: `python -c "from agent_zot.mcp_tools.zot_manage_collections import zot_manage_collections"`
+- [x] 3.4.1 Read current zot_manage_collections implementation in server.py
+- [x] 3.4.2 Create `mcp_tools/zot_manage_collections.py` with module docstring
+- [x] 3.4.3 Add required imports
+- [x] 3.4.4 Copy zot_manage_collections function implementation
+- [x] 3.4.5 Add function docstring with usage examples
+- [x] 3.4.6 Test: `python -c "from agent_zot.mcp_tools.zot_manage_collections import zot_manage_collections"`
 
 ### 3.5 Extract zot_manage_tags
-- [ ] 3.5.1 Read current zot_manage_tags implementation in server.py
-- [ ] 3.5.2 Create `mcp_tools/zot_manage_tags.py` with module docstring
-- [ ] 3.5.3 Add required imports
-- [ ] 3.5.4 Copy zot_manage_tags function implementation
-- [ ] 3.5.5 Add function docstring with usage examples
-- [ ] 3.5.6 Test: `python -c "from agent_zot.mcp_tools.zot_manage_tags import zot_manage_tags"`
+- [x] 3.5.1 Read current zot_manage_tags implementation in server.py
+- [x] 3.5.2 Create `mcp_tools/zot_manage_tags.py` with module docstring
+- [x] 3.5.3 Add required imports
+- [x] 3.5.4 Copy zot_manage_tags function implementation
+- [x] 3.5.5 Add function docstring with usage examples
+- [x] 3.5.6 Test: `python -c "from agent_zot.mcp_tools.zot_manage_tags import zot_manage_tags"`
 
 ### 3.6 Extract zot_manage_notes
-- [ ] 3.6.1 Read current zot_manage_notes implementation in server.py
-- [ ] 3.6.2 Create `mcp_tools/zot_manage_notes.py` with module docstring
-- [ ] 3.6.3 Add required imports
-- [ ] 3.6.4 Copy zot_manage_notes function implementation
-- [ ] 3.6.5 Add function docstring with usage examples
-- [ ] 3.6.6 Test: `python -c "from agent_zot.mcp_tools.zot_manage_notes import zot_manage_notes"`
+- [x] 3.6.1 Read current zot_manage_notes implementation in server.py
+- [x] 3.6.2 Create `mcp_tools/zot_manage_notes.py` with module docstring
+- [x] 3.6.3 Add required imports
+- [x] 3.6.4 Copy zot_manage_notes function implementation
+- [x] 3.6.5 Add function docstring with usage examples
+- [x] 3.6.6 Test: `python -c "from agent_zot.mcp_tools.zot_manage_notes import zot_manage_notes"`
 
 ### 3.7 Extract zot_export
-- [ ] 3.7.1 Read current zot_export implementation in server.py
-- [ ] 3.7.2 Create `mcp_tools/zot_export.py` with module docstring
-- [ ] 3.7.3 Add required imports
-- [ ] 3.7.4 Copy zot_export function implementation
-- [ ] 3.7.5 Add function docstring with usage examples
-- [ ] 3.7.6 Test: `python -c "from agent_zot.mcp_tools.zot_export import zot_export"`
+- [x] 3.7.1 Read current zot_export implementation in server.py
+- [x] 3.7.2 Create `mcp_tools/zot_export.py` with module docstring
+- [x] 3.7.3 Add required imports
+- [x] 3.7.4 Copy zot_export function implementation
+- [x] 3.7.5 Add function docstring with usage examples
+- [x] 3.7.6 Test: `python -c "from agent_zot.mcp_tools.zot_export import zot_export"`
 
 ### 3.8 Extract zot_manage_database
-- [ ] 3.8.1 Read current zot_manage_database implementation in server.py
-- [ ] 3.8.2 Create `mcp_tools/zot_manage_database.py` with module docstring
-- [ ] 3.8.3 Add required imports
-- [ ] 3.8.4 Copy zot_manage_database function implementation
-- [ ] 3.8.5 Add function docstring with usage examples
-- [ ] 3.8.6 Test: `python -c "from agent_zot.mcp_tools.zot_manage_database import zot_manage_database"`
+- [x] 3.8.1 Read current zot_manage_database implementation in server.py
+- [x] 3.8.2 Create `mcp_tools/zot_manage_database.py` with module docstring
+- [x] 3.8.3 Add required imports
+- [x] 3.8.4 Copy zot_manage_database function implementation
+- [x] 3.8.5 Add function docstring with usage examples
+- [x] 3.8.6 Test: `python -c "from agent_zot.mcp_tools.zot_manage_database import zot_manage_database"`
 
 ## 4. Add MCP Resource Decorators
 
