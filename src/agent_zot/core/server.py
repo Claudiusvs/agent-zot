@@ -364,6 +364,64 @@ Choose tools based on what the query asks for, not hierarchical ordering.
 )
 
 
+# ============================================================================
+# MCP RESOURCES - Code Execution Pattern (Importable Tools)
+# ============================================================================
+
+@mcp.resource("agent-zot://tools/{tool_name}")
+def get_tool_resource(tool_name: str) -> str:
+    """
+    Serve importable tool code from mcp_tools directory.
+
+    Following Anthropic's MCP code execution pattern, this resource handler
+    exposes tool implementations as importable Python modules, enabling:
+    - Direct execution in user's environment (95-98% token reduction)
+    - Data processing before results enter Claude's context
+    - Efficient filtering and transformation
+
+    Args:
+        tool_name: Tool filename (e.g., "zot_search.py")
+
+    Returns:
+        Python source code for the requested tool
+
+    Raises:
+        ValueError: If tool_name is invalid or file not found
+
+    Example URIs:
+        agent-zot://tools/zot_search.py
+        agent-zot://tools/zot_summarize.py
+        agent-zot://tools/zot_explore_graph.py
+    """
+    from pathlib import Path
+
+    # Validate tool name (security: prevent path traversal)
+    if not tool_name.endswith('.py'):
+        raise ValueError(f"Invalid tool name: {tool_name}. Must end with .py")
+
+    if '/' in tool_name or '\\' in tool_name or '..' in tool_name:
+        raise ValueError(f"Invalid tool name: {tool_name}. Path traversal not allowed")
+
+    # Construct path to tool file
+    tool_path = Path(__file__).parent.parent / "mcp_tools" / tool_name
+
+    # Check if file exists
+    if not tool_path.exists():
+        available_tools = [
+            "zot_search.py", "zot_summarize.py", "zot_explore_graph.py",
+            "zot_manage_collections.py", "zot_manage_tags.py",
+            "zot_manage_notes.py", "zot_export.py", "zot_manage_database.py"
+        ]
+        raise ValueError(
+            f"Tool '{tool_name}' not found. Available tools: {', '.join(available_tools)}"
+        )
+
+    # Read and return tool source code
+    try:
+        return tool_path.read_text(encoding='utf-8')
+    except Exception as e:
+        raise ValueError(f"Failed to read tool '{tool_name}': {str(e)}")
+
 
 # ============================================================================
 # QUERY TOOLS - Smart Unified Search (RECOMMENDED DEFAULT)
