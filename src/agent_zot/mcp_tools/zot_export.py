@@ -15,7 +15,7 @@ Part of: MCP tools extraction project
 """
 
 from typing import Optional, List
-from mcp.types import Context
+from fastmcp import Context
 
 
 def zot_export(

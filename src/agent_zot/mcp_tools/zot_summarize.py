@@ -178,3 +178,7 @@ def smart_summarize_paper(
         ctx.error(f"Smart summarize failed: {str(e)}")
         ctx.error(f"Traceback: {traceback.format_exc()}")
         return f"❌ Error: {str(e)}\n\n💡 Suggestion: Try using zot_get_item for metadata or zot_ask_paper for targeted content retrieval."
+
+
+# Alias for code execution pattern (function name matches module name)
+zot_summarize = smart_summarize_paper
