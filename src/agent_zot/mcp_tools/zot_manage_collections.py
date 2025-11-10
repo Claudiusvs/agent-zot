@@ -89,7 +89,7 @@ Usage:
 
 from typing import Optional, List, Dict, Any
 from agent_zot.search.unified_collections import smart_manage_collections
-from agent_zot.core.config import get_zotero_client
+from agent_zot.clients.zotero import get_zotero_client
 
 
 def zot_manage_collections(
