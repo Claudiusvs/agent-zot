@@ -1,16 +1,29 @@
 # Implementation Tasks
 
 ## 1. Preparation
+
+> **Execution:** SEQUENTIAL
+> **Dependencies:** None
+
 - [ ] 1.1 Review current MCP tool implementations in `src/agent_zot/core/server.py`
 - [ ] 1.2 Identify all active tools (zot_search, zot_summarize, zot_explore_graph, zot_manage_*)
 - [ ] 1.3 Document tool import dependencies and required modules
 
 ## 2. Create Tools Directory Structure
+
+> **Execution:** SEQUENTIAL
+> **Dependencies:** Section 1 complete
+
 - [ ] 2.1 Create directory: `src/agent_zot/mcp_tools/`
 - [ ] 2.2 Create `__init__.py` with tool exports
 - [ ] 2.3 Add directory to Python package structure
 
 ## 3. Extract Tool Implementations
+
+> **Execution:** PARALLEL
+> **Groups:** 8 (one per tool)
+> **Dependencies:** Section 2 complete
+> **Worktree Pattern:** `extract-{tool-name}`
 
 ### 3.1 Extract zot_search
 - [ ] 3.1.1 Read current zot_search implementation in server.py
@@ -78,6 +91,9 @@
 
 ## 4. Add MCP Resource Decorators
 
+> **Execution:** SEQUENTIAL
+> **Dependencies:** Section 3 complete
+
 ### 4.1 Add resource for zot_search
 - [ ] 4.1.1 Create resource handler function in server.py
 - [ ] 4.1.2 Add `@mcp.resource("agent-zot://tools/zot_search.py")` decorator
@@ -136,6 +152,9 @@
 
 ## 5. Remove MCP Tool Decorators (Breaking Change)
 
+> **Execution:** SEQUENTIAL
+> **Dependencies:** Section 4 complete
+
 ### 5.1 Remove zot_search tool
 - [ ] 5.1.1 Locate zot_search `@mcp.tool()` decorator in server.py
 - [ ] 5.1.2 Remove `@mcp.tool()` decorator
@@ -192,6 +211,9 @@
 
 ## 6. Create Agent-Zot-Research Skill
 
+> **Execution:** SEQUENTIAL
+> **Dependencies:** Section 5 complete
+
 ### 6.1 Scaffold skill structure
 - [ ] 6.1.1 Create directory: `~/.claude/skills/agent-zot-research/`
 - [ ] 6.1.2 Create `SKILL.md` file with header
@@ -229,6 +251,9 @@
 
 ## 7. Update Documentation
 
+> **Execution:** SEQUENTIAL
+> **Dependencies:** Section 6 complete
+
 ### 7.1 Update README.md
 - [ ] 7.1.1 Add breaking change banner at top of README.md
 - [ ] 7.1.2 Add "⚠️ Breaking Change in v2.2" section
@@ -257,6 +282,9 @@
 - [ ] 7.4.5 Link to comprehensive guide in PAI notes
 
 ## 8. Testing & Validation
+
+> **Execution:** SEQUENTIAL
+> **Dependencies:** Section 7 complete
 
 ### 8.1 Test resource access
 - [ ] 8.1.1 Test zot_search resource returns valid Python code
@@ -299,6 +327,9 @@
 
 ## 9. Quality Assurance
 
+> **Execution:** SEQUENTIAL
+> **Dependencies:** Section 8 complete
+
 ### 9.1 OpenSpec validation
 - [ ] 9.1.1 Run `openspec validate add-mcp-code-execution --strict`
 - [ ] 9.1.2 Resolve any validation errors
@@ -332,6 +363,9 @@
 - [ ] 9.5.5 Add `README.md` in examples/ explaining usage
 
 ## 10. Deployment
+
+> **Execution:** SEQUENTIAL
+> **Dependencies:** Section 9 complete
 
 ### 10.1 Commit and push changes
 - [ ] 10.1.1 Stage all changes: `git add .`

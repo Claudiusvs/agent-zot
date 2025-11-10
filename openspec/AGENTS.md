@@ -51,10 +51,18 @@ Track these steps as TODOs and complete them one by one.
 1. **Read proposal.md** - Understand what's being built
 2. **Read design.md** (if exists) - Review technical decisions
 3. **Read tasks.md** - Get implementation checklist
-4. **Implement tasks sequentially** - Complete in order
-5. **Confirm completion** - Ensure every item in `tasks.md` is finished before updating statuses
-6. **Update checklist** - After all work is done, set every task to `- [x]` so the list reflects reality
-7. **Approval gate** - Do not start implementation until the proposal is reviewed and approved
+4. **Assess execution strategy** - Check for parallelizability metadata in tasks.md
+   - Look for `> **Execution:** PARALLEL` markers in task sections
+   - If found, use git worktrees and subagents for parallel execution
+   - Otherwise, implement tasks sequentially (default)
+5. **Execute tasks** - Complete tasks using chosen strategy
+   - **Sequential:** Work through tasks in order, one at a time
+   - **Parallel:** Create worktrees, spawn subagents, monitor progress, merge results
+6. **Confirm completion** - Ensure every item in `tasks.md` is finished before updating statuses
+7. **Update checklist** - After all work is done, set every task to `- [x]` so the list reflects reality
+8. **Approval gate** - Do not start implementation until the proposal is reviewed and approved
+
+**Note:** For detailed parallel execution guidance (worktree creation, subagent orchestration, merging), refer to the OpenSpec skill's `implement-change.md` workflow.
 
 ### Stage 3: Archiving Changes
 After deployment, create separate PR to:
@@ -197,11 +205,40 @@ If multiple capabilities are affected, create multiple delta files under `change
 
 4. **Create tasks.md:**
 ```markdown
-## 1. Implementation
-- [ ] 1.1 Create database schema
-- [ ] 1.2 Implement API endpoint
-- [ ] 1.3 Add frontend component
-- [ ] 1.4 Write tests
+## 1. Preparation
+
+> **Execution:** SEQUENTIAL
+> **Dependencies:** None
+
+- [ ] 1.1 Review existing code
+- [ ] 1.2 Document dependencies
+
+## 2. Core Implementation
+
+> **Execution:** PARALLEL
+> **Groups:** 3 (one per component)
+> **Dependencies:** Section 1 complete
+> **Worktree Pattern:** `component-{name}`
+
+### 2.1 Database Schema
+- [ ] 2.1.1 Create migration
+- [ ] 2.1.2 Add indexes
+
+### 2.2 API Endpoint
+- [ ] 2.2.1 Implement handler
+- [ ] 2.2.2 Add validation
+
+### 2.3 Frontend Component
+- [ ] 2.3.1 Create UI component
+- [ ] 2.3.2 Add tests
+
+## 3. Testing
+
+> **Execution:** SEQUENTIAL
+> **Dependencies:** Section 2 complete
+
+- [ ] 3.1 Run integration tests
+- [ ] 3.2 Validate with OpenSpec CLI
 ```
 
 5. **Create design.md when needed:**
