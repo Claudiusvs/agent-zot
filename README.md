@@ -19,6 +19,201 @@
 
 ---
 
+> **⚠️ BREAKING CHANGE IN V3.0**
+>
+> **Agent-Zot v3.0 introduces the MCP Code Execution Pattern - a fundamental change in how tools work.**
+>
+> - **v2.1 and earlier**: Tools callable via MCP protocol (context window usage: ~80k+ tokens for 100 papers)
+> - **v3.0+**: Tools exposed as importable Python modules (context window usage: ~2k tokens for 100 papers)
+>
+> **🔄 Rollback available**: `git checkout v2.1-pre-code-execution` if you need the old pattern
+>
+> **📚 Migration Guide**: See [Breaking Change Details](#️-breaking-change-in-v30) below for complete migration instructions
+
+---
+
+## ⚠️ Breaking Change in v3.0
+
+### What Changed?
+
+Agent-Zot v3.0 migrates from **MCP Tools** (callable via protocol) to **MCP Resources** (importable Python code). This follows [Anthropic's MCP Code Execution Pattern](https://modelcontextprotocol.io/docs/concepts/resources) for **95-98% token reduction**.
+
+### Quick Start with Code Execution
+
+**Old way (v2.1 - DEPRECATED):**
+```python
+# ❌ This no longer works in v3.0+
+# Claude would call: zot_search(query="neural networks", limit=10)
+# Result: 100 papers × 800 tokens = 80,000 tokens in context
+```
+
+**New way (v3.0+ - RECOMMENDED):**
+```python
+# ✅ Import and execute directly in your environment
+from agent_zot.mcp_tools.zot_search import zot_search
+
+# Execute with filtering BEFORE results enter context
+results = zot_search(query="neural networks", limit=100)
+filtered = [p for p in results if p.get('year', 0) >= 2020]
+top_5 = filtered[:5]
+
+# Only 5 papers enter context: 5 × 400 tokens = 2,000 tokens
+```
+
+**Why This Matters:**
+- **Token Efficiency**: Filter 100 papers → 5 papers = 96% token reduction
+- **Cost Savings**: Process large datasets without exhausting context window
+- **Performance**: Direct Python execution in your environment
+- **Flexibility**: Full Python data processing capabilities
+
+### Resource Access Pattern
+
+All 8 unified tools are now available as importable Python modules via MCP resources:
+
+**Resource URI Format:** `agent-zot://tools/<tool_name>.py`
+
+| Resource URI | Python Module | Description |
+|--------------|---------------|-------------|
+| `agent-zot://tools/zot_search.py` | `agent_zot.mcp_tools.zot_search` | Smart intent-driven paper search |
+| `agent-zot://tools/zot_summarize.py` | `agent_zot.mcp_tools.zot_summarize` | Multi-mode paper summarization |
+| `agent-zot://tools/zot_explore_graph.py` | `agent_zot.mcp_tools.zot_explore_graph` | Graph exploration and network analysis |
+| `agent-zot://tools/zot_manage_collections.py` | `agent_zot.mcp_tools.zot_manage_collections` | Collection management (6 modes) |
+| `agent-zot://tools/zot_manage_tags.py` | `agent_zot.mcp_tools.zot_manage_tags` | Tag management (4 modes) |
+| `agent-zot://tools/zot_manage_notes.py` | `agent_zot.mcp_tools.zot_manage_notes` | Notes and annotations (4 modes) |
+| `agent-zot://tools/zot_export.py` | `agent_zot.mcp_tools.zot_export` | Export to markdown/bibtex/graphml |
+| `agent-zot://tools/zot_manage_database.py` | `agent_zot.mcp_tools.zot_manage_database` | Database management operations |
+
+**Resource vs Tool Distinction:**
+- **MCP Tools (v2.1)**: Callable functions that return results into Claude's context window
+- **MCP Resources (v3.0)**: Importable code that executes in your environment, allowing data filtering before results enter context
+
+### Token Cost Comparison
+
+**Scenario**: Find papers on "neural networks" published after 2020
+
+| Version | Pattern | Tokens Used | Explanation |
+|---------|---------|-------------|-------------|
+| **v2.1** | Tool call → 100 papers returned | ~80,000 tokens | All 100 papers (800 tokens each) enter Claude's context window |
+| **v3.0** | Import → search → filter → return 5 papers | ~2,000 tokens | Python filters 100 → 5 papers before entering context (400 tokens each) |
+| **Reduction** | - | **96.5% fewer tokens** | 78,000 tokens saved |
+
+**Real-World Examples:**
+
+| Task | v2.1 Tokens | v3.0 Tokens | Reduction |
+|------|-------------|-------------|-----------|
+| Search 100 papers, filter by year | 80,000 | 2,000 | 97.5% |
+| Batch process 50 queries (5,000 total papers) | 4,000,000 | 100,000 | 97.5% |
+| Find top 10 from 500 papers by citation count | 400,000 | 4,000 | 99.0% |
+
+**When Savings Are Most Significant:**
+- 📊 Large result sets (100+ papers) with specific filtering criteria
+- 🔄 Batch processing multiple queries
+- 📈 Complex filtering (by year, author, journal, citation count)
+- 🎯 "Find top N" scenarios requiring sorting entire dataset
+
+### Migration Guide
+
+#### Step 1: Understand the Change
+
+**What broke**: All 8 unified tools (`zot_search`, `zot_summarize`, `zot_explore_graph`, `zot_manage_collections`, `zot_manage_tags`, `zot_manage_notes`, `zot_export`, `zot_manage_database`) are no longer callable via MCP protocol.
+
+**What works**: Same tools available as importable Python modules via MCP resources.
+
+#### Step 2: Update Your Workflows
+
+**Before (v2.1):**
+```python
+# Claude makes MCP tool call
+# Results automatically enter context
+zot_search(query="attention mechanisms", limit=50)
+# → 50 papers × 800 tokens = 40,000 tokens
+```
+
+**After (v3.0):**
+```python
+# Import the tool
+from agent_zot.mcp_tools.zot_search import zot_search
+
+# Execute with filtering
+results = zot_search(query="attention mechanisms", limit=50)
+recent = [p for p in results if p.get('year', 0) >= 2023]
+# → ~10 papers × 400 tokens = 4,000 tokens
+```
+
+#### Step 3: Common Patterns
+
+**Pattern 1: Search + Filter by Date**
+```python
+from agent_zot.mcp_tools.zot_search import zot_search
+
+results = zot_search(query="machine learning", limit=100)
+recent = [p for p in results if p.get('year', 0) >= 2022]
+top_10 = recent[:10]
+```
+
+**Pattern 2: Batch Processing**
+```python
+from agent_zot.mcp_tools.zot_search import zot_search
+
+queries = ["attention", "transformers", "BERT"]
+all_results = []
+
+for q in queries:
+    papers = zot_search(query=q, limit=50)
+    filtered = [p for p in papers if p.get('year', 0) >= 2020]
+    all_results.extend(filtered[:5])  # Top 5 per query
+
+# Only 15 papers (5 × 3 queries) enter context
+```
+
+**Pattern 3: Complex Filtering**
+```python
+from agent_zot.mcp_tools.zot_search import zot_search
+
+results = zot_search(query="climate change", limit=200)
+
+# Multi-criteria filtering
+filtered = [p for p in results
+            if p.get('year', 0) >= 2020
+            and p.get('journal', '').startswith('Nature')
+            and len(p.get('creators', [])) > 3]
+
+top_10 = sorted(filtered, key=lambda x: x.get('citationCount', 0), reverse=True)[:10]
+```
+
+#### Step 4: Rollback (If Needed)
+
+If you need the old MCP tool pattern:
+
+```bash
+cd ~/toolboxes/agent-zot
+git checkout v2.1-pre-code-execution
+pip install -e .
+```
+
+**Note**: v2.1 will not receive future updates. We recommend migrating to v3.0 for token efficiency and ongoing support.
+
+#### Step 5: Get Help
+
+**Detailed guides:**
+- **`~/.claude/skills/agent-zot-research/SKILL.md`**: Complete code execution pattern documentation (1,459 lines)
+  - 51 sections covering all aspects of v3.0
+  - Migration examples with before/after code
+  - Token cost calculations
+  - Troubleshooting guide
+- **`~/toolboxes/PAI/notes/mcp-code-execution-optimization-for-agent-zot.md`**: Comprehensive implementation guide (606 lines)
+  - Approach comparison (skill-guided vs refactor)
+  - Token savings mechanism explanation
+  - Real-world examples
+  - Visual diagrams
+
+**Quick help:**
+- Import errors? Ensure `agent-zot` package is installed: `pip install -e .`
+- Module not found? Check you're importing from `agent_zot.mcp_tools.*`
+- Need MCP tool list? Resources now appear at `agent-zot://tools/*.py`
+
+---
+
 ## 🎯 What is Agent-Zot?
 
 Agent-Zot transforms your Zotero research library into an intelligent, searchable knowledge base. Ask questions in natural language, discover connections between papers, and find exactly what you're looking for—even if you don't remember the exact title.
