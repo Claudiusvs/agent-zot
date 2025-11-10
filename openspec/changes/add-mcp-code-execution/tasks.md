@@ -95,60 +95,60 @@
 > **Dependencies:** Section 3 complete
 
 ### 4.1 Add resource for zot_search
-- [ ] 4.1.1 Create resource handler function in server.py
-- [ ] 4.1.2 Add `@mcp.resource("agent-zot://tools/zot_search.py")` decorator
-- [ ] 4.1.3 Implement file read from `src/agent_zot/mcp_tools/zot_search.py`
-- [ ] 4.1.4 Add error handling for file not found
-- [ ] 4.1.5 Test: Verify resource returns correct file contents
+- [x] 4.1.1 Create resource handler function in server.py
+- [x] 4.1.2 Add `@mcp.resource("agent-zot://tools/zot_search.py")` decorator
+- [x] 4.1.3 Implement file read from `src/agent_zot/mcp_tools/zot_search.py`
+- [x] 4.1.4 Add error handling for file not found
+- [x] 4.1.5 Test: Verify resource returns correct file contents
 
 ### 4.2 Add resource for zot_summarize
-- [ ] 4.2.1 Create resource handler function in server.py
-- [ ] 4.2.2 Add `@mcp.resource("agent-zot://tools/zot_summarize.py")` decorator
-- [ ] 4.2.3 Implement file read from `src/agent_zot/mcp_tools/zot_summarize.py`
-- [ ] 4.2.4 Add error handling for file not found
-- [ ] 4.2.5 Test: Verify resource returns correct file contents
+- [x] 4.2.1 Create resource handler function in server.py
+- [x] 4.2.2 Add `@mcp.resource("agent-zot://tools/zot_summarize.py")` decorator
+- [x] 4.2.3 Implement file read from `src/agent_zot/mcp_tools/zot_summarize.py`
+- [x] 4.2.4 Add error handling for file not found
+- [x] 4.2.5 Test: Verify resource returns correct file contents
 
 ### 4.3 Add resource for zot_explore_graph
-- [ ] 4.3.1 Create resource handler function in server.py
-- [ ] 4.3.2 Add `@mcp.resource("agent-zot://tools/zot_explore_graph.py")` decorator
-- [ ] 4.3.3 Implement file read from `src/agent_zot/mcp_tools/zot_explore_graph.py`
-- [ ] 4.3.4 Add error handling for file not found
-- [ ] 4.3.5 Test: Verify resource returns correct file contents
+- [x] 4.3.1 Create resource handler function in server.py
+- [x] 4.3.2 Add `@mcp.resource("agent-zot://tools/zot_explore_graph.py")` decorator
+- [x] 4.3.3 Implement file read from `src/agent_zot/mcp_tools/zot_explore_graph.py`
+- [x] 4.3.4 Add error handling for file not found
+- [x] 4.3.5 Test: Verify resource returns correct file contents
 
 ### 4.4 Add resource for zot_manage_collections
-- [ ] 4.4.1 Create resource handler function in server.py
-- [ ] 4.4.2 Add `@mcp.resource("agent-zot://tools/zot_manage_collections.py")` decorator
-- [ ] 4.4.3 Implement file read from `src/agent_zot/mcp_tools/zot_manage_collections.py`
-- [ ] 4.4.4 Add error handling for file not found
-- [ ] 4.4.5 Test: Verify resource returns correct file contents
+- [x] 4.4.1 Create resource handler function in server.py
+- [x] 4.4.2 Add `@mcp.resource("agent-zot://tools/zot_manage_collections.py")` decorator
+- [x] 4.4.3 Implement file read from `src/agent_zot/mcp_tools/zot_manage_collections.py`
+- [x] 4.4.4 Add error handling for file not found
+- [x] 4.4.5 Test: Verify resource returns correct file contents
 
 ### 4.5 Add resource for zot_manage_tags
-- [ ] 4.5.1 Create resource handler function in server.py
-- [ ] 4.5.2 Add `@mcp.resource("agent-zot://tools/zot_manage_tags.py")` decorator
-- [ ] 4.5.3 Implement file read from `src/agent_zot/mcp_tools/zot_manage_tags.py`
-- [ ] 4.5.4 Add error handling for file not found
-- [ ] 4.5.5 Test: Verify resource returns correct file contents
+- [x] 4.5.1 Create resource handler function in server.py
+- [x] 4.5.2 Add `@mcp.resource("agent-zot://tools/zot_manage_tags.py")` decorator
+- [x] 4.5.3 Implement file read from `src/agent_zot/mcp_tools/zot_manage_tags.py`
+- [x] 4.5.4 Add error handling for file not found
+- [x] 4.5.5 Test: Verify resource returns correct file contents
 
 ### 4.6 Add resource for zot_manage_notes
-- [ ] 4.6.1 Create resource handler function in server.py
-- [ ] 4.6.2 Add `@mcp.resource("agent-zot://tools/zot_manage_notes.py")` decorator
-- [ ] 4.6.3 Implement file read from `src/agent_zot/mcp_tools/zot_manage_notes.py`
-- [ ] 4.6.4 Add error handling for file not found
-- [ ] 4.6.5 Test: Verify resource returns correct file contents
+- [x] 4.6.1 Create resource handler function in server.py
+- [x] 4.6.2 Add `@mcp.resource("agent-zot://tools/zot_manage_notes.py")` decorator
+- [x] 4.6.3 Implement file read from `src/agent_zot/mcp_tools/zot_manage_notes.py`
+- [x] 4.6.4 Add error handling for file not found
+- [x] 4.6.5 Test: Verify resource returns correct file contents
 
 ### 4.7 Add resource for zot_export
-- [ ] 4.7.1 Create resource handler function in server.py
-- [ ] 4.7.2 Add `@mcp.resource("agent-zot://tools/zot_export.py")` decorator
-- [ ] 4.7.3 Implement file read from `src/agent_zot/mcp_tools/zot_export.py`
-- [ ] 4.7.4 Add error handling for file not found
-- [ ] 4.7.5 Test: Verify resource returns correct file contents
+- [x] 4.7.1 Create resource handler function in server.py
+- [x] 4.7.2 Add `@mcp.resource("agent-zot://tools/zot_export.py")` decorator
+- [x] 4.7.3 Implement file read from `src/agent_zot/mcp_tools/zot_export.py`
+- [x] 4.7.4 Add error handling for file not found
+- [x] 4.7.5 Test: Verify resource returns correct file contents
 
 ### 4.8 Add resource for zot_manage_database
-- [ ] 4.8.1 Create resource handler function in server.py
-- [ ] 4.8.2 Add `@mcp.resource("agent-zot://tools/zot_manage_database.py")` decorator
-- [ ] 4.8.3 Implement file read from `src/agent_zot/mcp_tools/zot_manage_database.py`
-- [ ] 4.8.4 Add error handling for file not found
-- [ ] 4.8.5 Test: Verify resource returns correct file contents
+- [x] 4.8.1 Create resource handler function in server.py
+- [x] 4.8.2 Add `@mcp.resource("agent-zot://tools/zot_manage_database.py")` decorator
+- [x] 4.8.3 Implement file read from `src/agent_zot/mcp_tools/zot_manage_database.py`
+- [x] 4.8.4 Add error handling for file not found
+- [x] 4.8.5 Test: Verify resource returns correct file contents
 
 ## 5. Remove MCP Tool Decorators (Breaking Change)
 
