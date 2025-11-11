@@ -143,16 +143,28 @@ def run_list_mode(
         # Build output
         output = ["# Zotero Tags", ""]
 
-        # Sort by tag name
-        sorted_tags = sorted(tags, key=lambda x: x.get("tag", "").lower())
+        # Sort by tag name (handle both dict and string formats)
+        def get_tag_name(t):
+            """Extract tag name from either dict or string."""
+            if isinstance(t, dict):
+                return t.get("tag", "").lower()
+            return str(t).lower()
+
+        sorted_tags = sorted(tags, key=get_tag_name)
 
         for tag_data in sorted_tags:
-            tag = tag_data.get("tag", "")
-            # Some tags have metadata like numItems
-            if "meta" in tag_data:
-                num_items = tag_data["meta"].get("numItems", "?")
-                output.append(f"- **{tag}** ({num_items} items)")
+            # Handle both dict format (with metadata) and string format
+            if isinstance(tag_data, dict):
+                tag = tag_data.get("tag", "")
+                # Some tags have metadata like numItems
+                if "meta" in tag_data:
+                    num_items = tag_data["meta"].get("numItems", "?")
+                    output.append(f"- **{tag}** ({num_items} items)")
+                else:
+                    output.append(f"- **{tag}**")
             else:
+                # Handle string format (plain tag name)
+                tag = str(tag_data)
                 output.append(f"- **{tag}**")
 
         output.append("")

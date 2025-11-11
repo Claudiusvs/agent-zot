@@ -228,6 +228,145 @@ lexical_config = LexicalGraphConfig()
 
 ---
 
+### Bug #015: Content Similarity Import Error (November 11, 2025)
+
+**Issue**: `zot_explore_graph` Content Similarity mode failing with "No module named 'agent_zot.tools'"
+
+**Error**: `ModuleNotFoundError: No module named 'agent_zot.tools'`
+
+**Root Cause**: Incorrect import path in `src/agent_zot/search/unified_graph.py:623`:
+```python
+# ❌ WRONG - module doesn't exist
+from agent_zot.tools.zotero import get_item_with_fallback
+```
+
+**Fix**: Changed to correct import path (line 623):
+```python
+# ✅ CORRECT - function exists in server module
+from agent_zot.core.server import get_item_with_fallback
+```
+
+**Status**: ✅ Fixed - Content Similarity mode now works correctly
+
+**Verification**: Successfully returned 5 similar papers using vector similarity
+
+---
+
+### Bug #016: Tags List String Attribute Error (November 11, 2025)
+
+**Issue**: `zot_manage_tags` List mode failing with "'str' object has no attribute 'get'"
+
+**Error**: `AttributeError: 'str' object has no attribute 'get'`
+
+**Root Cause**: Code assumed Zotero API always returns list of dicts, but it can return list of strings in `src/agent_zot/search/unified_tags.py:147-150`:
+```python
+# ❌ WRONG - assumes dict format
+sorted_tags = sorted(tags, key=lambda x: x.get("tag", "").lower())
+for tag_data in sorted_tags:
+    tag = tag_data.get("tag", "")  # Crashes if tag_data is string
+```
+
+**Fix**: Added robust type checking to handle both dict and string formats (lines 146-168):
+```python
+# ✅ CORRECT - handles both formats
+def get_tag_name(t):
+    """Extract tag name from either dict or string."""
+    if isinstance(t, dict):
+        return t.get("tag", "").lower()
+    return str(t).lower()
+
+sorted_tags = sorted(tags, key=get_tag_name)
+
+for tag_data in sorted_tags:
+    if isinstance(tag_data, dict):
+        tag = tag_data.get("tag", "")
+        # Handle metadata if present
+    else:
+        # Handle string format
+        tag = str(tag_data)
+```
+
+**Status**: ✅ Fixed - Tags List mode now handles both data formats
+
+**Verification**: Successfully returned 2,791 tags from library
+
+---
+
+### Bug #017: Infinite Recursion in Query Decomposition (November 11, 2025)
+
+**Issue**: MCP tool calls causing complete system hang with 747% CPU usage (7-8 cores maxed)
+
+**Symptoms**:
+- `agent-zot serve` process consuming 747% CPU
+- System completely unresponsive
+- Queries never complete
+- System lag affects entire computer
+
+**Root Cause**: Uncontrolled infinite recursion in `src/agent_zot/search/unified_smart.py`:
+1. `smart_search()` calls `decompose_query()` at line 493
+2. Decomposition creates sub-queries (e.g., "papers about working memory" → ["papers about working memory", "papers", "working memory"])
+3. Each sub-query triggers recursive `smart_search()` call at line 506
+4. **No recursion depth limit exists**
+5. Sub-queries decompose further → exponential recursion → CPU spike → infinite loop
+
+**Fix**: Added recursion depth limiting with MAX_RECURSION_DEPTH = 2 (lines 440-522):
+
+**Change 1** - Added depth parameter to function signature:
+```python
+def smart_search(
+    semantic_search_instance,
+    query: str,
+    limit: int = 10,
+    force_mode: Optional[str] = None,
+    _recursion_depth: int = 0  # NEW PARAMETER
+) -> Dict[str, Any]:
+```
+
+**Change 2** - Added depth check before decomposition:
+```python
+logger.info(f"Starting smart search for: '{query}' (recursion depth: {_recursion_depth})")
+
+# Recursion depth check to prevent infinite recursion
+MAX_RECURSION_DEPTH = 2
+if _recursion_depth >= MAX_RECURSION_DEPTH:
+    logger.warning(f"Max recursion depth ({MAX_RECURSION_DEPTH}) reached, skipping decomposition")
+    sub_queries = [{
+        "query": query,
+        "type": "primary",
+        "importance": 1.0
+    }]
+else:
+    # Phase 0: Query Decomposition (if multi-concept)
+    logger.info("Phase 0: Checking if query should be decomposed")
+    sub_queries = decompose_query(query)
+```
+
+**Change 3** - Pass incremented depth to recursive calls:
+```python
+future = executor.submit(
+    smart_search,  # Recursive call
+    semantic_search_instance,
+    subquery_text,
+    limit * 2,
+    force_mode,
+    _recursion_depth + 1  # INCREMENT DEPTH
+)
+```
+
+**Status**: ✅ Fixed - Permanent recursion limiting prevents infinite loops
+
+**Verification**:
+- All test queries completed in 2-3 seconds
+- CPU usage returned to normal (0-0.81%)
+- No system lag
+- No infinite loops
+
+**Performance Before/After**:
+- Before: 747% CPU, system hang, never completes
+- After: 0% CPU idle, 2-3 second completion, no issues
+
+---
+
 ## ⚠️ Known Limitations
 
 ### Limitation #001: Orphaned Process Cleanup on macOS

@@ -441,7 +441,8 @@ def smart_search(
     semantic_search_instance,
     query: str,
     limit: int = 10,
-    force_mode: Optional[str] = None
+    force_mode: Optional[str] = None,
+    _recursion_depth: int = 0
 ) -> Dict[str, Any]:
     """
     Perform intent-driven smart search with automatic backend selection.
@@ -475,6 +476,7 @@ def smart_search(
         query: Search query string
         limit: Maximum number of results to return
         force_mode: Optional mode override ("fast", "comprehensive")
+        _recursion_depth: Internal parameter to track recursion depth (default: 0)
 
     Returns:
         Dict with search results and metadata
@@ -485,12 +487,21 @@ def smart_search(
     from agent_zot.search.decomposition import decompose_query, merge_decomposed_results
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    logger.info(f"Starting smart search for: '{query}'")
+    logger.info(f"Starting smart search for: '{query}' (recursion depth: {_recursion_depth})")
 
-    # Phase 0: Query Decomposition (if multi-concept)
-    logger.info("Phase 0: Checking if query should be decomposed")
-
-    sub_queries = decompose_query(query)
+    # Recursion depth check to prevent infinite recursion
+    MAX_RECURSION_DEPTH = 2
+    if _recursion_depth >= MAX_RECURSION_DEPTH:
+        logger.warning(f"Max recursion depth ({MAX_RECURSION_DEPTH}) reached, skipping decomposition")
+        sub_queries = [{
+            "query": query,
+            "type": "primary",
+            "importance": 1.0
+        }]
+    else:
+        # Phase 0: Query Decomposition (if multi-concept)
+        logger.info("Phase 0: Checking if query should be decomposed")
+        sub_queries = decompose_query(query)
 
     if len(sub_queries) > 1:
         logger.info(f"Query decomposed into {len(sub_queries)} sub-queries")
@@ -507,7 +518,8 @@ def smart_search(
                     semantic_search_instance,
                     subquery_text,
                     limit * 2,  # Get more results per sub-query for better merging
-                    force_mode
+                    force_mode,
+                    _recursion_depth + 1  # Increment recursion depth
                 )
                 futures[future] = subquery_text
 

@@ -620,7 +620,7 @@ def run_content_similarity_mode(
 
     try:
         # Get the reference paper's abstract
-        from agent_zot.tools.zotero import get_item_with_fallback
+        from agent_zot.core.server import get_item_with_fallback
 
         item = get_item_with_fallback(zotero_client, paper_key)
 
