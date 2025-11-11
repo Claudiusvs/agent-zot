@@ -424,7 +424,7 @@ docker exec agent-zot-neo4j neo4j-admin database load \
 docker start agent-zot-neo4j
 ```
 
-**📖 Full Documentation:** See [BACKUP_AUTOMATION.md](docs/BACKUP_AUTOMATION.md) for:
+**📖 Full Documentation:** See [BACKUP_AUTOMATION.md](docs/operations/BACKUP_AUTOMATION.md) for:
 - Complete restore procedures
 - Scheduled backup setup
 - Troubleshooting guide
@@ -438,8 +438,8 @@ docker start agent-zot-neo4j
 
 - **[Quick Start Guide](docs/guides/quick-start.md)** - Get up and running fast
 - **[Configuration Reference](docs/guides/configuration.md)** - All settings explained
-- **[Backup & Recovery Guide](docs/BACKUP_AUTOMATION.md)** - Local backup system
-- **[iCloud Off-Site Backup](docs/ICLOUD_BACKUP.md)** - Cloud disaster recovery (NEW!)
+- **[Backup & Recovery Guide](docs/operations/BACKUP_AUTOMATION.md)** - Local backup system
+- **[iCloud Off-Site Backup](docs/operations/ICLOUD_BACKUP.md)** - Cloud disaster recovery (NEW!)
 - **[FAQ](docs/guides/faq.md)** - Common questions answered
 
 ### For Developers
