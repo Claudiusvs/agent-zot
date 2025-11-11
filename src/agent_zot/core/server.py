@@ -1221,14 +1221,14 @@ def smart_unified_search(
 # ========== END DISABLED: zot_decompose_query ==========
 
 
-@mcp.tool(
-    name="zot_update_search_database",
-    description="⚠️ DEPRECATED - Use zot_manage_database() instead.\n\n🔧 LOW PRIORITY - ⚪ FALLBACK - Index or re-index the Zotero library for semantic search.\n\n**MIGRATION**: Use the unified database management tool:\n- zot_manage_database('update database') → Replaces this tool\n- zot_manage_database('force rebuild', confirm=True) → With safety backup\n- zot_manage_database('test on 10 papers') → Test mode\n\nThis tool is kept for backward compatibility but will be removed in v3.0.\n\nUse for: Legacy workflows only - prefer zot_manage_database()",
-    annotations={
-        "readOnlyHint": False,
-        "title": "⚠️ DEPRECATED - Update Search Index"
-    }
-)
+# @mcp.tool(
+#     name="zot_update_search_database",
+#     description="⚠️ DEPRECATED - Use zot_manage_database() instead.\n\n🔧 LOW PRIORITY - ⚪ FALLBACK - Index or re-index the Zotero library for semantic search.\n\n**MIGRATION**: Use the unified database management tool:\n- zot_manage_database('update database') → Replaces this tool\n- zot_manage_database('force rebuild', confirm=True) → With safety backup\n- zot_manage_database('test on 10 papers') → Test mode\n\nThis tool is kept for backward compatibility but will be removed in v3.0.\n\nUse for: Legacy workflows only - prefer zot_manage_database()",
+#     annotations={
+#         "readOnlyHint": False,
+#         "title": "⚠️ DEPRECATED - Update Search Index"
+#     }
+# )
 def update_search_database(
     force_rebuild: bool = False,
     extract_fulltext: bool = True,
@@ -1364,15 +1364,15 @@ kill <PID>
         return f"Error updating search database: {str(e)}"
 
 
-@mcp.tool(
-    name="zot_get_search_database_status",
-    description="⚠️ DEPRECATED - Use zot_manage_database() instead.\n\n🔧 LOW PRIORITY - ⚪ FALLBACK - Get status information about the semantic search database.\n\n**MIGRATION**: Use the unified database management tool:\n- zot_manage_database('show status') → Replaces this tool\n- zot_manage_database('show statistics') → Full stats (Qdrant + Neo4j)\n\nThis tool is kept for backward compatibility but will be removed in v3.0.\n\nUse for: Legacy workflows only - prefer zot_manage_database()"
-,
-    annotations={
-        "readOnlyHint": True,
-        "title": "⚠️ DEPRECATED - Database Status"
-    }
-)
+# @mcp.tool(
+#     name="zot_get_search_database_status",
+#     description="⚠️ DEPRECATED - Use zot_manage_database() instead.\n\n🔧 LOW PRIORITY - ⚪ FALLBACK - Get status information about the semantic search database.\n\n**MIGRATION**: Use the unified database management tool:\n- zot_manage_database('show status') → Replaces this tool\n- zot_manage_database('show statistics') → Full stats (Qdrant + Neo4j)\n\nThis tool is kept for backward compatibility but will be removed in v3.0.\n\nUse for: Legacy workflows only - prefer zot_manage_database()"
+# ,
+#     annotations={
+#         "readOnlyHint": True,
+#         "title": "⚠️ DEPRECATED - Database Status"
+#     }
+# )
 def get_search_database_status(*, ctx: Context) -> str:
     """
     Get semantic search database status.
