@@ -42,6 +42,7 @@ config.json
 # Claude Code and Specify
 .claude/
 .specify/
+.specstory/
 
 # Backup logs and info files
 backup.log
