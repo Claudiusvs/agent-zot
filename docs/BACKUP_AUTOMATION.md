@@ -23,12 +23,12 @@ Comprehensive guide to backing up and automating backups for Qdrant and Neo4j da
 ```bash
 cd /Users/claudiusv.schroder/toolboxes/agent-zot
 source agent-zot-env/bin/activate
-python scripts/backup.py backup-all
+python scripts/backup/backup.py backup-all
 ```
 
 **List available backups:**
 ```bash
-python scripts/backup.py list
+python scripts/backup/backup.py list
 ```
 
 ---
@@ -109,7 +109,7 @@ Even with volumes, backups protect against:
 ```bash
 cd /Users/claudiusv.schroder/toolboxes/agent-zot
 source agent-zot-env/bin/activate
-python scripts/backup.py backup-all
+python scripts/backup/backup.py backup-all
 ```
 
 **Output:**
@@ -131,19 +131,19 @@ python scripts/backup.py backup-all
 ### Backup Qdrant Only
 
 ```bash
-python scripts/backup.py backup-qdrant
+python scripts/backup/backup.py backup-qdrant
 ```
 
 ### Backup Neo4j Only
 
 ```bash
-python scripts/backup.py backup-neo4j
+python scripts/backup/backup.py backup-neo4j
 ```
 
 ### List Backups
 
 ```bash
-python scripts/backup.py list
+python scripts/backup/backup.py list
 ```
 
 **Output:**
@@ -322,7 +322,7 @@ observer.start()
 # Manual trigger after bulk import
 cd /Users/claudiusv.schroder/toolboxes/agent-zot
 source agent-zot-env/bin/activate
-python scripts/backup.py backup-all
+python scripts/backup/backup.py backup-all
 ```
 
 **Pros:**
@@ -411,7 +411,7 @@ docker exec agent-zot-neo4j cypher-shell -u neo4j -p demodemo \
 
 **Configure retention:**
 ```bash
-python scripts/backup.py backup-all --keep-last 10  # Keep last 10 backups
+python scripts/backup/backup.py backup-all --keep-last 10  # Keep last 10 backups
 ```
 
 ### 3. Backup Storage
@@ -452,7 +452,7 @@ du -sh backups/*/
 
 ```bash
 # Quick pre-experiment backup
-python scripts/backup.py backup-all
+python scripts/backup/backup.py backup-all
 ```
 
 ---
@@ -480,7 +480,7 @@ docker-compose up -d
 docker exec agent-zot-neo4j neo4j stop
 
 # Create dump
-python scripts/backup.py backup-neo4j
+python scripts/backup/backup.py backup-neo4j
 
 # Restart Neo4j
 docker exec agent-zot-neo4j neo4j start
@@ -520,12 +520,12 @@ docker exec <qdrant-container> cat /qdrant/snapshots/zotero_library_qdrant/<snap
 
 2. **Manual backup after bulk imports:**
    ```bash
-   python scripts/backup.py backup-all
+   python scripts/backup/backup.py backup-all
    ```
 
 3. **Weekly verification:**
    ```bash
-   python scripts/backup.py list
+   python scripts/backup/backup.py list
    ```
 
 4. **Monthly off-site copy:**

@@ -349,12 +349,12 @@ agent-zot backup-all --keep-last 10     # Custom retention
 **Alternative: Python script (legacy):**
 ```bash
 cd /Users/claudiusv.schroder/toolboxes/agent-zot
-.venv/bin/python scripts/backup.py backup-all
+.venv/bin/python scripts/backup/backup.py backup-all
 ```
 
 **List available backups:**
 ```bash
-.venv/bin/python scripts/backup.py list
+.venv/bin/python scripts/backup/backup.py list
 ```
 
 ### What Gets Backed Up
@@ -378,7 +378,7 @@ Enable daily backups at 2 AM:
 ```bash
 crontab -e
 # Add this line for automated backup + iCloud sync:
-0 2 * * * /Users/claudiusv.schroder/toolboxes/agent-zot/scripts/backup-all.sh >> /tmp/agent-zot-backup.log 2>&1
+0 2 * * * /Users/claudiusv.schroder/toolboxes/agent-zot/scripts/backup/backup-all.sh >> /tmp/agent-zot-backup.log 2>&1
 ```
 
 ### How Backups Work

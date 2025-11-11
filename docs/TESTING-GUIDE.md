@@ -6,7 +6,7 @@ Complete guide for testing all agent-zot tools and validating their internal dec
 
 ### 1. Automated Backend Tests
 ```bash
-.venv/bin/python scripts/quick-mcp-tool-test.py
+.venv/bin/python scripts/testing/quick-mcp-tool-test.py
 ```
 
 This validates:
@@ -17,7 +17,7 @@ This validates:
 
 ### 2. Manual MCP Tool Tests
 
-Use the checklist at `scripts/MANUAL-TEST-CHECKLIST.md` to test each tool through Claude Desktop.
+Use the checklist at `scripts/testing/MANUAL-TEST-CHECKLIST.md` to test each tool through Claude Desktop.
 
 ## Testing Strategy
 
@@ -206,7 +206,7 @@ zot_explore_graph(
 **zot_daemon_status** (1 mode):
 - Show daemon running state and statistics
 
-See `scripts/MANUAL-TEST-CHECKLIST.md` for detailed test cases for each.
+See `scripts/testing/MANUAL-TEST-CHECKLIST.md` for detailed test cases for each.
 
 ## Decision Tree Validation
 

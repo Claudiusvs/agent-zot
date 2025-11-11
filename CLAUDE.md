@@ -291,7 +291,7 @@ zot_manage_database("restore from latest backup", confirm=True)
 ```bash
 agent-zot backup-all                 # Complete backup
 agent-zot backup-all --local-only    # Local only
-python scripts/backup.py list        # List backups
+python scripts/backup/backup.py list # List backups
 ```
 
 **Locations**:
