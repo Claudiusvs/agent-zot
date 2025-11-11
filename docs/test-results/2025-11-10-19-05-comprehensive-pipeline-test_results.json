@@ -1,0 +1,47 @@
+{
+  "passed": [
+    {
+      "test": "zot_search - basic query",
+      "details": "Returned 3 papers"
+    },
+    {
+      "test": "zot_summarize - quick mode",
+      "details": "Summarized MV6PRW7Y"
+    },
+    {
+      "test": "zot_summarize - targeted mode",
+      "details": "Targeted summary for MV6PRW7Y"
+    },
+    {
+      "test": "zot_manage_collections - list",
+      "details": "Returned success dict"
+    },
+    {
+      "test": "zot_manage_tags - list",
+      "details": "Returned tags"
+    },
+    {
+      "test": "zot_manage_notes - list",
+      "details": "Returned success dict"
+    },
+    {
+      "test": "zot_manage_database - status",
+      "details": "Returned database status"
+    }
+  ],
+  "failed": [],
+  "skipped": [
+    {
+      "test": "zot_summarize - comprehensive mode",
+      "reason": "Skipped (too slow for automated testing)"
+    },
+    {
+      "test": "zot_explore_graph - influence mode",
+      "reason": "No data: \u274c Error: No seminal papers found\n\n"
+    },
+    {
+      "test": "zot_export",
+      "reason": "Skipped (requires collection key and file I/O)"
+    }
+  ]
+}
