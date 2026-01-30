@@ -486,6 +486,34 @@ if quality["needs_escalation"] and force_mode is None and len(backends) < 3:
 
 ---
 
+### Bug #020: Qdrant Collection Name Not Loading from Config (January 30, 2026)
+
+**Issue**: Search returning 0 results because `create_qdrant_client()` was using wrong collection name.
+
+**Evidence**:
+```
+# Config file has:
+collection_name: "zotero_library_qdrant"  (236,490 points)
+
+# But code was using:
+collection_name: "zotero_library"  (0 points - empty!)
+```
+
+**Root Cause**: `create_qdrant_client(config_path=None)` didn't load default config file, so it used hardcoded default `"zotero_library"` instead of configured `"zotero_library_qdrant"`.
+
+**Fix**: Added automatic default config path loading in `src/agent_zot/clients/qdrant.py:917-919`:
+```python
+# Use default config path if none provided
+if config_path is None:
+    config_path = os.path.expanduser("~/.config/agent-zot/config.json")
+```
+
+**Status**: ✅ Fixed - Search now correctly uses configured collection with 236,490 indexed chunks
+
+**Impact**: This was a **CRITICAL** bug that made ALL semantic searches return 0 results when initialized without explicit config path.
+
+---
+
 ### Bug #019: Author+Year Intent Detection Missing (January 30, 2026)
 
 **Issue**: Citation-style queries like "Anderson 2001" or "Anderson et al. 2021" were detected as semantic intent instead of metadata intent.

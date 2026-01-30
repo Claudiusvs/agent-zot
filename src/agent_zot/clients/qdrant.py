@@ -915,6 +915,10 @@ def create_qdrant_client(config_path: Optional[str] = None) -> QdrantClientWrapp
     }
 
     # Load configuration from file if it exists
+    # Use default config path if none provided
+    if config_path is None:
+        config_path = os.path.expanduser("~/.config/agent-zot/config.json")
+
     if config_path and os.path.exists(config_path):
         try:
             with open(config_path, 'r') as f:
