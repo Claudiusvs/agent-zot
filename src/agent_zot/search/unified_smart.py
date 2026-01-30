@@ -76,6 +76,16 @@ def detect_query_intent(query: str) -> Tuple[str, float]:
     # Metadata intent patterns (medium priority)
     # Name pattern handles: Smith, McDonald, DePrince, O'Brien, van der Waals
     metadata_patterns = [
+        # Citation-style patterns (Author Year format) - HIGH PRIORITY
+        r'^[A-Z][a-z]+\s+\d{4}$',  # "Anderson 2001" (exact match)
+        r'^[A-Z][a-z]+\s+(et\s+al\.?)\s*\d{4}$',  # "Anderson et al. 2001"
+        r'^[A-Z][a-z]+\s+(et\s+al\.?)\s*,?\s*\d{4}$',  # "Anderson et al, 2001"
+        r'^[A-Z][a-z]+\s+&\s+[A-Z][a-z]+\s+\d{4}$',  # "Anderson & Green 2001"
+        r'^[A-Z][a-z]+\s+and\s+[A-Z][a-z]+\s+\d{4}$',  # "Anderson and Green 2001"
+        r'^[A-Z][a-z]+,?\s+[A-Z][a-z]+,?\s+(&|and)\s+[A-Z][a-z]+\s+\d{4}$',  # "Anderson, Green, & Smith 2001"
+        r'^[A-Z][a-z]+\s+\(\d{4}\)$',  # "Anderson (2001)"
+        r'^[A-Z][a-z]+\s+(et\s+al\.?)\s*\(\d{4}\)$',  # "Anderson et al. (2001)"
+        # Existing patterns
         r'\bby\s+[A-Z][a-zA-Z\'\-]+(\s+[A-Z][a-zA-Z\'\-]+)*\b',  # "by [Author Name]"
         r'\b[A-Z][a-zA-Z\'\-]+\'s\s+(work|papers|research|study|studies)\b',  # "[Author]'s work"
         r'\bpublished in\s+\d{4}\b',  # "published in 2023"
@@ -83,6 +93,7 @@ def detect_query_intent(query: str) -> Tuple[str, float]:
         r'\bin\s+\d{4}\b',  # "in 2023"
         r'\bfrom\s+\d{4}\b',  # "from 2020"
         r'\bauthor:\s*[A-Za-z]',  # "author: Smith"
+        r'\byear:\s*\d{4}\b',  # "year: 2021"
     ]
 
     for pattern in metadata_patterns:
@@ -681,7 +692,9 @@ def smart_search(
     logger.info(f"Quality assessment: {quality}")
 
     # Phase 6: Escalation (if needed)
-    if quality["needs_escalation"] and force_mode != "comprehensive" and len(backends) < 3:
+    # BUGFIX: Don't escalate if force_mode is explicitly set (user wants that specific mode)
+    # Only escalate when force_mode is None (automatic mode selection)
+    if quality["needs_escalation"] and force_mode is None and len(backends) < 3:
         logger.info("Phase 6: Result quality inadequate - escalating to Comprehensive Mode")
 
         # Add remaining backends

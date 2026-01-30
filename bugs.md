@@ -1,6 +1,6 @@
 # Bug Reports & Known Issues
 
-**Last Updated**: October 25, 2025
+**Last Updated**: January 30, 2026
 
 This document tracks bug fixes, known limitations, and workarounds for the Agent-Zot project.
 
@@ -455,11 +455,125 @@ agent-zot update-db --force-rebuild
 
 ---
 
+## ✅ Recently Fixed Bugs
+
+### Bug #018: force_mode Escalation Override (January 30, 2026)
+
+**Issue**: When using `force_mode="fast"` or `force_mode="semantic"`, the search would still escalate to Comprehensive Mode if quality was deemed inadequate, ignoring the user's explicit mode request.
+
+**Example**:
+```python
+# Requested: force semantic only
+zot_search(query="dissociation trauma", force_mode="semantic")
+
+# Actual: Escalated to Comprehensive Mode with all backends
+# Mode: Comprehensive Mode (escalated)
+```
+
+**Root Cause**: Escalation logic at line 684 only checked for `force_mode != "comprehensive"`:
+```python
+# ❌ WRONG - escalates even when user explicitly set force_mode
+if quality["needs_escalation"] and force_mode != "comprehensive" and len(backends) < 3:
+```
+
+**Fix**: Changed to only escalate when `force_mode` is None (automatic mode selection) in `src/agent_zot/search/unified_smart.py:684`:
+```python
+# ✅ CORRECT - respect user's explicit mode choice
+if quality["needs_escalation"] and force_mode is None and len(backends) < 3:
+```
+
+**Status**: ✅ Fixed - User's explicit mode choice is now respected
+
+---
+
+### Bug #019: Author+Year Intent Detection Missing (January 30, 2026)
+
+**Issue**: Citation-style queries like "Anderson 2001" or "Anderson et al. 2021" were detected as semantic intent instead of metadata intent.
+
+**Example**:
+```python
+# Query: "Anderson 2001"
+# Detected: semantic (confidence: 0.70)  ← WRONG
+# Should be: metadata (confidence: 0.80)
+```
+
+**Root Cause**: Missing regex patterns for common citation formats in `src/agent_zot/search/unified_smart.py:78-86`
+
+**Fix**: Added 8 new citation-style patterns:
+```python
+metadata_patterns = [
+    # NEW: Citation-style patterns (Author Year format)
+    r'^[A-Z][a-z]+\s+\d{4}$',                          # "Anderson 2001"
+    r'^[A-Z][a-z]+\s+(et\s+al\.?)\s*\d{4}$',           # "Anderson et al. 2001"
+    r'^[A-Z][a-z]+\s+(et\s+al\.?)\s*,?\s*\d{4}$',      # "Anderson et al, 2001"
+    r'^[A-Z][a-z]+\s+&\s+[A-Z][a-z]+\s+\d{4}$',        # "Anderson & Green 2001"
+    r'^[A-Z][a-z]+\s+and\s+[A-Z][a-z]+\s+\d{4}$',      # "Anderson and Green 2001"
+    r'^[A-Z][a-z]+,?\s+[A-Z][a-z]+,?\s+(&|and)\s+[A-Z][a-z]+\s+\d{4}$',  # "Anderson, Green, & Smith 2001"
+    r'^[A-Z][a-z]+\s+\(\d{4}\)$',                      # "Anderson (2001)"
+    r'^[A-Z][a-z]+\s+(et\s+al\.?)\s*\(\d{4}\)$',       # "Anderson et al. (2001)"
+    # ... existing patterns ...
+    r'\byear:\s*\d{4}\b',                              # "year: 2021" (also new)
+]
+```
+
+**Status**: ✅ Fixed - Citation-style queries now correctly trigger metadata-first search
+
+---
+
 ## 🔧 Open Issues
 
-### None
+### Issue #001: Neo4j Citation Graph Not Linked to Papers (January 30, 2026)
 
-All critical issues resolved. System is production-ready.
+**Status**: ⚠️ **Architectural Limitation**
+
+**Observation**: Neo4j has 6,062 CITES relationships, but they're between Person/Journal/Entity nodes, NOT Paper nodes:
+```
+MATCH (p:Paper)-[r:CITES]->() RETURN count(r)  → 0
+MATCH ()-[r:CITES]->(p:Paper) RETURN count(r)  → 0
+```
+
+**Impact**:
+- `zot_explore_graph` "influence" mode returns 0.00 influence scores
+- Citation chain analysis doesn't work
+- Seminal paper detection fails
+
+**Root Cause**: The LLM entity extraction creates CITES relationships between extracted entities (authors, journals) when they're mentioned together in text, but doesn't create Paper→Paper citation links.
+
+**Technical Details**:
+- The extraction prompt at line 194 says "CITES: Connect papers that cite each other (when mentioned)"
+- But in practice, LLM extracts author mentions as CITES relationships
+- No PDF reference parsing to build true citation graph
+
+**Options to Fix** (Future Work):
+1. **Parse reference sections** from PDFs to extract cited works, then match to Zotero library
+2. **Use Semantic Scholar/OpenAlex API** to fetch citation data and create Paper→Paper links
+3. **Use Zotero's "Related" field** if user has populated it
+4. **Post-process extraction** to convert Person CITES to Paper CITES using AUTHORED_BY links
+
+**Workaround**: Use `zot_search` with semantic mode instead of graph mode for discovery
+
+---
+
+### Issue #002: Metadata Search Slow (Zotero API Bottleneck) (January 30, 2026)
+
+**Status**: ⚠️ **External Dependency**
+
+**Observation**: Metadata search via Zotero API takes ~9 seconds vs 0.03 seconds for local SQLite:
+```
+Zotero API: 9.07s for 5 results
+Local SQLite: 0.0321s for 10 results (280x faster)
+```
+
+**Impact**: Metadata-enriched and Comprehensive modes are slow due to Zotero API calls
+
+**Root Cause**: Network latency + Zotero API server-side processing
+
+**Options to Fix** (Future Work):
+1. **Add local SQLite fallback** for metadata search (already used for item lookup)
+2. **Cache metadata search results** with TTL
+3. **Make metadata backend optional** with timeout-based fallback
+
+**Current Workaround**: Use `force_mode="fast"` for time-sensitive searches
 
 ---
 

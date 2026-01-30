@@ -1,6 +1,6 @@
 # Architectural Decisions
 
-**Last Updated**: November 3, 2025
+**Last Updated**: January 30, 2026
 
 This document logs all major architectural decisions made in the Agent-Zot project, including rationale and trade-offs.
 
@@ -1270,3 +1270,154 @@ def smart_search(
 
 ---
 
+
+
+---
+
+## ADR-017: Respect force_mode in Escalation Logic (January 2026)
+
+**Decision**: Disable automatic escalation when user explicitly sets `force_mode`
+
+**Context**:
+- Smart search automatically escalates to Comprehensive Mode when result quality is inadequate
+- Users can set `force_mode="fast"` or other modes to explicitly request a specific search strategy
+- Bug discovered: escalation was overriding user's explicit mode choice
+
+**Previous Behavior** (buggy):
+```python
+# Escalated even when user explicitly requested fast mode
+if quality["needs_escalation"] and force_mode != "comprehensive" and len(backends) < 3:
+```
+
+**New Behavior**:
+```python
+# Only escalate when mode is automatic (force_mode=None)
+if quality["needs_escalation"] and force_mode is None and len(backends) < 3:
+```
+
+**Rationale**:
+- User's explicit choice should be respected (principle of least surprise)
+- `force_mode` implies "I know what I want, don't override me"
+- Automatic escalation is for auto-detected modes only
+- Users needing guaranteed comprehensive results should use `force_mode="comprehensive"`
+
+**Trade-offs**:
+- ✅ User intent respected
+- ✅ Predictable behavior when mode is explicitly set
+- ⚠️ Fast mode may return lower-quality results (but user explicitly chose speed over quality)
+
+**Related**: Bug #018 in bugs.md
+
+---
+
+## ADR-018: Citation-Style Intent Detection Patterns (January 2026)
+
+**Decision**: Add regex patterns to detect citation-style queries (e.g., "Anderson 2001") as metadata intent
+
+**Context**:
+- Academic users frequently search using citation format: "Author Year"
+- These queries were incorrectly detected as semantic intent (0.70 confidence)
+- Should be metadata intent for author/year filtering
+
+**Implementation**:
+Added 8 new high-priority patterns at the start of `metadata_patterns`:
+```python
+metadata_patterns = [
+    # Citation-style patterns (Author Year format) - HIGH PRIORITY
+    r'^[A-Z][a-z]+\s+\d{4}$',           # "Anderson 2001"
+    r'^[A-Z][a-z]+\s+(et\s+al\.?)\s*\d{4}$',  # "Anderson et al. 2001"
+    r'^[A-Z][a-z]+\s+&\s+[A-Z][a-z]+\s+\d{4}$',  # "Anderson & Green 2001"
+    # ... etc
+]
+```
+
+**Rationale**:
+- Citation format is unambiguous metadata signal (author + year)
+- Should trigger metadata-first search to find specific paper
+- Semantic search for "Anderson 2001" would return conceptually-related papers instead
+
+**Trade-offs**:
+- ✅ Better handling of academic search patterns
+- ✅ Faster results for citation lookups (metadata search is direct)
+- ⚠️ Patterns use anchor `^...$` requiring exact match format
+
+**Related**: Bug #019 in bugs.md
+
+---
+
+## ADR-019: Neo4j Citation Graph Architecture Limitation (January 2026)
+
+**Decision**: Document that Paper→Paper CITES relationships require external data source
+
+**Context**:
+- Neo4j has 6,062 CITES relationships but they're between Person/Journal entities
+- Paper nodes have 0 incoming/outgoing CITES relationships
+- Influence mode returns 0.00 scores for all papers
+
+**Root Cause Analysis**:
+- LLM entity extraction (via `RESEARCH_EXTRACTION_PROMPT`) creates CITES when it sees citation mentions in text
+- But it extracts author names as entities, not full paper references
+- Result: "Anderson (2021) cites Smith (2019)" creates Person→Person CITES, not Paper→Paper
+
+**Why This Isn't a Bug**:
+- The extraction prompt says "CITES: Connect papers that cite each other (when mentioned)"
+- But detecting mentioned papers requires reference parsing, not just entity extraction
+- This is a fundamental architecture limitation, not a code bug
+
+**Options for Future Enhancement** (not implemented):
+1. **Reference section parsing**: Extract DOIs/titles from references, match to Zotero library
+2. **External API integration**: Fetch citations from Semantic Scholar/OpenAlex
+3. **Post-processing**: Convert Person CITES + AUTHORED_BY to Paper CITES
+4. **Zotero Related field**: Use user-curated relationships if populated
+
+**Current Workaround**:
+- Use semantic search for discovery (works well)
+- Use external tools (Semantic Scholar, Connected Papers) for citation analysis
+
+**Trade-offs**:
+- ✅ Honest documentation of capabilities
+- ✅ Avoids false promises about citation analysis
+- ⚠️ Users expecting citation network analysis will be disappointed
+- 📋 Clear roadmap for future enhancement
+
+---
+
+## ADR-020: Metadata Search Performance Limitation (January 2026)
+
+**Decision**: Document Zotero API bottleneck; consider local SQLite fallback in future
+
+**Context**:
+- Metadata search via Zotero API: ~9 seconds for 5 results
+- Same query via local SQLite: ~0.03 seconds for 10 results (280x faster)
+- This affects Metadata-enriched and Comprehensive modes
+
+**Analysis**:
+```
+Test: "Anderson" search
+- Zotero API: 9.07s (5 results)
+- Local SQLite: 0.0321s (10 results)
+- Performance ratio: 283x faster locally
+```
+
+**Why Not Fixed Now**:
+- Requires significant refactoring of metadata search path
+- Zotero API provides richer data (tags, collections, full item data)
+- Local SQLite would need full metadata extraction SQL
+- Current performance is acceptable for non-real-time use
+
+**Recommended Future Work**:
+1. Add local SQLite fallback with timeout (e.g., if API >5s, use local)
+2. Cache metadata search results with TTL
+3. Make metadata backend optional in Comprehensive mode
+
+**Workaround**:
+- Use `force_mode="fast"` for time-sensitive searches
+- Use `zot_manage_collections` for browsing (uses local Zotero API, not web API)
+
+**Trade-offs**:
+- ✅ Documents known limitation
+- ✅ Provides workarounds
+- ⚠️ Metadata-enriched mode slower than it could be
+- 📋 Clear path to future optimization
+
+---
