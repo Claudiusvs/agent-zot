@@ -74,17 +74,18 @@ def detect_query_intent(query: str) -> Tuple[str, float]:
             return ("relationship", 0.9)
 
     # Metadata intent patterns (medium priority)
-    # Name pattern handles: Smith, McDonald, DePrince, O'Brien, van der Waals
+    # Name pattern uses [a-zA-Z] to handle: Smith, McDonald, McLaren, DePrince, O'Brien
     metadata_patterns = [
         # Citation-style patterns (Author Year format) - HIGH PRIORITY
-        r'^[A-Z][a-z]+\s+\d{4}$',  # "Anderson 2001" (exact match)
-        r'^[A-Z][a-z]+\s+(et\s+al\.?)\s*\d{4}$',  # "Anderson et al. 2001"
-        r'^[A-Z][a-z]+\s+(et\s+al\.?)\s*,?\s*\d{4}$',  # "Anderson et al, 2001"
-        r'^[A-Z][a-z]+\s+&\s+[A-Z][a-z]+\s+\d{4}$',  # "Anderson & Green 2001"
-        r'^[A-Z][a-z]+\s+and\s+[A-Z][a-z]+\s+\d{4}$',  # "Anderson and Green 2001"
-        r'^[A-Z][a-z]+,?\s+[A-Z][a-z]+,?\s+(&|and)\s+[A-Z][a-z]+\s+\d{4}$',  # "Anderson, Green, & Smith 2001"
-        r'^[A-Z][a-z]+\s+\(\d{4}\)$',  # "Anderson (2001)"
-        r'^[A-Z][a-z]+\s+(et\s+al\.?)\s*\(\d{4}\)$',  # "Anderson et al. (2001)"
+        # Use [a-zA-Z]+ to handle names with internal capitals (McDonald, McLaren, etc.)
+        r'^[A-Z][a-zA-Z]+\s+\d{4}$',  # "Anderson 2001", "McLaren 2012"
+        r'^[A-Z][a-zA-Z]+\s+(et\s+al\.?)\s*\d{4}$',  # "Anderson et al. 2001"
+        r'^[A-Z][a-zA-Z]+\s+(et\s+al\.?)\s*,?\s*\d{4}$',  # "Anderson et al, 2001"
+        r'^[A-Z][a-zA-Z]+\s+&\s+[A-Z][a-zA-Z]+\s+\d{4}$',  # "Anderson & Green 2001"
+        r'^[A-Z][a-zA-Z]+\s+and\s+[A-Z][a-zA-Z]+\s+\d{4}$',  # "Anderson and Green 2001"
+        r'^[A-Z][a-zA-Z]+,?\s+[A-Z][a-zA-Z]+,?\s+(&|and)\s+[A-Z][a-zA-Z]+\s+\d{4}$',  # "Anderson, Green, & Smith 2001"
+        r'^[A-Z][a-zA-Z]+\s+\(\d{4}\)$',  # "Anderson (2001)"
+        r'^[A-Z][a-zA-Z]+\s+(et\s+al\.?)\s*\(\d{4}\)$',  # "Anderson et al. (2001)"
         # Existing patterns
         r'\bby\s+[A-Z][a-zA-Z\'\-]+(\s+[A-Z][a-zA-Z\'\-]+)*\b',  # "by [Author Name]"
         r'\b[A-Z][a-zA-Z\'\-]+\'s\s+(work|papers|research|study|studies)\b',  # "[Author]'s work"
@@ -168,11 +169,13 @@ def get_backend_weights(intent: str) -> Dict[str, float]:
             "metadata": 0.4
         }
     elif intent == "metadata":
-        # Boost metadata search for author/journal queries
+        # Strongly boost metadata search for author/year queries
+        # Citation-style queries (e.g., "Anderson 2001") should prioritize exact metadata matches
+        # Semantic results are de-weighted significantly to prevent irrelevant papers from ranking high
         return {
-            "semantic": 0.7,
-            "graph": 0.3,
-            "metadata": 1.0
+            "semantic": 0.3,  # De-weight semantic heavily for metadata intent
+            "graph": 0.2,
+            "metadata": 1.5   # Boost metadata results above base weight
         }
     else:  # semantic (default)
         # Boost semantic search for content queries
@@ -650,13 +653,23 @@ def smart_search(
     # Phase 4: Merge Results (if multiple backends)
     logger.info("Phase 4: Merging results")
 
+    # Get intent-based backend weights for RRF
+    backend_weights = get_backend_weights(intent)
+    logger.info(f"Using intent-based RRF weights for '{intent}': {backend_weights}")
+
     if len(backends) == 1:
         # Single backend - no merging needed
         final_results = results_by_backend.get(backends[0], [])[:limit]
     else:
-        # Multiple backends - use RRF
-        ranked_lists = [results for results in results_by_backend.values() if results]
-        merged_rankings = reciprocal_rank_fusion(ranked_lists)
+        # Multiple backends - use weighted RRF
+        # Preserve backend order for weight application
+        backend_names = [b for b in results_by_backend.keys() if results_by_backend.get(b)]
+        ranked_lists = [results_by_backend[b] for b in backend_names]
+        merged_rankings = reciprocal_rank_fusion(
+            ranked_lists,
+            backend_weights=backend_weights,
+            backend_names=backend_names
+        )
 
         # Build enriched items cache
         enriched_items_cache = {}
@@ -724,9 +737,14 @@ def smart_search(
             results_by_backend.update(additional_results)
             errors_by_backend.update(additional_errors)
 
-            # Re-merge all results
-            ranked_lists = [results for results in results_by_backend.values() if results]
-            merged_rankings = reciprocal_rank_fusion(ranked_lists)
+            # Re-merge all results with weighted RRF
+            backend_names = [b for b in results_by_backend.keys() if results_by_backend.get(b)]
+            ranked_lists = [results_by_backend[b] for b in backend_names]
+            merged_rankings = reciprocal_rank_fusion(
+                ranked_lists,
+                backend_weights=backend_weights,
+                backend_names=backend_names
+            )
 
             # Rebuild final results
             enriched_items_cache = {}

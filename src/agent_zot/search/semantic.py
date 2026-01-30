@@ -1707,16 +1707,27 @@ class ZoteroSemanticSearch:
                     logger.warning(f"No item_key found in metadata for point_id {point_id}")
                     continue
 
-                # If this is a chunk (item_key ends with _chunk_N), use parent_item_key
+                # If this is a chunk (item_key ends with _chunk_N), resolve to parent paper
                 if "_chunk_" in item_key:
-                    parent_key = metadatas[i].get("parent_item_key", "")
-                    if parent_key:
-                        logger.debug(f"Resolved chunk {item_key} to parent {parent_key}")
-                        zotero_key = parent_key
+                    # Extract attachment key from chunk ID
+                    attachment_key = item_key.split("_chunk_")[0]
+
+                    # CRITICAL FIX: Always resolve to actual parent paper key using database lookup
+                    # Don't trust stored parent_item_key as it may be stale/wrong (pre-fix data)
+                    resolved_parent = self._resolve_to_parent_key(attachment_key)
+                    if resolved_parent and resolved_parent != attachment_key:
+                        logger.debug(f"Resolved chunk {item_key} -> attachment {attachment_key} -> parent {resolved_parent}")
+                        zotero_key = resolved_parent
                     else:
-                        # Fallback: strip chunk suffix manually
-                        zotero_key = item_key.split("_chunk_")[0]
-                        logger.debug(f"No parent_item_key, stripping suffix: {item_key} -> {zotero_key}")
+                        # Fallback to stored parent_item_key if database lookup fails
+                        stored_parent = metadatas[i].get("parent_item_key", "")
+                        if stored_parent and stored_parent != attachment_key:
+                            logger.debug(f"Using stored parent_item_key: {stored_parent}")
+                            zotero_key = stored_parent
+                        else:
+                            # Last resort: use attachment key (will return attachment metadata)
+                            logger.warning(f"Could not resolve parent for {item_key}, using attachment key")
+                            zotero_key = attachment_key
                 else:
                     zotero_key = item_key
 

@@ -514,6 +514,97 @@ if config_path is None:
 
 ---
 
+### Bug #021: Attachment→Parent Linkage Broken (January 30, 2026)
+
+**Issue**: Semantic search returns PDF attachment metadata instead of parent paper metadata, resulting in missing authors, abstracts, and DOIs.
+
+**Evidence**:
+```python
+# Search returns attachment (PDF file):
+Item Key: NVLYYB7P
+Type: attachment
+Authors: No authors listed  ← Missing!
+
+# But parent journalArticle has full metadata:
+Item Key: UESRZPID
+Type: journalArticle
+Authors: Anderson, Michael C.; Green, Collin
+Journal: Nature, Volume 410...
+Abstract: [full abstract]
+```
+
+**Root Cause**: Qdrant stores chunks with the attachment key (PDF), but the metadata enrichment wasn't resolving to the parent paper key via `parentItem` field in Zotero.
+
+**Fix**: Modified `src/agent_zot/search/semantic.py:1710-1731` to always resolve parent key at query time:
+```python
+# CRITICAL FIX: Always resolve to actual parent paper key using database lookup
+# Don't trust stored parent_item_key as it may be stale/wrong (pre-fix data)
+resolved_parent = self._resolve_to_parent_key(attachment_key)
+if resolved_parent and resolved_parent != attachment_key:
+    zotero_key = resolved_parent
+```
+
+**Status**: ✅ Fixed - Search results now return parent paper metadata (journalArticle) with full author/title/abstract info
+
+---
+
+### Bug #022: RRF Ranking Weights Not Applied (January 30, 2026)
+
+**Issue**: The `get_backend_weights()` function defined intent-based weights, but `reciprocal_rank_fusion()` ignored them completely.
+
+**Evidence**:
+```python
+# Query: "Dalenberg 2012"
+# Intent: metadata (confidence: 0.80)
+
+# BEFORE FIX - Semantic result ranked higher:
+#1: Gravetter (statistics textbook) - 0.0304 ← WRONG
+#2: Dalenberg (correct paper) - 0.0164
+
+# AFTER FIX - Metadata match ranked higher:
+#1: Dalenberg - 0.0246 ✅ CORRECT
+#2: Dalenberg - 0.0242 ✅ CORRECT
+```
+
+**Root Cause**: `reciprocal_rank_fusion()` in `src/agent_zot/search/unified.py` didn't accept or apply weight parameters.
+
+**Fix**:
+1. Modified `reciprocal_rank_fusion()` to accept `backend_weights` and `backend_names` parameters (lines 15-48)
+2. Modified callers in `unified_smart.py` to pass weights from `get_backend_weights(intent)` (lines 653-665, 737-745)
+3. Strengthened metadata-intent weights to 1.5 for metadata, 0.3 for semantic (line 170-177)
+
+**Status**: ✅ Fixed - Author-year queries now correctly rank exact metadata matches above semantic near-matches
+
+---
+
+### Bug #023: Mixed-Case Author Names Not Matching (January 30, 2026)
+
+**Issue**: Citation-style patterns like `^[A-Z][a-z]+\s+\d{4}$` failed to match names with internal capitals (McLaren, McDonald, DePrince).
+
+**Evidence**:
+```python
+# Query: "McLaren 2012"
+# Pattern: ^[A-Z][a-z]+\s+\d{4}$
+# NOT MATCHED (the 'L' in McLaren is uppercase)
+
+# Result: Detected as "semantic" intent, not "metadata"
+```
+
+**Root Cause**: Regex used `[a-z]+` which only matches lowercase letters after the initial capital.
+
+**Fix**: Changed all citation patterns in `src/agent_zot/search/unified_smart.py:80-88` from `[a-z]+` to `[a-zA-Z]+`:
+```python
+# OLD:
+r'^[A-Z][a-z]+\s+\d{4}$'  # Only matches "Anderson 2001"
+
+# NEW:
+r'^[A-Z][a-zA-Z]+\s+\d{4}$'  # Matches "Anderson 2001", "McLaren 2012", "McDonald 2018"
+```
+
+**Status**: ✅ Fixed - All author name styles now correctly detected as metadata intent
+
+---
+
 ### Bug #019: Author+Year Intent Detection Missing (January 30, 2026)
 
 **Issue**: Citation-style queries like "Anderson 2001" or "Anderson et al. 2021" were detected as semantic intent instead of metadata intent.

@@ -14,18 +14,25 @@ logger = logging.getLogger(__name__)
 
 def reciprocal_rank_fusion(
     ranked_lists: List[List[Dict[str, Any]]],
-    k: int = 60
+    k: int = 60,
+    backend_weights: Dict[str, float] = None,
+    backend_names: List[str] = None
 ) -> List[Tuple[str, float]]:
     """
     Merge multiple ranked lists using Reciprocal Rank Fusion algorithm.
 
-    The RRF formula is: RRF_score(item) = Σ 1/(k + rank_i)
-    where rank_i is the rank of the item in list i.
+    The RRF formula is: RRF_score(item) = Σ weight_i * 1/(k + rank_i)
+    where rank_i is the rank of the item in list i and weight_i is the
+    backend-specific weight (defaults to 1.0 for all backends).
 
     Args:
         ranked_lists: List of result lists from different search methods.
                      Each list contains dicts with at least an 'item_key' field.
         k: Constant for RRF formula (default: 60, as per original paper)
+        backend_weights: Optional dict mapping backend names to weights (e.g., {"semantic": 0.7, "metadata": 1.0})
+                        If None, all backends weighted equally at 1.0
+        backend_names: List of backend names corresponding to ranked_lists order.
+                      Required if backend_weights is provided.
 
     Returns:
         List of (item_key, rrf_score) tuples sorted by RRF score (descending)
@@ -36,12 +43,19 @@ def reciprocal_rank_fusion(
     """
     rrf_scores = {}
 
-    for results in ranked_lists:
+    for idx, results in enumerate(ranked_lists):
+        # Get weight for this backend (default 1.0 if no weights provided)
+        weight = 1.0
+        if backend_weights and backend_names and idx < len(backend_names):
+            backend_name = backend_names[idx]
+            weight = backend_weights.get(backend_name, 1.0)
+            logger.debug(f"RRF weight for {backend_name}: {weight}")
+
         for rank, item in enumerate(results, start=1):
             item_key = item.get("item_key")
             if item_key:
-                # Add this item's contribution to the RRF score
-                rrf_scores[item_key] = rrf_scores.get(item_key, 0) + 1 / (k + rank)
+                # Add this item's contribution to the RRF score (weighted)
+                rrf_scores[item_key] = rrf_scores.get(item_key, 0) + weight * (1 / (k + rank))
 
     # Sort by RRF score descending
     sorted_items = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)
