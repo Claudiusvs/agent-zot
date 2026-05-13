@@ -80,6 +80,117 @@ class OllamaLLM(LLMInterface):
         return self.invoke(input)
 
 
+class GeminiLLM(LLMInterface):
+    """
+    Gemini LLM implementation compatible with neo4j-graphrag.
+
+    Wraps google-genai's generate_content API to conform to neo4j_graphrag's
+    LLMInterface. Used for entity/relationship extraction during paper
+    ingestion when config selects `llm_model: "gemini/<model-id>"`.
+
+    Phase 2 of the Gemini RAG migration —
+    see ~/toolboxes/PAI-stack/PAI-OS/runtime/ops/gemini-rag-migration-plan.md.
+    """
+
+    def __init__(
+        self,
+        model_name: str = "gemini-2.5-flash",
+        api_key: Optional[str] = None,
+        max_retries: int = 3,
+        max_output_tokens: int = 32768,
+    ):
+        super().__init__(model_name=model_name)
+        try:
+            import google.genai as genai
+        except ImportError:
+            raise ImportError(
+                "google-genai is required for GeminiLLM. "
+                "Install with: pip install google-genai"
+            )
+        resolved_key = api_key or os.getenv("GOOGLE_API_KEY")
+        if not resolved_key:
+            raise ValueError(
+                "GeminiLLM requires an API key. Pass api_key= or set GOOGLE_API_KEY."
+            )
+        self._genai = genai
+        self.client = genai.Client(api_key=resolved_key)
+        self.max_retries = max_retries
+        self.max_output_tokens = max_output_tokens
+        logger.info(f"GeminiLLM initialised — model={model_name}")
+
+    def _generate(self, prompt: str, system_instruction: Optional[str] = None) -> str:
+        """One-shot generate with retry-on-transient. Returns raw text content."""
+        import time as _time
+
+        last_err: Optional[Exception] = None
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                from google.genai import types as genai_types
+
+                config = genai_types.GenerateContentConfig(
+                    max_output_tokens=self.max_output_tokens,
+                )
+                if system_instruction:
+                    config.system_instruction = system_instruction
+                response = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt,
+                    config=config,
+                )
+                # Gemini occasionally returns None .text — fall back to candidates
+                text = getattr(response, "text", None)
+                if not text and response.candidates:
+                    cand = response.candidates[0]
+                    if cand.content and cand.content.parts:
+                        text = "".join(
+                            getattr(p, "text", "") or "" for p in cand.content.parts
+                        )
+                return text or ""
+            except Exception as e:
+                last_err = e
+                msg = str(e)
+                transient = (
+                    "503" in msg
+                    or "429" in msg
+                    or "UNAVAILABLE" in msg
+                    or "RESOURCE_EXHAUSTED" in msg
+                    or "DEADLINE_EXCEEDED" in msg
+                )
+                if attempt < self.max_retries and transient:
+                    backoff = 2 ** attempt
+                    logger.warning(
+                        f"GeminiLLM transient error attempt {attempt}: {type(e).__name__} — retrying in {backoff}s"
+                    )
+                    _time.sleep(backoff)
+                    continue
+                break
+        assert last_err is not None
+        raise last_err
+
+    def invoke(
+        self,
+        input: str,
+        message_history: Optional[Any] = None,
+        system_instruction: Optional[str] = None,
+    ) -> Any:
+        text = self._generate(input, system_instruction=system_instruction)
+
+        class _GeminiResponse:
+            def __init__(self, content: str):
+                self.content = content
+
+        return _GeminiResponse(text)
+
+    async def ainvoke(
+        self,
+        input: str,
+        message_history: Optional[Any] = None,
+        system_instruction: Optional[str] = None,
+    ) -> Any:
+        # google-genai's sync client is fine for our throughput; defer to invoke()
+        return self.invoke(input, message_history, system_instruction)
+
+
 # Define explicit schema for research papers
 RESEARCH_PAPER_SCHEMA = [
     # Entity type definitions
@@ -265,8 +376,38 @@ class Neo4jGraphRAGClient:
             auth=(neo4j_user, neo4j_password)
         )
 
-        # Initialize LLM for entity extraction (OpenAI or Ollama)
-        if llm_model.startswith("ollama/"):
+        # Initialize LLM for entity extraction
+        # Provider routing (Phase 2 of Gemini RAG migration):
+        #   1. `gemini/<model>` prefix or AGENT_ZOT_USE_GEMINI=1 → Gemini LLM + Gemini embeddings
+        #   2. `ollama/<model>` prefix → local Ollama LLM + (OpenAI if key OR local bge-m3)
+        #   3. otherwise → OpenAI LLM + OpenAI embeddings
+        google_api_key = os.getenv("GOOGLE_API_KEY")
+        use_gemini = (
+            llm_model.startswith("gemini/")
+            or os.getenv("AGENT_ZOT_USE_GEMINI") == "1"
+        )
+
+        if use_gemini:
+            if not google_api_key:
+                raise ValueError(
+                    "Gemini provider selected but GOOGLE_API_KEY is not set. "
+                    "Add it to ~/.config/gotham/.env or export it."
+                )
+            gemini_model = (
+                llm_model.replace("gemini/", "") if llm_model.startswith("gemini/") else "gemini-2.5-flash"
+            )
+            self.llm = GeminiLLM(model_name=gemini_model, api_key=google_api_key)
+            logger.info(f"Using Gemini LLM: {gemini_model}")
+
+            from agent_zot.clients.gemini_embeddings import GeminiEmbeddings
+            self.embeddings = GeminiEmbeddings(
+                model="gemini-embedding-2",
+                api_key=google_api_key,
+                output_dimensionality=3072,
+            )
+            logger.info("Using Gemini embeddings for Neo4j GraphRAG (gemini-embedding-2, 3072-dim)")
+
+        elif llm_model.startswith("ollama/"):
             # Use Ollama for free local extraction
             ollama_model = llm_model.replace("ollama/", "")
             self.llm = OllamaLLM(model_name=ollama_model, base_url=ollama_base_url)

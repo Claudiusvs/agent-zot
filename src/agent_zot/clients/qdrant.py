@@ -40,11 +40,32 @@ from qdrant_client.models import (
 logger = logging.getLogger(__name__)
 
 
-class BM25SparseEmbedding:
-    """BM25-based sparse embeddings for hybrid search with multilingual support."""
+BM25_CACHE_DIR = os.path.expanduser("~/.cache/agent-zot")
+BM25_CACHE_PATH = os.path.join(BM25_CACHE_DIR, "bm25-vectorizer.pkl")
 
-    def __init__(self):
-        """Initialize BM25 encoder with multilingual stop words."""
+
+class BM25SparseEmbedding:
+    """BM25-based sparse embeddings for hybrid search with multilingual support.
+
+    Phase 2 of Gemini RAG migration: the fitted TfidfVectorizer is now
+    pickled to ~/.cache/agent-zot/bm25-vectorizer.pkl after each successful
+    fit, and auto-loaded on instantiation if the cache exists. This makes
+    hybrid retrieval durable across agent-zot process restarts — previously
+    the fitted vocabulary lived only in memory, so a restart would silently
+    break sparse-query encoding against the stored sparse vectors in Qdrant.
+
+    The cache stores the vectorizer's full state (vocabulary + IDF weights +
+    config). Cache is invalidated by deleting the .pkl file; the next fit()
+    call will write a fresh one.
+    """
+
+    def __init__(self, cache_path: Optional[str] = None, auto_load: bool = True):
+        """Initialize BM25 encoder with multilingual stop words.
+
+        Args:
+            cache_path: Where to pickle the fitted vectorizer (default ~/.cache/agent-zot/bm25-vectorizer.pkl)
+            auto_load: If True, try to load a cached vectorizer on init (default True)
+        """
         try:
             from sklearn.feature_extraction.text import TfidfVectorizer, ENGLISH_STOP_WORDS
             import numpy as np
@@ -79,14 +100,47 @@ class BM25SparseEmbedding:
             )
             self.np = np
             self.fitted = False
+            self.cache_path = cache_path or BM25_CACHE_PATH
+
+            # Attempt to load a cached fitted vectorizer (Phase 2 robustness fix)
+            if auto_load and os.path.exists(self.cache_path):
+                try:
+                    import pickle
+                    with open(self.cache_path, "rb") as f:
+                        cached = pickle.load(f)
+                    # Sanity-check: cached must be a fitted TfidfVectorizer
+                    if hasattr(cached, "vocabulary_") and cached.vocabulary_:
+                        self.vectorizer = cached
+                        self.fitted = True
+                        logger.info(
+                            f"BM25SparseEmbedding loaded fitted vectorizer from cache "
+                            f"(vocab size: {len(self.vectorizer.vocabulary_)}, path: {self.cache_path})"
+                        )
+                    else:
+                        logger.warning(f"BM25 cache at {self.cache_path} did not contain a fitted vectorizer; ignoring")
+                except Exception as e:
+                    logger.warning(f"Failed to load BM25 cache at {self.cache_path}: {e}; will refit on next ingest")
         except ImportError:
             raise ImportError("scikit-learn is required for BM25 sparse embeddings")
 
+    def _persist_cache(self) -> None:
+        """Pickle the fitted vectorizer to disk so future processes can resume."""
+        try:
+            import pickle
+            os.makedirs(os.path.dirname(self.cache_path), exist_ok=True)
+            with open(self.cache_path, "wb") as f:
+                pickle.dump(self.vectorizer, f)
+            vocab_size = len(getattr(self.vectorizer, "vocabulary_", {})) if self.fitted else 0
+            logger.info(f"BM25SparseEmbedding persisted vectorizer to {self.cache_path} (vocab: {vocab_size})")
+        except Exception as e:
+            logger.warning(f"Failed to persist BM25 cache: {e}")
+
     def fit(self, documents: List[str]):
-        """Fit the BM25 model on documents."""
+        """Fit the BM25 model on documents AND persist to disk for restart durability."""
         if documents:
             self.vectorizer.fit(documents)
             self.fitted = True
+            self._persist_cache()
 
     def encode(self, texts: List[str]) -> List[SparseVector]:
         """
@@ -155,10 +209,43 @@ class OpenAIEmbeddingFunction:
 
 
 class GeminiEmbeddingFunction:
-    """Custom Gemini embedding function for Qdrant using google-genai."""
+    """Custom Gemini embedding function for Qdrant using google-genai.
 
-    def __init__(self, model_name: str = "models/text-embedding-004", api_key: Optional[str] = None):
+    Phase 2 of the Gemini RAG migration switched the default model from
+    text-embedding-004 (768-dim) to gemini-embedding-2 (3072-dim native
+    multilingual). The dimension is now derived from the model name with
+    an explicit override possible via the `output_dimensionality` config
+    field.
+
+    Retry-on-transient (503/429) is built in — Gemini occasionally
+    bursts UNAVAILABLE under load and the eval/ingest paths shouldn't
+    fail on transients.
+    """
+
+    # Known model → native dimension mapping. Anything not listed defaults to 3072.
+    _MODEL_DIM = {
+        "models/gemini-embedding-2": 3072,
+        "gemini-embedding-2": 3072,
+        "models/gemini-embedding-001": 3072,
+        "gemini-embedding-001": 3072,
+        "models/text-embedding-004": 768,
+        "text-embedding-004": 768,
+        "models/text-embedding-005": 768,
+        "text-embedding-005": 768,
+    }
+
+    def __init__(
+        self,
+        model_name: str = "gemini-embedding-2",
+        api_key: Optional[str] = None,
+        output_dimensionality: Optional[int] = None,
+        max_retries: int = 3,
+        task_type: str = "RETRIEVAL_DOCUMENT",
+    ):
+        # Normalise model name — google-genai accepts both with and without "models/" prefix.
         self.model_name = model_name
+        self.task_type = task_type
+        self.max_retries = max_retries
         self.api_key = api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         if not self.api_key:
             raise ValueError("Gemini API key is required")
@@ -171,28 +258,167 @@ class GeminiEmbeddingFunction:
         except ImportError:
             raise ImportError("google-genai package is required for Gemini embeddings")
 
+        # Resolve dimension: explicit > model-default > 3072 fallback
+        if output_dimensionality is not None:
+            self._dim = output_dimensionality
+        else:
+            self._dim = self._MODEL_DIM.get(model_name, 3072)
+
     def name(self) -> str:
         """Return the name of this embedding function."""
         return "gemini"
 
-    def __call__(self, input: List[str]) -> List[List[float]]:
-        """Generate embeddings using Gemini API."""
-        embeddings = []
-        for text in input:
-            response = self.client.models.embed_content(
-                model=self.model_name,
-                contents=[text],
-                config=self.types.EmbedContentConfig(
-                    task_type="retrieval_document",
-                    title="Zotero library document"
+    def _embed_one(self, text: str) -> List[float]:
+        """Embed a single text with retry-on-transient. One API call per text."""
+        import time
+
+        last_err: Optional[Exception] = None
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                response = self.client.models.embed_content(
+                    model=self.model_name,
+                    contents=text,
+                    config=self.types.EmbedContentConfig(
+                        task_type=self.task_type,
+                        output_dimensionality=self._dim,
+                    ),
                 )
-            )
-            embeddings.append(response.embeddings[0].values)
-        return embeddings
+                if not response.embeddings or not response.embeddings[0].values:
+                    raise ValueError(f"Gemini returned no embeddings (model={self.model_name})")
+                return list(response.embeddings[0].values)
+            except Exception as e:
+                last_err = e
+                msg = str(e)
+                transient = (
+                    "503" in msg
+                    or "429" in msg
+                    or "UNAVAILABLE" in msg
+                    or "RESOURCE_EXHAUSTED" in msg
+                    or "DEADLINE_EXCEEDED" in msg
+                    or "ConnectError" in msg
+                )
+                if attempt < self.max_retries and transient:
+                    backoff = 2 ** attempt
+                    time.sleep(backoff)
+                    continue
+                break
+        assert last_err is not None
+        raise last_err
+
+    def __call__(self, input: List[str]) -> List[List[float]]:
+        """Generate embeddings using Gemini API. Sequential — one call per text."""
+        return [self._embed_one(t) for t in input]
 
     def get_dimension(self) -> int:
         """Get the dimension of embeddings for this model."""
-        return 768  # text-embedding-004 produces 768-dimensional embeddings
+        return self._dim
+
+
+class GeminiReranker:
+    """Gemini-based cross-encoder reranker for agent-zot hybrid search.
+
+    Conforms to the same interface as sentence-transformers' CrossEncoder
+    (`predict(pairs) -> list[float]`) so it slots into the existing rerank
+    code path without further changes downstream.
+
+    Each (query, document) pair is scored 0-100 by gemini-3.1-flash-lite via
+    a tight one-shot prompt. Calls run in parallel via a thread pool so a
+    20-document rerank batch completes in ~3-5s rather than serially.
+
+    Phase 2 of the Gemini RAG migration: replaces the 2020-era local
+    ms-marco-MiniLM-L-6-v2 cross-encoder (which is also being deprecated
+    in agent-zot's own production path).
+    """
+
+    def __init__(
+        self,
+        model_name: str = "gemini-3.1-flash-lite",
+        api_key: Optional[str] = None,
+        max_retries: int = 3,
+        max_workers: int = 10,
+    ):
+        try:
+            from google import genai
+        except ImportError:
+            raise ImportError(
+                "google-genai is required for GeminiReranker. "
+                "Install with: pip install google-genai"
+            )
+        resolved_key = api_key or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+        if not resolved_key:
+            raise ValueError(
+                "GeminiReranker requires an API key. Pass api_key= or set GOOGLE_API_KEY."
+            )
+        self.client = genai.Client(api_key=resolved_key)
+        self.model_name = model_name
+        self.max_retries = max_retries
+        self.max_workers = max_workers
+
+    def _score_one(self, query: str, document: str) -> float:
+        """Score a single (query, document) pair on 0-100; returns float or 0.0 on failure."""
+        import time as _time
+
+        doc_trim = document[:1200] if len(document) > 1200 else document
+        prompt = (
+            "Rate how relevant the PASSAGE is to the QUERY on a 0-100 integer scale. "
+            "100 = perfectly answers it; 50 = on-topic but not specific; 0 = unrelated.\n\n"
+            f"QUERY: {query}\n\nPASSAGE: {doc_trim}\n\n"
+            "Reply with ONLY the integer (no prose, no JSON)."
+        )
+
+        last_err: Optional[Exception] = None
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                response = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt,
+                )
+                text = getattr(response, "text", "") or ""
+                import re
+                m = re.search(r"-?\d+", text)
+                if not m:
+                    return 0.0
+                n = int(m.group(0))
+                return float(max(0, min(100, n)))
+            except Exception as e:
+                last_err = e
+                msg = str(e)
+                transient = (
+                    "503" in msg
+                    or "429" in msg
+                    or "UNAVAILABLE" in msg
+                    or "RESOURCE_EXHAUSTED" in msg
+                    or "DEADLINE_EXCEEDED" in msg
+                )
+                if attempt < self.max_retries and transient:
+                    _time.sleep(2 ** attempt)
+                    continue
+                break
+        logger.warning(f"GeminiReranker scoring failed after {self.max_retries} attempts: {last_err}")
+        return 0.0
+
+    def predict(self, pairs):
+        """CrossEncoder-compatible predict(pairs) where pairs = [[query, doc], ...].
+
+        Returns a numpy array of float scores in [0, 100], mirroring CrossEncoder.predict.
+        Concurrent inside a thread pool — each pair is one Gemini call.
+        """
+        from concurrent.futures import ThreadPoolExecutor
+        import numpy as np
+
+        if not pairs:
+            return np.array([], dtype=float)
+
+        # Preserve order via a results array
+        scores = [0.0] * len(pairs)
+
+        def task(i):
+            q, d = pairs[i][0], pairs[i][1]
+            scores[i] = self._score_one(q, d)
+
+        with ThreadPoolExecutor(max_workers=self.max_workers) as ex:
+            list(ex.map(task, range(len(pairs))))
+        return np.array(scores, dtype=float)
 
 
 class DefaultEmbeddingFunction:
@@ -255,7 +481,9 @@ class QdrantClientWrapper:
                  enable_quantization: bool = True,
                  hnsw_m: int = 32,
                  hnsw_ef_construct: int = 200,
-                 enable_reranking: bool = True):
+                 enable_reranking: bool = True,
+                 reranker_provider: Optional[str] = None,
+                 reranker_model: Optional[str] = None):
         """
         Initialize Qdrant client with optimizations.
 
@@ -270,6 +498,8 @@ class QdrantClientWrapper:
             hnsw_m: HNSW graph connections per node (default: 32, higher=better recall)
             hnsw_ef_construct: HNSW build-time accuracy (default: 200, higher=better quality)
             enable_reranking: Enable cross-encoder reranking (default: True)
+            reranker_provider: Which reranker backend to use — 'gemini' or 'local' (default: 'local')
+            reranker_model: Reranker model name (e.g. 'gemini-3.1-flash-lite' for gemini provider)
         """
         self.collection_name = collection_name
         self.embedding_model = embedding_model
@@ -279,6 +509,8 @@ class QdrantClientWrapper:
         self.hnsw_m = hnsw_m
         self.hnsw_ef_construct = hnsw_ef_construct
         self.enable_reranking = enable_reranking
+        self.reranker_provider = (reranker_provider or "local").lower()
+        self.reranker_model = reranker_model
 
         # Initialize Qdrant client
         self.client = QdrantClient(
@@ -409,18 +641,33 @@ class QdrantClientWrapper:
             logger.warning(f"Error creating payload indexes (may already exist): {e}")
 
     def _initialize_reranker(self):
-        """Initialize cross-encoder model for reranking."""
+        """Initialize cross-encoder model for reranking.
+
+        Provider routing (Phase 2 of Gemini RAG migration):
+          - 'gemini': GeminiReranker (gemini-3.1-flash-lite by default)
+              Pros: top-of-MTEB-rerank quality, no local model weights, offloads CPU/GPU.
+              Cons: per-query API cost (~$0.001 per rerank batch of 20).
+          - 'local' (default): sentence-transformers CrossEncoder ms-marco-MiniLM-L-6-v2.
+              Pros: free, fast (<100ms per batch), no API dependency.
+              Cons: 2020-era model, can lag SOTA on dense semantic queries.
+        """
+        provider = self.reranker_provider
         try:
-            from sentence_transformers import CrossEncoder
-            # Use a high-quality cross-encoder for reranking
-            self.reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
-            logger.info("Initialized cross-encoder reranker (ms-marco-MiniLM-L-6-v2)")
-        except ImportError:
-            logger.warning("sentence-transformers required for reranking, disabling reranking")
+            if provider == "gemini":
+                model = self.reranker_model or "gemini-3.1-flash-lite"
+                self.reranker = GeminiReranker(model_name=model)
+                logger.info(f"Initialized GeminiReranker (model={model})")
+            else:
+                from sentence_transformers import CrossEncoder
+                model = self.reranker_model or "cross-encoder/ms-marco-MiniLM-L-6-v2"
+                self.reranker = CrossEncoder(model)
+                logger.info(f"Initialized local cross-encoder reranker ({model})")
+        except ImportError as e:
+            logger.warning(f"Reranker dependency missing ({e}); disabling reranking")
             self.enable_reranking = False
             self.reranker = None
         except Exception as e:
-            logger.warning(f"Error initializing reranker: {e}, disabling reranking")
+            logger.warning(f"Error initializing reranker (provider={provider}): {e}; disabling reranking")
             self.enable_reranking = False
             self.reranker = None
 
@@ -432,9 +679,14 @@ class QdrantClientWrapper:
             return OpenAIEmbeddingFunction(model_name=model_name, api_key=api_key)
 
         elif self.embedding_model == "gemini":
-            model_name = self.embedding_config.get("model_name", "models/text-embedding-004")
+            model_name = self.embedding_config.get("model_name", "gemini-embedding-2")
             api_key = self.embedding_config.get("api_key")
-            return GeminiEmbeddingFunction(model_name=model_name, api_key=api_key)
+            output_dim = self.embedding_config.get("output_dimensionality")
+            return GeminiEmbeddingFunction(
+                model_name=model_name,
+                api_key=api_key,
+                output_dimensionality=output_dim,
+            )
 
         else:
             # Use sentence-transformers embedding (default or configured)
@@ -952,13 +1204,17 @@ def create_qdrant_client(config_path: Optional[str] = None) -> QdrantClientWrapp
             }
 
     elif config["embedding_model"] == "gemini":
-        gemini_api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-        gemini_model = os.getenv("GEMINI_EMBEDDING_MODEL", "models/text-embedding-004")
-        if gemini_api_key:
-            config["embedding_config"] = {
-                "api_key": gemini_api_key,
-                "model_name": gemini_model
-            }
+        # Phase 2 of Gemini RAG migration: respect existing embedding_config from
+        # config.json — don't clobber it from env defaults. If api_key is null in
+        # config (the common case), pull it from env. Same for model_name.
+        existing = config.get("embedding_config") or {}
+        api_key = existing.get("api_key") or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        model_name = existing.get("model_name") or os.getenv("GEMINI_EMBEDDING_MODEL", "gemini-embedding-2")
+        merged: Dict[str, Any] = {**existing}
+        merged["api_key"] = api_key
+        merged["model_name"] = model_name
+        if api_key:
+            config["embedding_config"] = merged
 
     elif config["embedding_model"] == "sentence-transformers":
         # Read sentence_transformer_model from config
@@ -973,6 +1229,8 @@ def create_qdrant_client(config_path: Optional[str] = None) -> QdrantClientWrapp
     hnsw_m = config.get("hnsw_m", 32)
     hnsw_ef_construct = config.get("hnsw_ef_construct", 200)
     enable_reranking = config.get("enable_reranking", True)
+    reranker_provider = config.get("reranker_provider")  # "gemini" | "local" | None
+    reranker_model = config.get("reranker_model")        # e.g. "gemini-3.1-flash-lite"
 
     return QdrantClientWrapper(
         collection_name=config["collection_name"],
@@ -984,5 +1242,7 @@ def create_qdrant_client(config_path: Optional[str] = None) -> QdrantClientWrapp
         enable_quantization=enable_quantization,
         hnsw_m=hnsw_m,
         hnsw_ef_construct=hnsw_ef_construct,
-        enable_reranking=enable_reranking
+        enable_reranking=enable_reranking,
+        reranker_provider=reranker_provider,
+        reranker_model=reranker_model,
     )
