@@ -19,7 +19,7 @@ Nine Execution Modes:
 
 import re
 import logging
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, List, Tuple, Callable
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -805,7 +805,8 @@ def smart_explore_graph(
     field: Optional[str] = None,
     force_mode: Optional[str] = None,
     limit: int = 10,
-    max_hops: int = 2
+    max_hops: int = 2,
+    progress_callback: Optional[Callable] = None
 ) -> Dict[str, Any]:
     """
     Intelligent unified exploration tool (graph-based AND content-based).
@@ -840,6 +841,15 @@ def smart_explore_graph(
 
     logger.info(f"=== Smart Explore Graph: query={query}, force_mode={force_mode} ===")
 
+    def report_progress(progress: int, message: str):
+        if progress_callback:
+            try:
+                progress_callback(progress, message)
+            except Exception as e:
+                logger.warning(f"Progress callback failed: {e}")
+
+    report_progress(55, "Detecting graph exploration intent...")
+
     # Determine mode
     if force_mode:
         mode = force_mode.lower()
@@ -862,6 +872,7 @@ def smart_explore_graph(
 
     # Execute appropriate mode
     result = None
+    report_progress(65, f"Running {mode} mode...")
 
     if mode == "citation":
         if not paper_key:
@@ -946,6 +957,8 @@ def smart_explore_graph(
             "success": False,
             "error": f"Unknown mode: {mode}. Must be one of: citation, influence, content_similarity, related, collaboration, concept, temporal, venue, exploratory"
         }
+
+    report_progress(85, "Finalizing graph exploration results...")
 
     # Add intent detection metadata to result
     if result:

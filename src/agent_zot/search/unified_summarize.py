@@ -14,7 +14,7 @@ Four Execution Modes:
 
 import re
 import logging
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, List, Tuple, Callable
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -444,7 +444,8 @@ def smart_summarize(
     format_metadata_func = None,
     get_attachment_func = None,
     extract_fulltext_func = None,
-    top_k: int = 5
+    top_k: int = 5,
+    progress_callback: Optional[Callable] = None
 ) -> Dict[str, Any]:
     """
     Intelligent unified summarization tool.
@@ -473,6 +474,13 @@ def smart_summarize(
 
     logger.info(f"=== Smart Summarize: item_key={item_key}, query={query}, force_mode={force_mode} ===")
 
+    def report_progress(progress: int, message: str):
+        if progress_callback:
+            try:
+                progress_callback(progress, message)
+            except Exception as e:
+                logger.warning(f"Progress callback failed: {e}")
+
     # Validate required dependencies
     if not all([zot_client, format_metadata_func]):
         return {
@@ -481,6 +489,7 @@ def smart_summarize(
         }
 
     # Determine mode
+    report_progress(50, "Detecting summarization intent...")
     if force_mode:
         mode = force_mode.lower()
         confidence = 1.0
@@ -496,6 +505,7 @@ def smart_summarize(
 
     # Execute appropriate mode
     result = None
+    report_progress(60, f"Running {mode} mode...")
 
     if mode == "quick":
         result = run_quick_mode(item_key, zot_client, format_metadata_func)
@@ -511,6 +521,7 @@ def smart_summarize(
                 "success": False,
                 "error": "Targeted Mode requires a specific question"
             }
+        report_progress(70, "Retrieving relevant chunks...")
         result = run_targeted_mode(item_key, query, semantic_search_instance, top_k)
 
     elif mode == "comprehensive":
@@ -519,6 +530,7 @@ def smart_summarize(
                 "success": False,
                 "error": "Comprehensive Mode requires semantic_search_instance"
             }
+        report_progress(65, "Running multi-aspect summarization...")
         result = run_comprehensive_mode(
             item_key, semantic_search_instance, zot_client,
             format_metadata_func, top_k
@@ -530,6 +542,7 @@ def smart_summarize(
                 "success": False,
                 "error": "Full Mode requires get_attachment_func and extract_fulltext_func"
             }
+        report_progress(65, "Extracting full text from PDF...")
         result = run_full_mode(
             item_key, zot_client, format_metadata_func,
             get_attachment_func, extract_fulltext_func
@@ -540,6 +553,8 @@ def smart_summarize(
             "success": False,
             "error": f"Unknown mode: {mode}. Must be one of: quick, targeted, comprehensive, full"
         }
+
+    report_progress(85, "Finalizing summary...")
 
     # Add intent detection metadata to result
     if result:

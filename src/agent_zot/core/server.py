@@ -157,6 +157,28 @@ async def server_lifespan(server: FastMCP):
     # Clean up orphaned processes from previous sessions
     cleanup_orphaned_processes()
 
+    # Initialize async task infrastructure for long-running operations
+    # This allows searches to run beyond Claude Desktop's 60-second timeout
+    try:
+        from agent_zot.async_tasks import AsyncTaskManager, AsyncSearchExecutor
+
+        task_manager = AsyncTaskManager()
+        executor = AsyncSearchExecutor(task_manager)
+
+        # Cleanup old tasks (> 1 hour)
+        task_manager.cleanup_old_tasks(max_age_hours=1)
+
+        # Mark any interrupted tasks (from previous server crash) as failed
+        for task in task_manager.get_running_tasks():
+            task_manager.fail_task(task.task_id, "Server restarted during execution")
+
+        sys.stderr.write("Async task infrastructure initialized\n")
+
+    except Exception as e:
+        sys.stderr.write(f"Warning: Could not initialize async task infrastructure: {e}\n")
+        task_manager = None
+        executor = None
+
     # DISABLED: Auto-update check removed for instant server startup
     # The initialization of semantic search (loading embeddings, connecting to databases)
     # adds 3-5 seconds to startup time, making agent-zot slower than other MCP servers.
@@ -191,7 +213,14 @@ async def server_lifespan(server: FastMCP):
     # except Exception as e:
     #     sys.stderr.write(f"Warning: Could not check semantic search auto-update: {e}\n")
 
-    yield {}
+    yield {
+        "async_task_manager": task_manager,
+        "async_executor": executor
+    }
+
+    # Shutdown: mark any running tasks as failed
+    if executor:
+        executor.shutdown()
 
     sys.stderr.write("Shutting down Zotero MCP server...\n")
 
@@ -584,6 +613,913 @@ def smart_unified_search(
         ctx.error(f"Smart search failed: {str(e)}")
         import traceback
         return f"Error performing smart search: {str(e)}\n\n{traceback.format_exc()}"
+
+
+# ============================================================================
+# ASYNC SEARCH TOOLS - For Long-Running Searches (Avoid 60s Timeout)
+# ============================================================================
+@mcp.tool(
+    name="zot_search_async_start",
+    description="""🚀 Start an async search for queries that may exceed Claude Desktop's 60-second timeout.
+
+**Use this when**:
+- Search might timeout (complex queries, Comprehensive Mode)
+- You want non-blocking search
+- Working in Claude Desktop Cowork sessions
+
+**Returns**: task_id (UUID) - use with zot_search_async_status and zot_search_async_results
+
+**Three-Step Workflow**:
+1. `zot_search_async_start(query)` → Returns task_id immediately (< 1 second)
+2. `zot_search_async_status(task_id)` → Poll every 5-10 seconds until status="completed"
+3. `zot_search_async_results(task_id)` → Get full results when ready
+
+**Example**:
+```python
+# Step 1: Start
+result = zot_search_async_start("complex semantic query")
+task_id = result["task_id"]  # e.g., "abc123-..."
+
+# Step 2: Poll status
+status = zot_search_async_status(task_id)
+# {"status": "running", "progress": 45, "message": "Searching backends..."}
+
+# Step 3: Get results when done
+results = zot_search_async_results(task_id)
+# Full search results (same format as zot_search)
+```
+
+Use for: Long-running searches that might timeout in Claude Desktop""",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Async Search - Start"
+    }
+)
+def async_search_start(
+    query: str,
+    limit: int = 10,
+    force_mode: Optional[str] = None,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Start an async search task that runs in the background.
+
+    Args:
+        query: Search query text
+        limit: Maximum number of results (default: 10)
+        force_mode: Optional mode override - "fast" or "comprehensive"
+        ctx: MCP context
+
+    Returns:
+        JSON with task_id and initial status
+    """
+    import json
+
+    try:
+        if not query.strip():
+            return json.dumps({"error": "Search query cannot be empty"})
+
+        # Get task manager from lifespan context
+        lifespan_ctx = ctx.request_context.lifespan_context
+        task_manager = lifespan_ctx.get("async_task_manager")
+        executor = lifespan_ctx.get("async_executor")
+
+        if not task_manager or not executor:
+            return json.dumps({
+                "error": "Async task infrastructure not available. Server may need restart."
+            })
+
+        # Create task
+        task_id = task_manager.create_task(query, limit, force_mode)
+
+        # Start background execution
+        executor.start_task(task_id)
+
+        ctx.info(f"Started async search task {task_id} for query: '{query}'")
+
+        return json.dumps({
+            "task_id": task_id,
+            "status": "started",
+            "message": "Search task started. Use zot_search_async_status to check progress."
+        })
+
+    except Exception as e:
+        ctx.error(f"Failed to start async search: {str(e)}")
+        import traceback
+        return json.dumps({
+            "error": f"Failed to start async search: {str(e)}",
+            "traceback": traceback.format_exc()
+        })
+
+
+@mcp.tool(
+    name="zot_search_async_status",
+    description="""📊 Check the status of an async search task.
+
+**Returns**:
+- status: "pending", "running", "completed", or "failed"
+- progress: 0-100 percentage
+- progress_message: Human-readable status (e.g., "Detecting intent...", "Searching backends...")
+
+**When to poll**: Every 5-10 seconds until status is "completed" or "failed"
+
+**Example response (running)**:
+```json
+{
+  "task_id": "abc123-...",
+  "status": "running",
+  "progress": 45,
+  "message": "Searching 2 backend(s)..."
+}
+```
+
+**Example response (completed)**:
+```json
+{
+  "task_id": "abc123-...",
+  "status": "completed",
+  "progress": 100,
+  "message": "Search complete"
+}
+```
+
+Use for: Polling async search progress""",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Async Search - Status"
+    }
+)
+def async_search_status(
+    task_id: str,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Check the status of an async search task.
+
+    Args:
+        task_id: Task ID returned by zot_search_async_start
+        ctx: MCP context
+
+    Returns:
+        JSON with task status, progress, and message
+    """
+    import json
+
+    try:
+        if not task_id.strip():
+            return json.dumps({"error": "Task ID cannot be empty"})
+
+        # Get task manager from lifespan context
+        lifespan_ctx = ctx.request_context.lifespan_context
+        task_manager = lifespan_ctx.get("async_task_manager")
+
+        if not task_manager:
+            return json.dumps({
+                "error": "Async task infrastructure not available. Server may need restart."
+            })
+
+        # Get task
+        task = task_manager.get_task(task_id)
+
+        if not task:
+            return json.dumps({
+                "error": f"Task not found: {task_id}",
+                "hint": "Task may have expired (tasks are cleaned up after 1 hour)"
+            })
+
+        response = {
+            "task_id": task.task_id,
+            "status": task.status,
+            "progress": task.progress,
+            "message": task.progress_message,
+            "query": task.query,
+            "created_at": task.created_at
+        }
+
+        if task.started_at:
+            response["started_at"] = task.started_at
+        if task.completed_at:
+            response["completed_at"] = task.completed_at
+        if task.error:
+            response["error"] = task.error
+
+        return json.dumps(response)
+
+    except Exception as e:
+        ctx.error(f"Failed to get task status: {str(e)}")
+        import traceback
+        return json.dumps({
+            "error": f"Failed to get task status: {str(e)}",
+            "traceback": traceback.format_exc()
+        })
+
+
+@mcp.tool(
+    name="zot_search_async_results",
+    description="""📋 Get results of a completed async search task.
+
+**IMPORTANT**: Only call when zot_search_async_status returns status="completed"
+
+**Returns**: Same format as zot_search results (markdown-formatted with papers, scores, provenance)
+
+**Example workflow**:
+```python
+# Wait for completion
+status = zot_search_async_status(task_id)
+while status["status"] == "running":
+    time.sleep(5)
+    status = zot_search_async_status(task_id)
+
+# Get results
+if status["status"] == "completed":
+    results = zot_search_async_results(task_id)
+elif status["status"] == "failed":
+    print(f"Search failed: {status['error']}")
+```
+
+Use for: Retrieving completed async search results""",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Async Search - Results"
+    }
+)
+def async_search_results(
+    task_id: str,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Get results of a completed async search task.
+
+    Args:
+        task_id: Task ID returned by zot_search_async_start
+        ctx: MCP context
+
+    Returns:
+        Markdown-formatted search results (same format as zot_search)
+    """
+    import json
+
+    try:
+        if not task_id.strip():
+            return "Error: Task ID cannot be empty"
+
+        # Get task manager from lifespan context
+        lifespan_ctx = ctx.request_context.lifespan_context
+        task_manager = lifespan_ctx.get("async_task_manager")
+
+        if not task_manager:
+            return "Error: Async task infrastructure not available. Server may need restart."
+
+        # Get task
+        task = task_manager.get_task(task_id)
+
+        if not task:
+            return f"Error: Task not found: {task_id}\n\nHint: Task may have expired (tasks are cleaned up after 1 hour)"
+
+        if task.status == "pending":
+            return f"Task {task_id} is still pending. Use zot_search_async_status to check progress."
+
+        if task.status == "running":
+            return f"Task {task_id} is still running ({task.progress}%). Use zot_search_async_status to check progress."
+
+        if task.status == "failed":
+            return f"Task {task_id} failed: {task.error}"
+
+        # Task completed - get results
+        if not task.results:
+            return f"Task {task_id} completed but no results stored (unexpected error)"
+
+        results = json.loads(task.results)
+
+        # Format results same as smart_unified_search
+        search_results = results.get("results", [])
+        query = results.get("query", task.query)
+
+        if not search_results:
+            return f"No items found for query: '{query}'"
+
+        # Format results as markdown
+        output = [f"# Async Search Results for '{query}'", ""]
+
+        # Show query expansion if it happened
+        if expanded_query := results.get("expanded_query"):
+            output.append(f"**Query expanded**: `{query}` → `{expanded_query}`")
+            output.append("")
+
+        # Show intent and mode
+        intent = results.get("intent", "unknown")
+        intent_confidence = results.get("intent_confidence", 0)
+        mode = results.get("mode", "unknown")
+        backends_used = results.get("backends_used", [])
+
+        output.append(f"**Intent detected**: {intent} (confidence: {intent_confidence:.2f})")
+        output.append(f"**Mode**: {mode}")
+        output.append(f"**Backends used**: {', '.join(backends_used)}")
+        output.append("")
+
+        # Show quality metrics
+        if quality := results.get("quality_metrics"):
+            output.append(f"**Quality**: Confidence={quality.get('confidence', 'N/A')}, Coverage={quality.get('coverage', 0):.0%}")
+            output.append("")
+
+        output.append(f"Found {len(search_results)} items:")
+        output.append("")
+
+        for i, result in enumerate(search_results, 1):
+            item_key = result.get("item_key", "")
+
+            # Get Zotero item data
+            zotero_item = result.get("zotero_item", {})
+            data = zotero_item.get("data", {})
+
+            title = data.get("title", "Untitled")
+            creators = data.get("creators", [])
+
+            # Format creators
+            from agent_zot.utils.common import format_creators
+            creators_str = format_creators(creators)
+
+            # Get scores
+            similarity = result.get("similarity_score")
+            rrf_score = result.get("rrf_score")
+
+            # Get provenance
+            found_in = result.get("found_in", [])
+
+            output.append(f"## {i}. {title}")
+            output.append("")
+            output.append(f"- **Item Key**: `{item_key}`")
+            if creators_str:
+                output.append(f"- **Authors**: {creators_str}")
+
+            # Show scores
+            if similarity:
+                output.append(f"- **Similarity**: {similarity:.3f}")
+            if rrf_score:
+                output.append(f"- **RRF Score**: {rrf_score:.4f}")
+
+            # Show provenance
+            if found_in:
+                output.append(f"- **Found in**: {', '.join(found_in)}")
+
+            # Add year and type
+            if year := data.get("date"):
+                output.append(f"- **Year**: {year}")
+            if item_type := data.get("itemType"):
+                output.append(f"- **Type**: {item_type}")
+
+            output.append("")
+
+        # Show any errors
+        if errors := results.get("errors_by_backend"):
+            output.append("## Backend Errors")
+            output.append("")
+            for backend, error in errors.items():
+                output.append(f"- **{backend}**: {error}")
+            output.append("")
+
+        output.append("---")
+        output.append(f"💡 **Tip**: Use `zot_summarize(item_key, query)` to read specific papers")
+        output.append(f"📊 **Task ID**: {task_id}")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        ctx.error(f"Failed to get task results: {str(e)}")
+        import traceback
+        return f"Error getting task results: {str(e)}\n\n{traceback.format_exc()}"
+
+
+# ============================================================================
+# ASYNC SUMMARIZE TOOLS - For long-running summarization
+# ============================================================================
+
+@mcp.tool(
+    name="zot_summarize_async_start",
+    description="""🚀 Start an async paper summarization (returns immediately).
+
+**Use when summarizing papers might take longer than 60 seconds** (PDF parsing, LLM calls).
+
+**How it works**:
+1. `zot_summarize_async_start(item_key)` → Returns task_id immediately (< 1 second)
+2. `zot_summarize_async_status(task_id)` → Poll every 5-10 seconds until status="completed"
+3. `zot_summarize_async_results(task_id)` → Get full summary when ready
+
+**Parameters**:
+- item_key: Zotero item key to summarize (required)
+- question: Optional specific question for targeted summarization
+- force_mode: Optional override ("quick", "targeted", "comprehensive", "full")
+
+**Example**:
+```python
+result = zot_summarize_async_start("ABC123XY")
+task_id = result["task_id"]  # Use this for status/results
+```
+
+Use for: Paper summarization that might exceed 60-second timeout""",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Async Summarize - Start"
+    }
+)
+def async_summarize_start(
+    item_key: str,
+    question: Optional[str] = None,
+    force_mode: Optional[str] = None,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Start an async summarization task.
+
+    Args:
+        item_key: Zotero item key to summarize
+        question: Optional question for targeted summarization
+        force_mode: Optional mode override
+        ctx: MCP context
+
+    Returns:
+        JSON with task_id and status
+    """
+    try:
+        if not item_key.strip():
+            return json.dumps({"error": "Item key cannot be empty"})
+
+        # Get task manager from lifespan context
+        lifespan_ctx = ctx.request_context.lifespan_context
+        task_manager = lifespan_ctx.get("async_task_manager")
+        executor = lifespan_ctx.get("async_executor")
+
+        if not task_manager or not executor:
+            return json.dumps({"error": "Async task infrastructure not available. Server may need restart."})
+
+        # Create task with extra params
+        extra_params = {}
+        if question:
+            extra_params["question"] = question
+
+        task_id = task_manager.create_task(
+            query=item_key,  # For summarize, query holds item_key
+            limit=5,  # top_k default
+            force_mode=force_mode,
+            task_type="summarize",
+            extra_params=extra_params if extra_params else None
+        )
+
+        # Start execution in background
+        executor.start_task(task_id)
+
+        ctx.info(f"Started async summarization for {item_key}: {task_id}")
+
+        return json.dumps({
+            "task_id": task_id,
+            "status": "started",
+            "item_key": item_key,
+            "message": "Summarization task started. Use zot_summarize_async_status to check progress."
+        })
+
+    except Exception as e:
+        ctx.error(f"Failed to start async summarization: {str(e)}")
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool(
+    name="zot_summarize_async_status",
+    description="""📊 Check status of an async summarization task.
+
+**Returns**: JSON with status, progress percentage, and message
+
+**Status values**:
+- `pending`: Task queued, not yet started
+- `running`: Task in progress (check progress %)
+- `completed`: Ready to get results
+- `failed`: Task failed (check error message)
+
+**Example**:
+```python
+status = zot_summarize_async_status(task_id)
+# {"status": "running", "progress": 45, "message": "Parsing PDF..."}
+```
+
+Use for: Polling summarization progress""",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Async Summarize - Status"
+    }
+)
+def async_summarize_status(
+    task_id: str,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Get status of an async summarization task.
+
+    Args:
+        task_id: Task ID from zot_summarize_async_start
+        ctx: MCP context
+
+    Returns:
+        JSON with status, progress, message
+    """
+    try:
+        if not task_id.strip():
+            return json.dumps({"error": "Task ID cannot be empty"})
+
+        lifespan_ctx = ctx.request_context.lifespan_context
+        task_manager = lifespan_ctx.get("async_task_manager")
+
+        if not task_manager:
+            return json.dumps({"error": "Async task infrastructure not available"})
+
+        task = task_manager.get_task(task_id)
+
+        if not task:
+            return json.dumps({"error": f"Task not found: {task_id}"})
+
+        response = {
+            "task_id": task_id,
+            "task_type": task.task_type,
+            "status": task.status,
+            "progress": task.progress,
+            "message": task.progress_message,
+            "item_key": task.query
+        }
+
+        if task.status == "failed":
+            response["error"] = task.error
+
+        if task.started_at:
+            response["started_at"] = task.started_at
+
+        if task.completed_at:
+            response["completed_at"] = task.completed_at
+
+        return json.dumps(response)
+
+    except Exception as e:
+        ctx.error(f"Failed to get task status: {str(e)}")
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool(
+    name="zot_summarize_async_results",
+    description="""📋 Get results of a completed async summarization.
+
+**IMPORTANT**: Only call when zot_summarize_async_status returns status="completed"
+
+**Returns**: Same format as zot_summarize (summary content, metadata, mode used)
+
+Use for: Retrieving completed summarization results""",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Async Summarize - Results"
+    }
+)
+def async_summarize_results(
+    task_id: str,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Get results of a completed async summarization task.
+
+    Args:
+        task_id: Task ID from zot_summarize_async_start
+        ctx: MCP context
+
+    Returns:
+        Summary content (same format as zot_summarize)
+    """
+    try:
+        if not task_id.strip():
+            return "Error: Task ID cannot be empty"
+
+        lifespan_ctx = ctx.request_context.lifespan_context
+        task_manager = lifespan_ctx.get("async_task_manager")
+
+        if not task_manager:
+            return "Error: Async task infrastructure not available"
+
+        task = task_manager.get_task(task_id)
+
+        if not task:
+            return f"Error: Task not found: {task_id}"
+
+        if task.status == "pending":
+            return f"Task {task_id} is still pending. Use zot_summarize_async_status to check progress."
+
+        if task.status == "running":
+            return f"Task {task_id} is still running ({task.progress}%). Use zot_summarize_async_status to check progress."
+
+        if task.status == "failed":
+            return f"Task {task_id} failed: {task.error}"
+
+        # Task completed - get results
+        if not task.results:
+            return f"Task {task_id} completed but no results stored"
+
+        results = json.loads(task.results)
+
+        # Format as markdown (similar to zot_summarize)
+        if not results.get("success", False):
+            return f"Summarization failed: {results.get('error', 'Unknown error')}"
+
+        output = []
+        output.append(f"# Paper Summary")
+        output.append("")
+        output.append(f"**Mode**: {results.get('mode', 'unknown')}")
+        output.append(f"**Item Key**: `{task.query}`")
+        output.append("")
+        output.append("---")
+        output.append("")
+        output.append(results.get("content", "No content available"))
+        output.append("")
+        output.append("---")
+        output.append(f"📊 **Task ID**: {task_id}")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        ctx.error(f"Failed to get task results: {str(e)}")
+        import traceback
+        return f"Error getting task results: {str(e)}\n\n{traceback.format_exc()}"
+
+
+# ============================================================================
+# ASYNC GRAPH EXPLORATION TOOLS - For long-running graph analysis
+# ============================================================================
+
+@mcp.tool(
+    name="zot_explore_graph_async_start",
+    description="""🚀 Start an async graph exploration (returns immediately).
+
+**Use when graph traversals might take longer than 60 seconds** (large citation networks).
+
+**How it works**:
+1. `zot_explore_graph_async_start(query)` → Returns task_id immediately (< 1 second)
+2. `zot_explore_graph_async_status(task_id)` → Poll every 5-10 seconds until status="completed"
+3. `zot_explore_graph_async_results(task_id)` → Get full results when ready
+
+**Parameters**:
+- query: Natural language query (e.g., "who collaborates with Dr. Smith")
+- paper_key: Optional paper key for paper-centric analysis
+- author: Optional author name filter
+- limit: Maximum results (default: 10)
+- force_mode: Optional override ("citation", "collaboration", "concept", "temporal", "influence", "venue")
+
+**Example**:
+```python
+result = zot_explore_graph_async_start("find citation network for this paper", paper_key="ABC123XY")
+task_id = result["task_id"]
+```
+
+Use for: Complex graph traversals that might exceed 60-second timeout""",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Async Graph - Start"
+    }
+)
+def async_explore_graph_start(
+    query: str,
+    paper_key: Optional[str] = None,
+    author: Optional[str] = None,
+    concept: Optional[str] = None,
+    start_year: Optional[int] = None,
+    end_year: Optional[int] = None,
+    field: Optional[str] = None,
+    limit: int = 10,
+    max_hops: int = 2,
+    force_mode: Optional[str] = None,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Start an async graph exploration task.
+
+    Args:
+        query: Natural language query
+        paper_key: Optional paper key
+        author: Optional author filter
+        concept: Optional concept filter
+        start_year: Optional start year
+        end_year: Optional end year
+        field: Optional field filter
+        limit: Max results
+        max_hops: Max traversal depth
+        force_mode: Optional mode override
+        ctx: MCP context
+
+    Returns:
+        JSON with task_id and status
+    """
+    try:
+        if not query.strip():
+            return json.dumps({"error": "Query cannot be empty"})
+
+        lifespan_ctx = ctx.request_context.lifespan_context
+        task_manager = lifespan_ctx.get("async_task_manager")
+        executor = lifespan_ctx.get("async_executor")
+
+        if not task_manager or not executor:
+            return json.dumps({"error": "Async task infrastructure not available. Server may need restart."})
+
+        # Store all params in extra_params
+        extra_params = {
+            "paper_key": paper_key,
+            "author": author,
+            "concept": concept,
+            "start_year": start_year,
+            "end_year": end_year,
+            "field": field,
+            "max_hops": max_hops
+        }
+        # Remove None values
+        extra_params = {k: v for k, v in extra_params.items() if v is not None}
+
+        task_id = task_manager.create_task(
+            query=query,
+            limit=limit,
+            force_mode=force_mode,
+            task_type="explore_graph",
+            extra_params=extra_params if extra_params else None
+        )
+
+        # Start execution in background
+        executor.start_task(task_id)
+
+        ctx.info(f"Started async graph exploration: {task_id}")
+
+        return json.dumps({
+            "task_id": task_id,
+            "status": "started",
+            "query": query,
+            "message": "Graph exploration task started. Use zot_explore_graph_async_status to check progress."
+        })
+
+    except Exception as e:
+        ctx.error(f"Failed to start async graph exploration: {str(e)}")
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool(
+    name="zot_explore_graph_async_status",
+    description="""📊 Check status of an async graph exploration task.
+
+**Returns**: JSON with status, progress percentage, and message
+
+**Status values**:
+- `pending`: Task queued, not yet started
+- `running`: Task in progress (check progress %)
+- `completed`: Ready to get results
+- `failed`: Task failed (check error message)
+
+Use for: Polling graph exploration progress""",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Async Graph - Status"
+    }
+)
+def async_explore_graph_status(
+    task_id: str,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Get status of an async graph exploration task.
+
+    Args:
+        task_id: Task ID from zot_explore_graph_async_start
+        ctx: MCP context
+
+    Returns:
+        JSON with status, progress, message
+    """
+    try:
+        if not task_id.strip():
+            return json.dumps({"error": "Task ID cannot be empty"})
+
+        lifespan_ctx = ctx.request_context.lifespan_context
+        task_manager = lifespan_ctx.get("async_task_manager")
+
+        if not task_manager:
+            return json.dumps({"error": "Async task infrastructure not available"})
+
+        task = task_manager.get_task(task_id)
+
+        if not task:
+            return json.dumps({"error": f"Task not found: {task_id}"})
+
+        response = {
+            "task_id": task_id,
+            "task_type": task.task_type,
+            "status": task.status,
+            "progress": task.progress,
+            "message": task.progress_message,
+            "query": task.query
+        }
+
+        if task.status == "failed":
+            response["error"] = task.error
+
+        if task.started_at:
+            response["started_at"] = task.started_at
+
+        if task.completed_at:
+            response["completed_at"] = task.completed_at
+
+        return json.dumps(response)
+
+    except Exception as e:
+        ctx.error(f"Failed to get graph exploration task status: {str(e)}")
+        return json.dumps({"error": str(e)})
+
+
+@mcp.tool(
+    name="zot_explore_graph_async_results",
+    description="""📋 Get results of a completed async graph exploration.
+
+**IMPORTANT**: Only call when zot_explore_graph_async_status returns status="completed"
+
+**Returns**: Same format as zot_explore_graph (papers, relationships, network data)
+
+Use for: Retrieving completed graph exploration results""",
+    annotations={
+        "readOnlyHint": True,
+        "title": "Async Graph - Results"
+    }
+)
+def async_explore_graph_results(
+    task_id: str,
+    *,
+    ctx: Context
+) -> str:
+    """
+    Get results of a completed async graph exploration task.
+
+    Args:
+        task_id: Task ID from zot_explore_graph_async_start
+        ctx: MCP context
+
+    Returns:
+        Graph exploration results (same format as zot_explore_graph)
+    """
+    try:
+        if not task_id.strip():
+            return "Error: Task ID cannot be empty"
+
+        lifespan_ctx = ctx.request_context.lifespan_context
+        task_manager = lifespan_ctx.get("async_task_manager")
+
+        if not task_manager:
+            return "Error: Async task infrastructure not available"
+
+        task = task_manager.get_task(task_id)
+
+        if not task:
+            return f"Error: Task not found: {task_id}"
+
+        if task.status == "pending":
+            return f"Task {task_id} is still pending. Use zot_explore_graph_async_status to check progress."
+
+        if task.status == "running":
+            return f"Task {task_id} is still running ({task.progress}%). Use zot_explore_graph_async_status to check progress."
+
+        if task.status == "failed":
+            return f"Task {task_id} failed: {task.error}"
+
+        # Task completed - get results
+        if not task.results:
+            return f"Task {task_id} completed but no results stored"
+
+        results = json.loads(task.results)
+
+        # Format as markdown
+        if not results.get("success", False):
+            return f"Graph exploration failed: {results.get('error', 'Unknown error')}"
+
+        output = []
+        output.append(f"# Graph Exploration Results")
+        output.append("")
+        output.append(f"**Query**: {task.query}")
+        output.append(f"**Mode**: {results.get('mode', 'unknown')}")
+        output.append("")
+        output.append("---")
+        output.append("")
+        output.append(results.get("content", "No content available"))
+        output.append("")
+        output.append("---")
+        output.append(f"📊 **Task ID**: {task_id}")
+
+        return "\n".join(output)
+
+    except Exception as e:
+        ctx.error(f"Failed to get task results: {str(e)}")
+        import traceback
+        return f"Error getting task results: {str(e)}\n\n{traceback.format_exc()}"
 
 
 # ============================================================================

@@ -12,7 +12,7 @@ This module provides intelligent search coordination that:
 
 import logging
 import re
-from typing import Dict, List, Any, Tuple, Optional
+from typing import Dict, List, Any, Tuple, Optional, Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(__name__)
@@ -303,7 +303,8 @@ def run_parallel_backends(
     semantic_search_instance,
     query: str,
     backends: List[str],
-    limit: int
+    limit: int,
+    progress_callback: Optional[Callable] = None
 ) -> Tuple[Dict[str, List[Dict[str, Any]]], Dict[str, str]]:
     """
     Run multiple search backends in parallel.
@@ -360,6 +361,8 @@ def run_parallel_backends(
             )] = "entity"
 
         # Collect results
+        completed_count = 0
+        total_backends = len(futures)
         for future in as_completed(futures):
             backend = futures[future]
             try:
@@ -380,6 +383,14 @@ def run_parallel_backends(
                 logger.error(f"{backend} search failed: {e}")
                 errors_by_backend[backend] = str(e)
 
+            completed_count += 1
+            if progress_callback:
+                try:
+                    pct = 40 + int(20 * completed_count / total_backends)
+                    progress_callback(pct, f"Backend {backend} done ({completed_count}/{total_backends})")
+                except Exception:
+                    pass
+
     return results_by_backend, errors_by_backend
 
 
@@ -387,7 +398,8 @@ def run_sequential_backends(
     semantic_search_instance,
     query: str,
     backends: List[str],
-    limit: int
+    limit: int,
+    progress_callback: Optional[Callable] = None
 ) -> Tuple[Dict[str, List[Dict[str, Any]]], Dict[str, str]]:
     """
     Run multiple search backends sequentially (one at a time).
@@ -410,7 +422,15 @@ def run_sequential_backends(
     errors_by_backend = {}
 
     # Run each backend sequentially
-    for backend in backends:
+    total_backends = len(backends)
+    for i, backend in enumerate(backends):
+        if progress_callback:
+            try:
+                pct = 40 + int(20 * i / total_backends)
+                progress_callback(pct, f"Searching backend: {backend} ({i+1}/{total_backends})...")
+            except Exception:
+                pass
+
         try:
             if backend == "semantic":
                 logger.info("Running semantic search...")
@@ -456,7 +476,9 @@ def smart_search(
     query: str,
     limit: int = 10,
     force_mode: Optional[str] = None,
-    _recursion_depth: int = 0
+    _recursion_depth: int = 0,
+    progress_callback: Optional[callable] = None,
+    skip_decomposition: bool = False
 ) -> Dict[str, Any]:
     """
     Perform intent-driven smart search with automatic backend selection.
@@ -491,6 +513,8 @@ def smart_search(
         limit: Maximum number of results to return
         force_mode: Optional mode override ("fast", "comprehensive")
         _recursion_depth: Internal parameter to track recursion depth (default: 0)
+        progress_callback: Optional callback(progress: int, message: str) for progress updates
+        skip_decomposition: If True, skip query decomposition (avoids nested threading issues)
 
     Returns:
         Dict with search results and metadata
@@ -503,9 +527,26 @@ def smart_search(
 
     logger.info(f"Starting smart search for: '{query}' (recursion depth: {_recursion_depth})")
 
+    # Helper to call progress callback if provided
+    def report_progress(progress: int, message: str):
+        if progress_callback and _recursion_depth == 0:  # Only report from top-level call
+            try:
+                progress_callback(progress, message)
+            except Exception as e:
+                logger.warning(f"Progress callback failed: {e}")
+
+    report_progress(15, "Analyzing query structure...")
+
     # Recursion depth check to prevent infinite recursion
     MAX_RECURSION_DEPTH = 2
-    if _recursion_depth >= MAX_RECURSION_DEPTH:
+    if skip_decomposition:
+        logger.info("Skipping decomposition (skip_decomposition=True, avoids nested threading)")
+        sub_queries = [{
+            "query": query,
+            "type": "primary",
+            "importance": 1.0
+        }]
+    elif _recursion_depth >= MAX_RECURSION_DEPTH:
         logger.warning(f"Max recursion depth ({MAX_RECURSION_DEPTH}) reached, skipping decomposition")
         sub_queries = [{
             "query": query,
@@ -571,6 +612,7 @@ def smart_search(
 
     # Phase 1: Query Analysis & Refinement
     logger.info("Phase 1: Query analysis and refinement")
+    report_progress(20, "Detecting query intent...")
 
     # Detect intent
     intent, intent_confidence = detect_query_intent(query)
@@ -586,6 +628,7 @@ def smart_search(
 
     # Phase 2: Backend Selection
     logger.info("Phase 2: Backend selection based on intent")
+    report_progress(30, "Selecting search backends...")
 
     # Check Neo4j availability
     neo4j_available = check_neo4j_availability(semantic_search_instance)
@@ -618,6 +661,7 @@ def smart_search(
 
     # Phase 3: Execute Search
     logger.info("Phase 3: Executing search across selected backends")
+    report_progress(40, f"Searching {len(backends)} backend(s)...")
 
     # Use sequential execution for 3+ backends (Comprehensive Mode) to prevent resource exhaustion
     # Use parallel execution for 1-2 backends (Fast/Graph-enriched/Metadata-enriched) for speed
@@ -627,7 +671,8 @@ def smart_search(
             semantic_search_instance,
             query_to_use,
             backends,
-            limit
+            limit,
+            progress_callback=progress_callback
         )
     else:
         logger.info(f"Using parallel execution ({len(backends)} backend(s) - safe and fast)")
@@ -635,7 +680,8 @@ def smart_search(
             semantic_search_instance,
             query_to_use,
             backends,
-            limit
+            limit,
+            progress_callback=progress_callback
         )
 
     if not results_by_backend:
@@ -652,6 +698,7 @@ def smart_search(
 
     # Phase 4: Merge Results (if multiple backends)
     logger.info("Phase 4: Merging results")
+    report_progress(60, "Merging and ranking results...")
 
     # Get intent-based backend weights for RRF
     backend_weights = get_backend_weights(intent)
@@ -700,6 +747,7 @@ def smart_search(
 
     # Phase 5: Quality Assessment
     logger.info("Phase 5: Assessing result quality")
+    report_progress(75, "Assessing result quality...")
 
     quality = assess_result_quality(final_results)
     logger.info(f"Quality assessment: {quality}")
@@ -709,6 +757,7 @@ def smart_search(
     # Only escalate when force_mode is None (automatic mode selection)
     if quality["needs_escalation"] and force_mode is None and len(backends) < 3:
         logger.info("Phase 6: Result quality inadequate - escalating to Comprehensive Mode")
+        report_progress(80, "Escalating to comprehensive search...")
 
         # Add remaining backends
         all_backends = ["semantic", "graph", "metadata"] if neo4j_available else ["semantic", "metadata"]
@@ -722,7 +771,8 @@ def smart_search(
                     semantic_search_instance,
                     query_to_use,
                     additional_backends,
-                    limit
+                    limit,
+                    progress_callback=progress_callback
                 )
             else:
                 logger.info(f"Running {len(additional_backends)} additional backend in parallel")
@@ -730,7 +780,8 @@ def smart_search(
                     semantic_search_instance,
                     query_to_use,
                     additional_backends,
-                    limit
+                    limit,
+                    progress_callback=progress_callback
                 )
 
             # Merge with existing results
@@ -776,9 +827,12 @@ def smart_search(
 
     # Phase 7: Deduplication & Provenance
     logger.info("Phase 7: Deduplicating and adding provenance")
+    report_progress(90, "Deduplicating and finalizing results...")
 
     final_results = deduplicate_results(final_results)
     final_results = add_provenance(final_results, results_by_backend)
+
+    report_progress(100, "Search complete")
 
     # Build response
     return {

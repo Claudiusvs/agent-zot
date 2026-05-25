@@ -89,6 +89,25 @@ class ZoteroSemanticSearch:
         # Load update configuration
         self.update_config = self._load_update_config()
 
+        # Cache a single LocalZoteroReader for parent key resolution and enrichment fallback.
+        # Creating a new one per search result causes SQLite "database is locked" errors
+        # due to connection storms against zotero.sqlite.
+        self._local_reader = None
+        try:
+            self._local_reader = get_local_zotero_reader()
+            if self._local_reader:
+                # Use shorter busy timeout for search (2s vs default 10s).
+                # Search uses stored metadata as primary, DB as fallback — no need to wait long.
+                conn = self._local_reader._get_connection()
+                conn.execute("PRAGMA busy_timeout = 2000")
+        except Exception as e:
+            logger.debug(f"Local Zotero reader not available: {e}")
+
+        # Flag to skip DB lookups after detecting a locked database.
+        # When Zotero desktop is running, all DB calls will timeout (2s each),
+        # wasting 2s × N results. After the first lock, skip the rest.
+        self._db_locked = False
+
         # Log Neo4j status
         if self.neo4j_client:
             logger.info("Neo4j GraphRAG integration enabled")
@@ -1054,7 +1073,7 @@ class ZoteroSemanticSearch:
         """
         Resolve an attachment item key to its parent paper key.
         get_items_with_text() returns attachment items, not parent papers.
-        This method queries the database to find the parent item key.
+        This method queries the cached local database to find the parent item key.
 
         Args:
             item_key: The attachment item key
@@ -1062,11 +1081,16 @@ class ZoteroSemanticSearch:
         Returns:
             Parent paper key, or None if not found
         """
-        try:
-            from agent_zot.database.local_zotero import LocalZoteroReader
+        if not self._local_reader:
+            return None
 
-            reader = LocalZoteroReader()
-            conn = reader._get_connection()
+        # Skip DB lookup if we already know the database is locked (Zotero desktop running).
+        # Avoids wasting 2s timeout per result when all lookups will fail anyway.
+        if self._db_locked:
+            return None
+
+        try:
+            conn = self._local_reader._get_connection()
             cursor = conn.cursor()
 
             # Get itemID for this key
@@ -1104,7 +1128,11 @@ class ZoteroSemanticSearch:
                 return item_key
 
         except Exception as e:
-            logger.error(f"Error resolving parent key for {item_key}: {e}")
+            if "database is locked" in str(e):
+                self._db_locked = True
+                logger.debug(f"Database locked resolving {item_key}, skipping DB for remaining results")
+            else:
+                logger.error(f"Error resolving parent key for {item_key}: {e}")
             return None
 
     def _process_item_batch(self, items: List[Dict[str, Any]], force_rebuild: bool = False) -> Dict[str, int]:
@@ -1368,6 +1396,10 @@ class ZoteroSemanticSearch:
             Search results with Zotero item details
         """
         try:
+            # Note: _db_locked persists once set — if Zotero desktop holds the lock,
+            # all subsequent searches skip DB lookups (using API fallback instead).
+            # Server restart resets the flag if the user closes Zotero.
+
             # Perform semantic search (hybrid or dense-only)
             results = self.qdrant_client.search(
                 query_texts=[query],
@@ -1712,18 +1744,17 @@ class ZoteroSemanticSearch:
                     # Extract attachment key from chunk ID
                     attachment_key = item_key.split("_chunk_")[0]
 
-                    # CRITICAL FIX: Always resolve to actual parent paper key using database lookup
-                    # Don't trust stored parent_item_key as it may be stale/wrong (pre-fix data)
-                    resolved_parent = self._resolve_to_parent_key(attachment_key)
-                    if resolved_parent and resolved_parent != attachment_key:
-                        logger.debug(f"Resolved chunk {item_key} -> attachment {attachment_key} -> parent {resolved_parent}")
-                        zotero_key = resolved_parent
+                    # Priority 1: Use stored parent_item_key from Qdrant metadata (fast, no DB call)
+                    stored_parent = metadatas[i].get("parent_item_key", "") if i < len(metadatas) else ""
+                    if stored_parent and stored_parent != attachment_key:
+                        logger.debug(f"Using stored parent_item_key: {stored_parent}")
+                        zotero_key = stored_parent
                     else:
-                        # Fallback to stored parent_item_key if database lookup fails
-                        stored_parent = metadatas[i].get("parent_item_key", "")
-                        if stored_parent and stored_parent != attachment_key:
-                            logger.debug(f"Using stored parent_item_key: {stored_parent}")
-                            zotero_key = stored_parent
+                        # Priority 2: Database lookup (slower, may hit lock contention)
+                        resolved_parent = self._resolve_to_parent_key(attachment_key)
+                        if resolved_parent and resolved_parent != attachment_key:
+                            logger.debug(f"Resolved chunk {item_key} -> attachment {attachment_key} -> parent {resolved_parent}")
+                            zotero_key = resolved_parent
                         else:
                             # Last resort: use attachment key (will return attachment metadata)
                             logger.warning(f"Could not resolve parent for {item_key}, using attachment key")
@@ -1734,13 +1765,20 @@ class ZoteroSemanticSearch:
                 # Get full item data from Zotero with fallback to local SQLite
                 try:
                     zotero_item = self.zotero_client.item(zotero_key)
+                    # If we got an attachment, follow parentItem to the actual paper
+                    item_type = zotero_item.get("data", {}).get("itemType", "")
+                    if item_type == "attachment":
+                        parent_key = zotero_item.get("data", {}).get("parentItem", "")
+                        if parent_key:
+                            logger.debug(f"Following attachment {zotero_key} -> parent paper {parent_key}")
+                            zotero_key = parent_key
+                            zotero_item = self.zotero_client.item(parent_key)
                 except Exception as api_error:
                     # Fallback to local SQLite database for unsynced items
                     if "404" in str(api_error) or "Not found" in str(api_error):
-                        from agent_zot.database.local_zotero import LocalZoteroReader
-
-                        reader = LocalZoteroReader()
-                        conn = reader._get_connection()
+                        if not self._local_reader or self._db_locked:
+                            raise api_error
+                        conn = self._local_reader._get_connection()
                         cursor = conn.cursor()
 
                         # Query database directly for this item (bypasses get_items_with_text filter)
@@ -1916,14 +1954,47 @@ class ZoteroSemanticSearch:
             return False
 
 
+# Singleton cache for ZoteroSemanticSearch.
+# Initialization loads sentence-transformers models (~18s), so caching across
+# MCP tool calls avoids re-loading on every request.
+# Thread-safe: async tasks in executor.py also use this cache.
+import threading as _threading
+_semantic_search_cache: Dict[str, ZoteroSemanticSearch] = {}
+_semantic_search_lock = _threading.Lock()
+
+
 def create_semantic_search(config_path: Optional[str] = None) -> ZoteroSemanticSearch:
     """
-    Create a ZoteroSemanticSearch instance.
-    
+    Create or return a cached ZoteroSemanticSearch instance.
+
+    Uses singleton caching to avoid re-initializing sentence-transformers models
+    (~18s overhead) on every MCP tool call. Thread-safe — parallel async tasks
+    will wait for the first initializer to finish rather than loading duplicate models.
+
     Args:
         config_path: Path to configuration file
-        
+
     Returns:
-        Configured ZoteroSemanticSearch instance
+        Configured ZoteroSemanticSearch instance (cached)
     """
-    return ZoteroSemanticSearch(config_path=config_path)
+    cache_key = config_path or "__default__"
+
+    # Fast path: return cached instance without acquiring lock
+    if cache_key in _semantic_search_cache:
+        return _semantic_search_cache[cache_key]
+
+    # Slow path: acquire lock, double-check, then create
+    with _semantic_search_lock:
+        if cache_key not in _semantic_search_cache:
+            logger.info(f"Creating new ZoteroSemanticSearch instance (config: {config_path})")
+            _semantic_search_cache[cache_key] = ZoteroSemanticSearch(config_path=config_path)
+        else:
+            logger.debug(f"Reusing cached ZoteroSemanticSearch instance (config: {config_path})")
+        return _semantic_search_cache[cache_key]
+
+
+def reset_semantic_search_cache() -> None:
+    """Clear the singleton cache, forcing re-creation on next call."""
+    with _semantic_search_lock:
+        _semantic_search_cache.clear()
+    logger.info("Semantic search cache cleared")
